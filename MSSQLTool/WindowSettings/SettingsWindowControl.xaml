@@ -140,7 +140,7 @@
                 <StackPanel Margin="16" MaxWidth="760" HorizontalAlignment="Left">
                     <TextBlock Text="Data and configuration folder" FontWeight="SemiBold" Margin="0,0,0,8"/>
                     <TextBlock TextWrapping="Wrap" Opacity="0.8" Margin="0,0,0,12"
-                               Text="MSSQL Tool keeps its settings, query history, completion ranking, GitHub sync profiles, snippets, query templates and log files in one folder. Point that folder at another drive, a synced folder or a portable device to keep the data outside your Windows profile. The pointer itself stays in the registry, and every setting is mirrored there, so the default location keeps working if the folder is unavailable. A query template folder you picked yourself is left where it is."/>
+                               Text="MSSQL Tool keeps its settings, query history, GitHub sync profiles, snippets, query templates and log files in one folder. Point that folder at another drive, a synced folder or a portable device to keep the data outside your Windows profile. The pointer itself stays in the registry, and every setting is mirrored there, so the default location keeps working if the folder is unavailable. A query template folder you picked yourself is left where it is."/>
 
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -172,7 +172,7 @@
                              Height="150"/>
 
                     <TextBlock TextWrapping="Wrap" Opacity="0.8" Margin="0,10,0,0"
-                               Text="Changes apply immediately: the completion ranking, query history, snippets, query templates and settings move to the new folder at once. The log file follows after the next SSMS start."/>
+                               Text="Changes apply immediately: the query history, snippets, query templates and settings move to the new folder at once. The log file follows after the next SSMS start."/>
                 </StackPanel>
             </TabItem>
 

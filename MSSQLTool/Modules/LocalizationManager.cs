@@ -550,6 +550,7 @@ namespace MSSQLTool
             ["Common"] = "常规",
             ["Legacy rewrites"] = "兼容旧版的重写选项",
             ["Add new line between statements in blocks"] = "代码块内语句之间添加空行",
+            ["Unindent BEGIN..END blocks"] = "不缩进 BEGIN..END 块",
             ["Text casing"] = "文本大小写",
             ["Keywords:"] = "关键字：",
             ["Built-in functions:"] = "内置函数：",
@@ -760,6 +761,14 @@ namespace MSSQLTool
             if (Chinese.TryGetValue(text, out string translated)) return translated;
             return TranslateDynamic(text);
         }
+
+        /// <summary>
+        /// True when <paramref name="text"/> has an entry in the Chinese dictionary.  The entry may
+        /// deliberately be identical to the key (product names, "English", "Wiki"), so this is not
+        /// the same as "the translation differs from the key".
+        /// </summary>
+        internal static bool HasChineseEntry(string text)
+            => !string.IsNullOrEmpty(text) && Chinese.ContainsKey(text);
 
         private static string TranslateDynamic(string text)
         {
