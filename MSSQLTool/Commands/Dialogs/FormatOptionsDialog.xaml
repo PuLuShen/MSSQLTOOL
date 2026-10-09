@@ -1,0 +1,570 @@
+﻿<Window x:Class="MSSQLTool.FormatOptionsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Query Format Options"
+        Width="760" Height="660"
+        MinWidth="640" MinHeight="520"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="10">
+
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Formatting profile"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="CheckAllButton"
+                        Content="Check all"
+                        Padding="12,4"
+                        Click="CheckAll_Click"/>
+                <Button x:Name="UncheckAllButton"
+                        Content="Uncheck all"
+                        Padding="12,4"
+                        Margin="8,0,0,0"
+                        Click="UncheckAll_Click"/>
+            </StackPanel>
+        </Grid>
+
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+            <GroupBox Header="Preview">
+                <Grid Height="150">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <DockPanel Grid.Column="0" Margin="0,0,4,0">
+                        <TextBlock DockPanel.Dock="Top" Text="Source" Margin="0,0,0,2"/>
+                        <TextBox x:Name="SourcePreviewBox"
+                                 AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 TextWrapping="NoWrap"
+                                 FontFamily="Consolas"
+                                 FontSize="12"
+                                 TextChanged="SourcePreviewBox_TextChanged"/>
+                    </DockPanel>
+                    <DockPanel Grid.Column="1" Margin="4,0,0,0">
+                        <TextBlock DockPanel.Dock="Top" Text="Formatted" Margin="0,0,0,2"/>
+                        <TextBox x:Name="FormattedPreviewBox"
+                                 AcceptsReturn="True"
+                                 IsReadOnly="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 TextWrapping="NoWrap"
+                                 FontFamily="Consolas"
+                                 FontSize="12"/>
+                    </DockPanel>
+                </Grid>
+            </GroupBox>
+
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                <Button x:Name="ExportProfileButton" Content="Export profile..." Width="120" Padding="6,4"
+                        Click="Export_Click"/>
+                <Button x:Name="ImportProfileButton" Content="Import profile..." Width="120" Padding="6,4" Margin="8,0,0,0"
+                        Click="Import_Click"/>
+                <Button x:Name="RestoreDefaultsBottomButton" Content="Restore defaults" Width="120" Padding="6,4" Margin="8,0,0,0"
+                        Click="RestoreDefaults_Click"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                <CheckBox x:Name="SaveAsDefaultCheckBox"
+                        Content="Save as default"
+                        VerticalAlignment="Center"
+                        Margin="0,0,12,0"/>
+                <Button Width="90" IsDefault="True" Content="OK" Click="Ok_Click" Margin="0,0,8,0"/>
+                <Button Width="90" IsCancel="True" Content="Cancel"/>
+            </StackPanel>
+        </StackPanel>
+
+        <TabControl x:Name="OptionsTabControl" Margin="0,0,0,4">
+
+            <TabItem Header="Preset">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="Start from a preset, then fine tune any individual option on the other tabs. Changing any option switches the profile to Custom."/>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <TextBlock Text="Preset:" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="PresetComboBox" Width="180" Margin="8,0,0,0"
+                                      SelectionChanged="PresetComboBox_SelectionChanged">
+                                <ComboBoxItem Content="Standard" Tag="Standard"/>
+                                <ComboBoxItem Content="Compact" Tag="Compact"/>
+                                <ComboBoxItem Content="Readable" Tag="Readable"/>
+                                <ComboBoxItem Content="Team standard" Tag="Team"/>
+                                <ComboBoxItem Content="Custom" Tag="Custom"/>
+                            </ComboBox>
+                            <Button x:Name="RestoreDefaultsButton" Content="Restore defaults" Width="130"
+                                    Padding="6,4" Margin="12,0,0,0" Click="RestoreDefaults_Click"/>
+                        </StackPanel>
+
+                        <GroupBox Header="Common" Margin="0,12,0,0">
+                            <StackPanel Margin="6">
+                                <CheckBox Margin="0,3" Content="Align clause bodies"
+                                          Tag="alignClauseBodies"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="0,3" Content="Add semicolons after statements"
+                                          Tag="includeSemicolons"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Legacy rewrites" Margin="0,12,0,0">
+                            <UniformGrid Columns="2" Margin="6">
+                                <CheckBox Margin="3" Content="Remove new line after JOIN"
+                                          Tag="removeNewLineAfterJoin"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="3" Content="Add tab after JOIN..ON"
+                                          Tag="addTabAfterJoinOn"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="3" Content="Place CROSS/OUTER JOIN/APPLY on a new line"
+                                          Tag="moveCrossJoinToNewLine"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="3" Content="Format CASE expression as multiline"
+                                          Tag="formatCaseAsMultiline"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="3" Content="Add new line between statements in blocks"
+                                          Tag="addNewLineBetweenStatementsInBlocks"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="3" Content="Break exec sproc parameters per line"
+                                          Tag="breakSprocParametersPerLine"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="3" Content="Always upper-case built-in functions"
+                                          Tag="uppercaseBuiltInFunctions"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="3" Content="Unindent BEGIN..END blocks"
+                                          Tag="unindentBeginEndBlocks"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="3" Content="Break variable definitions per line"
+                                          Tag="breakVariableDefinitionsPerLine"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                                <CheckBox Margin="3" Content="Break sproc definition parameters per line"
+                                          Tag="breakSprocDefinitionParametersPerLine"
+                                          Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                            </UniformGrid>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Text casing">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <TextBlock Text="Keywords:" Margin="0,4,0,2"/>
+                        <ComboBox Width="200" HorizontalAlignment="Left" Tag="casing.keywords"
+                                  SelectionChanged="OptionComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Keep as written" Tag="Preserve"/>
+                            <ComboBoxItem Content="Uppercase" Tag="Uppercase"/>
+                            <ComboBoxItem Content="Lowercase" Tag="Lowercase"/>
+                            <ComboBoxItem Content="PascalCase" Tag="PascalCase"/>
+                        </ComboBox>
+                        <TextBlock Text="Built-in functions:" Margin="0,10,0,2"/>
+                        <ComboBox Width="200" HorizontalAlignment="Left" Tag="casing.functions"
+                                  SelectionChanged="OptionComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Keep as written" Tag="Preserve"/>
+                            <ComboBoxItem Content="Uppercase" Tag="Uppercase"/>
+                            <ComboBoxItem Content="Lowercase" Tag="Lowercase"/>
+                            <ComboBoxItem Content="PascalCase" Tag="PascalCase"/>
+                        </ComboBox>
+                        <TextBlock Text="Data types:" Margin="0,10,0,2"/>
+                        <ComboBox Width="200" HorizontalAlignment="Left" Tag="casing.dataTypes"
+                                  SelectionChanged="OptionComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Keep as written" Tag="Preserve"/>
+                            <ComboBoxItem Content="Uppercase" Tag="Uppercase"/>
+                            <ComboBoxItem Content="Lowercase" Tag="Lowercase"/>
+                            <ComboBoxItem Content="PascalCase" Tag="PascalCase"/>
+                        </ComboBox>
+                        <TextBlock Text="Identifiers:" Margin="0,10,0,2"/>
+                        <ComboBox Width="200" HorizontalAlignment="Left" Tag="casing.identifiers"
+                                  SelectionChanged="OptionComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Keep as written" Tag="Preserve"/>
+                            <ComboBoxItem Content="Uppercase" Tag="Uppercase"/>
+                            <ComboBoxItem Content="Lowercase" Tag="Lowercase"/>
+                            <ComboBoxItem Content="PascalCase" Tag="PascalCase"/>
+                        </ComboBox>
+                        <TextBlock Text="Variables:" Margin="0,10,0,2"/>
+                        <ComboBox Width="200" HorizontalAlignment="Left" Tag="casing.variables"
+                                  SelectionChanged="OptionComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Keep as written" Tag="Preserve"/>
+                            <ComboBoxItem Content="Uppercase" Tag="Uppercase"/>
+                            <ComboBoxItem Content="Lowercase" Tag="Lowercase"/>
+                            <ComboBoxItem Content="PascalCase" Tag="PascalCase"/>
+                        </ComboBox>
+                        <TextBlock Text="Aliases:" Margin="0,10,0,2"/>
+                        <ComboBox Width="200" HorizontalAlignment="Left" Tag="casing.aliases"
+                                  SelectionChanged="OptionComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Keep as written" Tag="Preserve"/>
+                            <ComboBoxItem Content="Uppercase" Tag="Uppercase"/>
+                            <ComboBoxItem Content="Lowercase" Tag="Lowercase"/>
+                            <ComboBoxItem Content="PascalCase" Tag="PascalCase"/>
+                        </ComboBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Spacing">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="Space after comma"
+                              Tag="spacing.spaceAfterComma"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Space before comma"
+                              Tag="spacing.spaceBeforeComma"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Space around operators"
+                              Tag="spacing.spaceAroundOperators"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Space between a function name and its parenthesis"
+                              Tag="spacing.spaceBetweenFunctionAndParenthesis"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Line breaks">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <CheckBox Margin="0,3" Content="New line for each SELECT column"
+                                  Tag="lineBreaks.newLinePerSelectColumn"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line for each FROM table"
+                                  Tag="lineBreaks.newLinePerFromTable"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line before JOIN"
+                                  Tag="lineBreaks.newLineBeforeJoin"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line before ON"
+                                  Tag="lineBreaks.newLineBeforeOn"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line before WHERE"
+                                  Tag="lineBreaks.newLineBeforeWhere"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line for each AND/OR condition"
+                                  Tag="lineBreaks.newLinePerCondition"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line before GROUP BY"
+                                  Tag="lineBreaks.newLineBeforeGroupBy"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line before ORDER BY"
+                                  Tag="lineBreaks.newLineBeforeOrderBy"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Indent">
+                <StackPanel Margin="10">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Indent width (spaces):" VerticalAlignment="Center"/>
+                        <TextBox Width="60" Margin="8,0,0,0" Tag="indent.indentSize"
+                                 TextChanged="OptionTextBox_TextChanged"/>
+                    </StackPanel>
+                    <CheckBox Margin="0,8,0,3" Content="Indent subqueries"
+                              Tag="indent.indentSubquery"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent CASE bodies"
+                              Tag="indent.indentCase"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent code blocks"
+                              Tag="indent.indentBlock"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Single line">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="Keep short queries on a single line"
+                              Tag="compact.keepShortQuerySingleLine"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Keep short subqueries on a single line"
+                              Tag="compact.keepShortSubquerySingleLine"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Keep single lines within the right margin"
+                              Tag="compact.keepWithinRightMargin"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <TextBlock Text="Single line threshold (characters):" VerticalAlignment="Center"/>
+                        <TextBox Width="70" Margin="8,0,0,0" Tag="compact.singleLineThreshold"
+                                 TextChanged="OptionTextBox_TextChanged"/>
+                    </StackPanel>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="SELECT">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <CheckBox Margin="0,3" Content="One column per line (SELECT list)"
+                                  Tag="select.stackSelectColumns"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="One table per line (FROM list)"
+                                  Tag="select.stackFromList"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line before JOIN"
+                                  Tag="select.newLineBeforeJoin"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="Indent the ON condition"
+                                  Tag="select.indentOnCondition"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="Indent the WHERE condition"
+                                  Tag="select.indentWhereCondition"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <TextBlock Text="Break conditions:" Margin="0,10,0,2"/>
+                        <ComboBox Width="280" HorizontalAlignment="Left" Tag="select.conditionBreak"
+                                  SelectionChanged="OptionComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Before the operator" Tag="BeforeOperator"/>
+                            <ComboBoxItem Content="After the operator" Tag="AfterOperator"/>
+                        </ComboBox>
+                        <CheckBox Margin="0,10,0,3" Content="One GROUP BY column per line"
+                                  Tag="select.stackGroupBy"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="One ORDER BY column per line"
+                                  Tag="select.stackOrderBy"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Subquery">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10">
+                        <CheckBox Margin="0,3" Content="Inherit the main query format"
+                                  Tag="subquery.inheritMainQueryFormat"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="Allow single line subqueries"
+                                  Tag="subquery.allowSingleLine"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="Subquery single line threshold (characters):" VerticalAlignment="Center"/>
+                            <TextBox Width="70" Margin="8,0,0,0" Tag="subquery.singleLineThreshold"
+                                     TextChanged="OptionTextBox_TextChanged"/>
+                        </StackPanel>
+                        <CheckBox Margin="0,10,0,3" Content="New line before the opening parenthesis"
+                                  Tag="subquery.newLineBeforeOpenParenthesis"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line after the opening parenthesis"
+                                  Tag="subquery.newLineAfterOpenParenthesis"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line before the closing parenthesis"
+                                  Tag="subquery.newLineBeforeCloseParenthesis"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="New line after the closing parenthesis"
+                                  Tag="subquery.newLineAfterCloseParenthesis"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                        <CheckBox Margin="0,3" Content="Indent the subquery body"
+                                  Tag="subquery.indentSubquery"
+                                  Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="INSERT">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="New line before VALUES"
+                              Tag="insert.newLineBeforeValues"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="One column per line (column list)"
+                              Tag="insert.stackColumnList"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="One value per line"
+                              Tag="insert.stackValuesExpressions"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="One VALUES row per line"
+                              Tag="insert.stackMultipleValues"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before OUTPUT"
+                              Tag="insert.newLineBeforeOutput"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="UPDATE">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="New line before SET"
+                              Tag="update.newLineBeforeSet"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="One assignment per line"
+                              Tag="update.stackAssignments"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Format the FROM clause like a SELECT"
+                              Tag="update.fromFollowsSelect"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Format the WHERE clause like a SELECT"
+                              Tag="update.whereFollowsSelect"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before OUTPUT"
+                              Tag="update.newLineBeforeOutput"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="DELETE">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="New line before FROM"
+                              Tag="delete.newLineBeforeFrom"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before JOIN"
+                              Tag="delete.newLineBeforeJoin"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Format the WHERE clause like a SELECT"
+                              Tag="delete.whereFollowsSelect"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before OUTPUT"
+                              Tag="delete.newLineBeforeOutput"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="MERGE">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="New line before INTO"
+                              Tag="merge.newLineBeforeInto"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before USING"
+                              Tag="merge.newLineBeforeUsing"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before ON"
+                              Tag="merge.newLineBeforeOn"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before WHEN"
+                              Tag="merge.newLineBeforeWhen"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before THEN"
+                              Tag="merge.newLineBeforeThen"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before OUTPUT"
+                              Tag="merge.newLineBeforeOutput"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Procedure / function">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="One parameter per line"
+                              Tag="routine.stackParameters"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before RETURNS"
+                              Tag="routine.newLineBeforeReturns"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before AS"
+                              Tag="routine.newLineBeforeAs"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent the BEGIN..END keywords"
+                              Tag="routine.indentBeginEnd"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent the routine body"
+                              Tag="routine.indentBody"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Trigger">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="New line before ON"
+                              Tag="trigger.newLineBeforeOn"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before FOR"
+                              Tag="trigger.newLineBeforeFor"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before AS"
+                              Tag="trigger.newLineBeforeAs"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent the BEGIN..END keywords"
+                              Tag="trigger.indentBeginEnd"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent the trigger body"
+                              Tag="trigger.indentBody"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="View">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="One column per line"
+                              Tag="view.stackColumns"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before AS"
+                              Tag="view.newLineBeforeAs"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent the view query"
+                              Tag="view.indentSubquery"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="CREATE TABLE">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="New line after the opening parenthesis"
+                              Tag="createTable.newLineAfterOpenParenthesis"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before the closing parenthesis"
+                              Tag="createTable.newLineBeforeCloseParenthesis"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="One column definition per line"
+                              Tag="createTable.stackColumns"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="One storage option per line"
+                              Tag="createTable.stackStorageOptions"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="DECLARE">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="One variable per line"
+                              Tag="declare.stackVariables"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Keep the cursor query on a single line"
+                              Tag="declare.cursorQuerySingleLine"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent the cursor query"
+                              Tag="declare.indentCursorSubquery"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="CASE">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="New line before WHEN"
+                              Tag="caseExpression.newLineBeforeWhen"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before THEN"
+                              Tag="caseExpression.newLineBeforeThen"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before ELSE"
+                              Tag="caseExpression.newLineBeforeElse"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent the CASE body"
+                              Tag="caseExpression.indentBody"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Block">
+                <StackPanel Margin="10">
+                    <CheckBox Margin="0,3" Content="One statement per line"
+                              Tag="block.statementPerLine"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line after BEGIN"
+                              Tag="block.newLineAfterBegin"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before END"
+                              Tag="block.newLineBeforeEnd"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line after an IF condition"
+                              Tag="block.newLineAfterIfCondition"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line before ELSE"
+                              Tag="block.newLineBeforeElse"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="New line after a WHILE condition"
+                              Tag="block.newLineAfterWhileCondition"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                    <CheckBox Margin="0,3" Content="Indent the block content"
+                              Tag="block.indentCode"
+                              Checked="OptionCheckBox_Changed" Unchecked="OptionCheckBox_Changed"/>
+                </StackPanel>
+            </TabItem>
+
+        </TabControl>
+    </DockPanel>
+</Window>

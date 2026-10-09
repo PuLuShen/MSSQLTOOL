@@ -1,0 +1,3 @@
+# ==== git-governance 本机隐私隔离（setup-governance.sh 维护，勿删） ====
+/local/
+/local-audit/

@@ -1,0 +1,48 @@
+﻿<UserControl x:Class="MSSQLTool.SqlServerBuildsWindowControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mssqltool="clr-namespace:MSSQLTool"
+             Background="{DynamicResource ToolThemeBackgroundBrush}"
+             Foreground="{DynamicResource ToolThemeForegroundBrush}"
+             mc:Ignorable="d"
+             d:DesignHeight="300" d:DesignWidth="300"
+             Name="SQLServerBuilds">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/MSSQLTool;component/Themes/SharedToolWindowTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid Background="{DynamicResource ToolThemeBackgroundBrush}">
+        <DockPanel HorizontalAlignment="Left">
+            <TextBlock Margin="0"  FontWeight="Bold">
+                <Run Text="Data Source:" />
+                <Hyperlink Click="HyperlinkDataSource_Click">
+                    <Run Text="https://aka.ms/sqlserverbuilds" />
+                </Hyperlink>
+                <Run Text=" | " />
+                <Hyperlink Click="HyperlinkCopyAsTSQL_Click">
+                    <Run Text="Copy as TSQL" />
+                </Hyperlink>
+            </TextBlock>
+        </DockPanel>
+        <TreeView x:Name="sqlVersionTreeView" Margin="0,20,0,0"
+                  Background="{DynamicResource ToolThemeBackgroundBrush}"
+                  Foreground="{DynamicResource ToolThemeForegroundBrush}"
+                  BorderBrush="{DynamicResource ToolThemeBorderBrush}">
+            <TreeView.Resources>
+                <!-- Style for Grid-like Row -->
+                <Style TargetType="TreeViewItem">
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="Background" Value="{DynamicResource ToolThemeBackgroundBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource ToolThemeForegroundBrush}"/>
+                </Style>
+            </TreeView.Resources>
+        </TreeView>
+    </Grid>
+</UserControl>

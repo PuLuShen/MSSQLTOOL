@@ -1,0 +1,187 @@
+<UserControl x:Class="MSSQLTool.AboutWindowControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             Background="{DynamicResource ToolThemeBackgroundBrush}"
+             Foreground="{DynamicResource ToolThemeForegroundBrush}"
+             mc:Ignorable="d"
+             Name="MyToolWindow"
+             MinHeight="560"
+             MinWidth="620">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/MSSQLTool;component/Themes/SharedToolWindowTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,0,0,18">
+                <Image Source="/MSSQLTool;component/Resources/logo.png"
+                       Width="220"
+                       Margin="0,0,0,12" />
+                <TextBlock HorizontalAlignment="Center"
+                           Text="MSSQL Tool"
+                           FontFamily="Segoe UI"
+                           FontSize="26"
+                           FontWeight="SemiBold" />
+                <TextBlock Margin="0,5,0,0"
+                           HorizontalAlignment="Center"
+                           Text="SSMS 22 productivity extension"
+                           FontFamily="Segoe UI"
+                           FontSize="14" />
+                <TextBlock Margin="0,4,0,0"
+                           HorizontalAlignment="Center"
+                           x:Name="TextBlock_CurrentVersion"
+                           FontFamily="Segoe UI"
+                           FontSize="13" />
+            </StackPanel>
+
+            <Border Grid.Row="1"
+                    Padding="18"
+                    Margin="0,0,0,14"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource ToolThemeBorderBrush}"
+                    CornerRadius="4">
+                <StackPanel>
+                    <TextBlock Text="Current features"
+                               FontFamily="Segoe UI"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,12" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="14" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Grid.Column="0" Padding="13"
+                                Background="{DynamicResource ToolThemeHeaderBackgroundBrush}"
+                                BorderBrush="{DynamicResource ToolThemeSubtleBorderBrush}"
+                                BorderThickness="1" CornerRadius="3">
+                            <StackPanel>
+                                <TextBlock Text="SQL editing and navigation" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,7,0,0" Text="Smart completion · F12 Go to Definition · T-SQL formatting · snippets · SELECT * expansion"
+                                           FontSize="13" LineHeight="20" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="0" Grid.Column="2" Padding="13"
+                                Background="{DynamicResource ToolThemeHeaderBackgroundBrush}"
+                                BorderBrush="{DynamicResource ToolThemeSubtleBorderBrush}"
+                                BorderThickness="1" CornerRadius="3">
+                            <StackPanel>
+                                <TextBlock Text="Results and data transfer" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,7,0,0" Text="Excel · Google Sheets · email · temporary-table export · bulk data transfer"
+                                           FontSize="13" LineHeight="20" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="2" Grid.Column="0" Padding="13"
+                                Background="{DynamicResource ToolThemeHeaderBackgroundBrush}"
+                                BorderBrush="{DynamicResource ToolThemeSubtleBorderBrush}"
+                                BorderThickness="1" CornerRadius="3">
+                            <StackPanel>
+                                <TextBlock Text="Monitoring and diagnostics" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,7,0,0" Text="Query history · statistics summary · server health · connection colors · execution time"
+                                           FontSize="13" LineHeight="20" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="2" Grid.Column="2" Padding="13"
+                                Background="{DynamicResource ToolThemeHeaderBackgroundBrush}"
+                                BorderBrush="{DynamicResource ToolThemeSubtleBorderBrush}"
+                                BorderThickness="1" CornerRadius="3">
+                            <StackPanel>
+                                <TextBlock Text="Workflow tools" FontSize="15" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,7,0,0" Text="Quick Search · object scripting · SQL Server version information · GitHub sync"
+                                           FontSize="13" LineHeight="20" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Grid Grid.Row="2" Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3*" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="2*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Padding="16"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource ToolThemeBorderBrush}"
+                        CornerRadius="4">
+                    <StackPanel>
+                        <TextBlock Text="Current project" FontSize="16" FontWeight="SemiBold" />
+                        <TextBlock Margin="0,10,0,0" FontSize="13">
+                            <Hyperlink NavigateUri="https://github.com/PuLuShen/MSSQLTOOL" RequestNavigate="Hyperlink_RequestNavigate">
+                                <Run Text="Source repository" />
+                            </Hyperlink>
+                        </TextBlock>
+                        <TextBlock Margin="0,8,0,0" FontSize="13">
+                            <Hyperlink NavigateUri="https://github.com/PuLuShen/MSSQLTOOL/issues" RequestNavigate="Hyperlink_RequestNavigate">
+                                <Run Text="Issues and feature requests" />
+                            </Hyperlink>
+                        </TextBlock>
+                        <TextBlock Margin="0,8,0,0" FontSize="13">
+                            <Hyperlink NavigateUri="https://github.com/PuLuShen/MSSQLTOOL/releases" RequestNavigate="Hyperlink_RequestNavigate">
+                                <Run Text="Releases" />
+                            </Hyperlink>
+                        </TextBlock>
+                        <TextBlock Margin="0,8,0,0" FontSize="13">
+                            <Hyperlink NavigateUri="https://github.com/PuLuShen/MSSQLTOOL/blob/main/LICENSE" RequestNavigate="Hyperlink_RequestNavigate">
+                                <Run Text="Apache License 2.0" />
+                            </Hyperlink>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2" Padding="16"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource ToolThemeBorderBrush}"
+                        CornerRadius="4">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="Support the project"
+                                   HorizontalAlignment="Center"
+                                   FontSize="16"
+                                   FontWeight="SemiBold" />
+                        <Image Source="/MSSQLTool;component/Resources/appreciation.png"
+                               Width="170"
+                               Height="170"
+                               Stretch="Uniform"
+                               Margin="0,10,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <TextBlock Grid.Row="3"
+                       Margin="0,2,0,0"
+                       HorizontalAlignment="Center"
+                       FontFamily="Segoe UI"
+                       FontSize="13">
+                <Run Text="Diagnostic log folder: " />
+                <Hyperlink Click="HyperlinkLogFolder_Click">
+                    <Run x:Name="HyperlinkText_LogFolder" Text="Open" />
+                </Hyperlink>
+            </TextBlock>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

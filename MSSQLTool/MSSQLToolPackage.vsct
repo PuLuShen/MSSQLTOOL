@@ -1,0 +1,446 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <!--  This is the file that defines the actual layout and type of the commands.
+        It is divided in different sections (e.g. command definition, command
+        placement, ...), with each defining a specific set of properties.
+        See the comment before each section for more details about how to
+        use it. -->
+
+  <!--  The VSCT compiler (the tool that translates this file into the binary
+        format that VisualStudio will consume) has the ability to run a preprocessor
+        on the vsct file; this preprocessor is (usually) the C++ preprocessor, so
+        it is possible to define includes and macros with the same syntax used
+        in C++ files. Using this ability of the compiler here, we include some files
+        defining some of the constants that we will use inside the file. -->
+
+  <!--This is the file that defines the IDs for all the commands exposed by VisualStudio. -->
+  <Extern href="stdidcmd.h" />
+
+  <!--This header contains the command ids for the menus provided by the shell. -->
+  <Extern href="vsshlids.h" />
+
+  <!--The Commands section is where commands, menus, and menu groups are defined.
+      This section uses a Guid to identify the package that provides the command defined inside it. -->
+  <Commands package="guidMSSQLToolPackage">
+    <!-- Inside this section we have different sub-sections: one for the menus, another
+    for the menu groups, one for the buttons (the actual commands), one for the combos
+    and the last one for the bitmaps used. Each element is identified by a command id that
+    is a unique pair of guid and numeric identifier; the guid part of the identifier is usually
+    called "command set" and is used to group different command inside a logically related
+    group; your package should define its own command set in order to avoid collisions
+    with command ids defined by other packages. -->
+
+    <!-- In this section you can define new menu groups. A menu group is a container for
+         other menus or buttons (commands); from a visual point of view you can see the
+         group as the part of a menu contained between two lines. The parent of a group
+         must be a menu. -->
+    <Groups>
+      
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolbarGroup" priority="0x0000">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="Toolbar" />
+      </Group>
+
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Copy" priority="0x0100">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>
+      
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Export" priority="0x1000">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script2" priority="0x1001">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>     
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Compare" priority="0x1002">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script" priority="0x2000">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Health" priority="0x3000">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_DataTransfer" priority="0x4000">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>
+
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_AI" priority="0x6000">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>
+
+    </Groups>
+
+    <Menus>
+      <Menu guid="guidMSSQLToolPackageCmdSet" id="Toolbar" type="Toolbar">
+        <CommandFlag>DefaultDocked</CommandFlag>
+        <Strings>
+          <ButtonText>MSSQL Tool</ButtonText>
+          <CommandName>MSSQL Tool</CommandName>
+        </Strings>
+      </Menu>
+
+      <Menu guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" type="Menu" priority="0x0000">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolbarGroup" />
+        <Strings>
+          <ButtonText>工具</ButtonText>
+        </Strings>
+      </Menu>
+
+    </Menus>
+
+    
+    
+
+    <!--Buttons section. -->
+    <!--This section defines the elements the user can interact with, like a menu command or a button
+        or combo box in a toolbar. -->
+    <Buttons>
+      <!--To define a menu group you have to specify its ID, the parent menu and its display priority.
+          The command is visible and enabled by default. If you need to change the visibility, status, etc, you can use
+          the CommandFlag node.
+          You can add more than one CommandFlag node e.g.:
+              <CommandFlag>DefaultInvisible</CommandFlag>
+              <CommandFlag>DynamicVisibility</CommandFlag>
+          If you do not want an image next to your command, remove the Icon node /> -->
+
+
+      <!-- Toolbar ROOT -->
+      <Button guid="guidMSSQLToolPackageCmdSet" id="FormatQueryButton" priority="0x0000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolbarGroup" />
+        <Icon guid="guidImagesMagicWand" id="bmpMagicWand" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>格式化查询</ButtonText>
+          <LocCanonicalName>MSSQLTool.FormatQuery</LocCanonicalName>
+          <ToolTipText>格式化 SQL 查询（按住 Shift 可打开高级选项）</ToolTipText>
+        </Strings>
+      </Button>
+      
+      <!-- TOOLS Submenu buttons -->
+      <Button guid="guidMSSQLToolPackageCmdSet" id="ExportGridAsInserts" priority="0x0110" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Export" />
+        <Icon guid="guidExportGridToTempTable" id="bmpExportGridToTempTable" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>将结果网格导出为临时表</ButtonText>
+          <LocCanonicalName>MSSQLTool.ExportGridAsTempTable</LocCanonicalName>
+        </Strings>
+      </Button>
+      
+      <Button guid="guidMSSQLToolPackageCmdSet" id="ScriptCurrentObject" priority="0x0200" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script" />
+        <Icon guid="guidImagesTemplate" id="bmpTemplate" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>在新窗口生成对象定义脚本</ButtonText>
+          <LocCanonicalName>MSSQLTool.ScriptSelectedObject</LocCanonicalName>
+        </Strings>
+      </Button>
+      
+      <Button guid="guidMSSQLToolPackageCmdSet" id="QuickSearch" priority="0x0300" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script2" />
+        <Icon guid="guidSearch" id="bmpSearch" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>快速搜索</ButtonText>
+          <LocCanonicalName>MSSQLTool.QuickSqlSearch</LocCanonicalName>
+          <CanonicalName>MSSQLTool.QuickSqlSearch</CanonicalName>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="SnippetManagerCommand" priority="0x0010" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script2" />
+        <Icon guid="guidSnippet" id="bmpSnippet" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>代码片段管理器</ButtonText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="SelectCurrentStatementCommand" priority="0x0020" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script" />
+        <Icon guid="guidSelect" id="bmpSelect" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>选择当前语句</ButtonText>
+          <LocCanonicalName>MSSQLTool.SelectCurrentStatement</LocCanonicalName>
+          <ToolTipText>选择光标所在的 SQL 语句（Shift+F5）</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="ToggleBlockCommentCommand" priority="0x0025" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script" />
+        <Icon guid="guidToggleBlockComment" id="bmpToggleBlockComment" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>切换块注释</ButtonText>
+          <LocCanonicalName>MSSQLTool.ToggleBlockComment</LocCanonicalName>
+          <ToolTipText>使用 /* */ 包裹所选 SQL，或移除光标处的块注释</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="QueryHistoryCommand" priority="0x0000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script2" />
+        <Icon guid="guidQueryHistory" id="bmpQueryHistory" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>查询历史</ButtonText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="StatisticsSummaryCommand" priority="0x0001" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script" />
+        <Icon guid="guidStatisticsSummary" id="bmpStatisticsSummary" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>统计信息摘要</ButtonText>
+          <ToolTipText>打开最近捕获的 SET STATISTICS IO/TIME 输出摘要。</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="HealthDashboardServerCommand" priority="0x0000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Health" />
+        <Icon guid="guidServerHealth" id="bmpServerHealth" />
+        <Strings>
+          <ButtonText>服务器健康面板</ButtonText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="SqlServerBuildsCommand" priority="0x3000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Health" />
+        <Icon guid="guidSqlBuildInfo" id="bmpSqlBuildInfo" />
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>AllowVisibilityChangeOnToolBar</CommandFlag>
+        <Strings>
+          <ButtonText>SQL Server 版本信息</ButtonText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="DataTransferCommand" priority="0x0000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_DataTransfer" />
+        <Icon guid="guidDataTransfer" id="bmpDataTransfer" />
+        <!--<CommandFlag>DefaultInvisible</CommandFlag>-->
+        <Strings>
+          <ButtonText>数据传输</ButtonText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="DatabaseScripterCommand" priority="0x0000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_DataTransfer" />
+        <Icon guid="guidDatabaseScripter" id="bmpDatabaseScripter" />
+        <!--<CommandFlag>DefaultInvisible</CommandFlag>-->
+        <Strings>
+          <ButtonText>同步到 GitHub</ButtonText>
+        </Strings>
+      </Button>
+
+      <!-- 模板语句：单击直接打开模板浏览弹窗（分类即模板文件夹层级） -->
+      <Button guid="guidMSSQLToolPackageCmdSet" id="QueryTemplatePickerCommand" priority="0x0050" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolbarGroup" />
+        <Icon guid="guidImagesTemplate" id="bmpTemplate" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>模板语句</ButtonText>
+          <LocCanonicalName>MSSQLTool.QueryTemplatePicker</LocCanonicalName>
+          <ToolTipText>浏览模板语句库：竖向分类树即模板文件夹层级，可新建/重命名/删除分类与语句，双击或回车插入编辑器（Ctrl+Alt+T）</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="RefreshCompletionMetadataButton" priority="0x0330" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Script2" />
+        <Icon guid="guidRefresh" id="bmpRefresh" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>刷新补全缓存</ButtonText>
+          <LocCanonicalName>MSSQLTool.RefreshCompletionMetadata</LocCanonicalName>
+          <ToolTipText>丢弃 SQL 补全元数据缓存并重新加载（适用于其他人在服务器上修改了表结构的情况）</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="SchemaCompareCommand" priority="0x0000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Compare" />
+        <Icon guid="guidCompareSchemas" id="bmpCompareSchemas" />
+        <CommandFlag>IconAndText</CommandFlag>
+        <Strings>
+          <ButtonText>结构对比</ButtonText>
+          <LocCanonicalName>MSSQLTool.SchemaCompare</LocCanonicalName>
+          <ToolTipText>比较两个数据库的结构差异，并生成同步脚本</ToolTipText>
+        </Strings>
+      </Button>
+
+      <Button guid="guidMSSQLToolPackageCmdSet" id="SettingsButton" priority="0x1000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolbarGroup" />
+        <Icon guid="guidImagesSettings" id="bmpSettings" />        
+        <Strings>
+          <ButtonText>设置</ButtonText>
+        </Strings>
+      </Button>
+      
+      <Button guid="guidMSSQLToolPackageCmdSet" id="AboutButton" priority="0x2000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolbarGroup" />
+        <Icon guid="guidInfo" id="bmpInfo" />
+        <Strings>
+          <ButtonText>关于</ButtonText>
+        </Strings>
+      </Button>
+
+    </Buttons>
+
+
+    <!--The bitmaps section is used to define the bitmaps that are used for the commands.-->
+    <Bitmaps>
+      <!--  The bitmap id is defined in a way that is a little bit different from the others:
+            the declaration starts with a guid for the bitmap strip, then there is the resource id of the
+            bitmap strip containing the bitmaps and then there are the numeric ids of the elements used
+            inside a button definition. An important aspect of this declaration is that the element id
+            must be the actual index (1-based) of the bitmap inside the bitmap strip. -->
+      <Bitmap guid="guidImagesSettings" href="Resources\settings.png" usedList="bmpSettings" />
+      <Bitmap guid="guidImagesMagicWand" href="Resources\wizard.png" usedList="bmpMagicWand" />
+      <Bitmap guid="guidImagesTemplate" href="Resources\template.png" usedList="bmpTemplate" />
+      <Bitmap guid="guidInfo" href="Resources\info.png" usedList="bmpInfo" />
+      <Bitmap guid="guidRefresh" href="Resources\refresh.png" usedList="bmpRefresh" />
+      <Bitmap guid="guidDataTransfer" href="Resources\data-source-target.png" usedList="bmpDataTransfer" />
+      <Bitmap guid="guidServerHealth" href="Resources\server-health.png" usedList="bmpServerHealth" />
+      <Bitmap guid="guidStatisticsSummary" href="Resources\statistics-summary.png" usedList="bmpStatisticsSummary" />
+      <Bitmap guid="guidExportGridToTempTable" href="Resources\grid-to-temp-table.png" usedList="bmpExportGridToTempTable" />
+      <Bitmap guid="guidCompareSchemas" href="Resources\compare-schemas.png" usedList="bmpCompareSchemas" />
+      <Bitmap guid="guidQueryHistory" href="Resources\query-history.png" usedList="bmpQueryHistory" />
+      <Bitmap guid="guidOpenFolder" href="Resources\open-folder.png" usedList="bmpOpenFolder" />
+      <Bitmap guid="guidSqlBuildInfo" href="Resources\sql-build-info.png" usedList="bmpSqlBuildInfo" />
+      <Bitmap guid="guidDatabaseScripter" href="Resources\database-scripter.png" usedList="bmpDatabaseScripter" />
+      <Bitmap guid="guidSearch" href="Resources\search.png" usedList="bmpSearch" />
+      <Bitmap guid="guidSelect" href="Resources\select.png" usedList="bmpSelect" />
+      <Bitmap guid="guidSnippet" href="Resources\snippet.png" usedList="bmpSnippet" />
+      <Bitmap guid="guidToggleBlockComment" href="Resources\toggle-comment.png" usedList="bmpToggleBlockComment" />
+    </Bitmaps>    
+  </Commands>
+
+
+  <KeyBindings>
+    <KeyBinding guid="guidMSSQLToolPackageCmdSet" id="FormatQueryButton" editor="guidVSStd97" key1="F" mod1="Control Shift Alt" />
+    <KeyBinding guid="guidMSSQLToolPackageCmdSet" id="ScriptCurrentObject" editor="guidSqlQueryEditor" key1="VK_F12" />
+    <KeyBinding guid="guidMSSQLToolPackageCmdSet" id="ExportGridAsInserts" editor="guidVSStd97" key1="T" mod1="Control Shift Alt" />
+    <KeyBinding guid="guidMSSQLToolPackageCmdSet" id="SelectCurrentStatementCommand" editor="guidVSStd97" key1="VK_F5" mod1="Shift" />
+    <KeyBinding guid="guidMSSQLToolPackageCmdSet" id="ToggleBlockCommentCommand" editor="guidVSStd97" key1="B" mod1="Control Shift Alt" />
+    <KeyBinding guid="guidMSSQLToolPackageCmdSet" id="QueryTemplatePickerCommand" editor="guidVSStd97" key1="T" mod1="Control Alt" />
+  </KeyBindings>
+
+  <Symbols>
+    <!-- SSMS 22 Transact-SQL query editor. Keep F12 editor-scoped so it does
+         not conflict with the shell's existing Global::F12 binding. -->
+    <GuidSymbol name="guidSqlQueryEditor" value="{B5A506EB-11BE-4782-9A18-21265C2CA0B4}" />
+
+    <!-- This is the package guid. -->
+    <GuidSymbol name="guidMSSQLToolPackage" value="{82ff597d-c4bc-469f-b990-637219074984}" />
+
+    <!-- This is the guid used to group the menu commands together -->
+    <GuidSymbol name="guidMSSQLToolPackageCmdSet" value="{45457e02-6dec-4a4d-ab22-c9ee126d23c5}">
+
+      <IDSymbol name="Toolbar" value="0x1000" />
+      <IDSymbol name="ToolbarGroup" value="0x2000" />
+
+      <IDSymbol name="FormatQueryButton" value="4131" />
+      <IDSymbol name="RefreshCompletionMetadataButton" value="4146" />
+      <IDSymbol name="SettingsButton" value="4130" />
+      <IDSymbol name="AboutButton" value="4129" />
+
+      <IDSymbol name="QueryTemplatePickerCommand" value="4156" />
+      <IDSymbol name="SchemaCompareCommand" value="4157" />
+
+      <IDSymbol name="ToolsSubMenu" value="0x1200" />
+      <IDSymbol name="ToolsSubMenuGroup_Export" value="0x1201" />
+      <IDSymbol name="ToolsSubMenuGroup_Script" value="0x1202" />
+      <IDSymbol name="ToolsSubMenuGroup_Script2" value="0x1209" />
+      <IDSymbol name="ToolsSubMenuGroup_Compare" value="0x120A" />
+      <IDSymbol name="ToolsSubMenuGroup_Health" value="0x1203" />
+      <IDSymbol name="ToolsSubMenuGroup_DataTransfer" value="0x1204" />
+      <IDSymbol name="ToolsSubMenuGroup_Timelines" value="0x1205" />
+      <IDSymbol name="ToolsSubMenuGroup_AI" value="0x1206" />
+      <IDSymbol name="ToolsSubMenuGroup_Copy" value="0x1207" />
+      <IDSymbol name="SqlEditorContextMenuGroup" value="0x1208" />
+
+      <IDSymbol name="ScriptCurrentObject" value="4134" />
+      <IDSymbol name="ExportGridAsInserts" value="4138" />
+
+      <IDSymbol name="HealthDashboardServerCommand" value="4140" />
+      <IDSymbol name="HealthDashboardServersCommand" value="4142" />
+
+      <IDSymbol name="DataTransferCommand" value="4143" />
+
+      <IDSymbol name="QueryHistoryCommand" value="4144" />
+      <IDSymbol name="StatisticsSummaryCommand" value="4152" />
+
+      <IDSymbol name="SqlServerBuildsCommand" value="4147" />
+
+      <IDSymbol name="DatabaseScripterCommand" value="4148" />
+
+      <IDSymbol name="DataImportCommand" value="4150" />
+      
+      <IDSymbol name="QuickSearch" value="4151" />
+
+      <IDSymbol name="SelectCurrentStatementCommand" value="4154" />
+      <IDSymbol name="ToggleBlockCommentCommand" value="4155" />
+
+      <IDSymbol name="SnippetManagerCommand" value="4153" />
+
+    </GuidSymbol>
+
+    <GuidSymbol name="guidImagesSettings" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4c1}">
+      <IDSymbol name="bmpSettings" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidImagesMagicWand" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4c2}">
+      <IDSymbol name="bmpMagicWand" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidImagesTemplate" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4c3}">
+      <IDSymbol name="bmpTemplate" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidInfo" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4c4}">
+      <IDSymbol name="bmpInfo" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidRefresh" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4c5}">
+      <IDSymbol name="bmpRefresh" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidDataTransfer" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4c7}">
+      <IDSymbol name="bmpDataTransfer" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidServerHealth" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4c8}">
+      <IDSymbol name="bmpServerHealth" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidStatisticsSummary" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4ca}">
+      <IDSymbol name="bmpStatisticsSummary" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidExportGridToTempTable" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4d1}">
+      <IDSymbol name="bmpExportGridToTempTable" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidCompareSchemas" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4d9}">
+      <IDSymbol name="bmpCompareSchemas" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidQueryHistory" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4d2}">
+      <IDSymbol name="bmpQueryHistory" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidOpenFolder" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4d3}">
+      <IDSymbol name="bmpOpenFolder" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidSqlBuildInfo" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4d5}">
+      <IDSymbol name="bmpSqlBuildInfo" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidDatabaseScripter" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4d6}">
+      <IDSymbol name="bmpDatabaseScripter" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidSearch" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4da}">
+      <IDSymbol name="bmpSearch" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidSelect" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4e0}">
+      <IDSymbol name="bmpSelect" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidSnippet" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4e1}">
+      <IDSymbol name="bmpSnippet" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="guidToggleBlockComment" value="{fef3eb91-5bef-4fcc-8230-c1289c09b4e2}">
+      <IDSymbol name="bmpToggleBlockComment" value="1" />
+    </GuidSymbol>
+
+
+  </Symbols>
+</CommandTable>

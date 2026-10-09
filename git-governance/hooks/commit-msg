@@ -1,0 +1,35 @@
+#!/bin/sh
+# git-governance/hooks/commit-msg —— 提交信息敏感信息防线
+# 提交说明会公开且极难撤回（会被 fork、缓存、镜像）。
+# 禁止在提交说明里出现：真实邮箱、本机路径、IP、密码、token 等。
+
+REPO_ROOT=$(git rev-parse --show-toplevel) || exit 1
+GOV="$REPO_ROOT/git-governance"
+MSG_FILE="$1"
+
+[ -f "$MSG_FILE" ] || { echo "[commit-msg] 找不到提交信息文件: $MSG_FILE"; exit 1; }
+
+PATFILE=$(mktemp) || exit 1
+trap 'rm -f "$PATFILE"' EXIT
+: > "$PATFILE"
+for f in "$GOV/sensitive-patterns.txt" "$REPO_ROOT/local-audit/patterns.local.txt"; do
+  if [ -f "$f" ]; then
+    grep -vE '^[[:space:]]*(#|$)' "$f" >> "$PATFILE"
+  fi
+done
+
+if [ ! -s "$PATFILE" ]; then
+  exit 0
+fi
+
+HITS=$(grep -E -f "$PATFILE" "$MSG_FILE" | grep -v 'audit-ok')
+if [ -n "$HITS" ]; then
+  echo "[commit-msg][拦截] 提交说明中包含疑似敏感信息："
+  echo "----------------------------------------------------"
+  printf '%s\n' "$HITS"
+  echo "----------------------------------------------------"
+  echo "  请修改提交说明后重试（最近一次提交可用 git commit --amend 修改）。"
+  exit 1
+fi
+
+exit 0

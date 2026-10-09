@@ -1,0 +1,74 @@
+#!/bin/sh
+# git-governance/hooks/pre-commit —— 提交前双重防线（本机 Git Bash 可用，无第三方依赖）
+#   1) 身份防线：user.email 必须是 GitHub noreply 匿名地址
+#   2) 内容防线：暂存的新增行不得命中敏感模式（sensitive-patterns 双层清单）
+# 应急绕过：git commit --no-verify（事后必须补跑 scripts/audit-repo.sh 复查）
+
+REPO_ROOT=$(git rev-parse --show-toplevel) || exit 1
+GOV="$REPO_ROOT/git-governance"
+
+# ---------- 1. 身份防线 ----------
+USER_NAME=$(git config --get user.name)
+USER_EMAIL=$(git config --get user.email)
+
+if [ -z "$USER_EMAIL" ]; then
+  echo "[pre-commit][拦截] 未设置 user.email。请先运行："
+  echo "    sh git-governance/scripts/setup-governance.sh"
+  exit 1
+fi
+
+case "$USER_EMAIL" in
+  *@users.noreply.github.com) ;;
+  *)
+    echo "[pre-commit][拦截] 当前提交身份为：${USER_NAME:-未设置} <$USER_EMAIL>"
+    echo "  真实邮箱会随每次提交永久公开在 GitHub 上（含 fork/缓存，撤不干净）。"
+    echo "  修复（仅本仓库生效，不影响全局）："
+    echo "    git config user.name  \"PuLuShen\""
+    echo "    git config user.email \"<你的GitHub noreply地址>\""
+    echo "  （noreply 地址在 GitHub → Settings → Emails 页面复制）"
+    echo "  历史提交里的旧身份请运行：sh git-governance/scripts/scrub-identity.sh"
+    exit 1 ;;
+esac
+
+# ---------- 2. 内容防线 ----------
+# 模式来源：git-governance/sensitive-patterns.txt（通用，可随仓库开源）
+#         + local-audit/patterns.local.txt（本机专属，永不入库；缺省时自动跳过）
+PATFILE=$(mktemp) || exit 1
+HITS_FILE=$(mktemp) || exit 1
+trap 'rm -f "$PATFILE" "$HITS_FILE"' EXIT
+: > "$PATFILE"
+for f in "$GOV/sensitive-patterns.txt" "$REPO_ROOT/local-audit/patterns.local.txt"; do
+  if [ -f "$f" ]; then
+    grep -vE '^[[:space:]]*(#|$)' "$f" >> "$PATFILE"
+  fi
+done
+
+if [ ! -s "$PATFILE" ]; then
+  echo "[pre-commit][警告] 未找到任何敏感模式定义，本次跳过内容检查"
+  exit 0
+fi
+
+git diff --cached --name-only -z --diff-filter=ACMR |
+while IFS= read -r -d '' f; do
+  # 只检查新增行；行尾含 audit-ok 标记的行视为人工确认过的误报，跳过
+  git diff --cached -U0 -- "$f" |
+    grep -E '^\+' | grep -vE '^\+\+\+' |
+    grep -E -f "$PATFILE" | grep -v 'audit-ok' |
+    while IFS= read -r line; do
+      printf '%s: %s\n' "$f" "${line#+}"
+    done >> "$HITS_FILE"
+done
+
+if [ -s "$HITS_FILE" ]; then
+  echo "[pre-commit][拦截] 暂存内容命中敏感模式："
+  echo "----------------------------------------------------"
+  cat "$HITS_FILE"
+  echo "----------------------------------------------------"
+  echo "  处理方式："
+  echo "  a) 确认误报 → 在该行结尾追加标记 audit-ok 后重新 git add"
+  echo "  b) 确认隐私 → 删除或改写该内容"
+  echo "  c) 紧急必须提交 → git commit --no-verify（事后必须跑 audit-repo.sh 复查）"
+  exit 1
+fi
+
+exit 0

@@ -1,0 +1,302 @@
+﻿<UserControl x:Class="MSSQLTool.SchemaCompareWindowControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
+             Background="{DynamicResource ToolThemeBackgroundBrush}"
+             Foreground="{DynamicResource ToolThemeForegroundBrush}">
+ <UserControl.Resources>
+  <ResourceDictionary>
+   <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="/MSSQLTool;component/Themes/SharedToolWindowTheme.xaml"/>
+   </ResourceDictionary.MergedDictionaries>
+   <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+
+   <!-- Differences are tinted by what will happen to the target: created (green),
+        dropped (red) or altered (neutral). -->
+   <Style x:Key="SchemaDiffRowStyle" TargetType="DataGridRow" BasedOn="{DynamicResource ToolThemedDataGridRowStyle}">
+    <Style.Triggers>
+     <DataTrigger Binding="{Binding Status}" Value="MissingInTarget">
+      <Setter Property="Background" Value="{DynamicResource ToolThemeDiffInsertedBackgroundBrush}"/>
+     </DataTrigger>
+     <DataTrigger Binding="{Binding Status}" Value="MissingInSource">
+      <Setter Property="Background" Value="{DynamicResource ToolThemeDiffDeletedBackgroundBrush}"/>
+     </DataTrigger>
+     <DataTrigger Binding="{Binding Status}" Value="Different">
+      <Setter Property="Background" Value="{DynamicResource ToolThemeDiffModifiedBackgroundBrush}"/>
+     </DataTrigger>
+    </Style.Triggers>
+   </Style>
+
+   <Style x:Key="SchemaStatusTextStyle" TargetType="TextBlock">
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Style.Triggers>
+     <DataTrigger Binding="{Binding Status}" Value="MissingInTarget">
+      <Setter Property="Foreground" Value="#3AA675"/>
+     </DataTrigger>
+     <DataTrigger Binding="{Binding Status}" Value="MissingInSource">
+      <Setter Property="Foreground" Value="#E5534B"/>
+     </DataTrigger>
+     <DataTrigger Binding="{Binding Status}" Value="Different">
+      <Setter Property="Foreground" Value="#D99A22"/>
+     </DataTrigger>
+    </Style.Triggers>
+   </Style>
+
+   <Style x:Key="SchemaSectionHeaderStyle" TargetType="TextBlock">
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Margin" Value="0,0,0,4"/>
+   </Style>
+  </ResourceDictionary>
+ </UserControl.Resources>
+
+ <Grid Margin="6">
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="Auto"/>
+   <RowDefinition Height="*" MinHeight="120"/>
+   <RowDefinition Height="5"/>
+   <RowDefinition Height="2*" MinHeight="140"/>
+  </Grid.RowDefinitions>
+
+  <!-- Title -->
+  <DockPanel Grid.Row="0" Margin="0,0,0,6">
+   <TextBlock Text="Schema Compare" FontWeight="Bold" FontSize="18" VerticalAlignment="Center"/>
+   <TextBlock Text="Compare two databases and generate the script that updates the target"
+              Margin="12,0,0,0" VerticalAlignment="Center" Opacity="0.75"/>
+  </DockPanel>
+
+  <!-- Source / Target -->
+  <Border Grid.Row="1" Padding="8" Margin="0,0,0,6" BorderThickness="1" CornerRadius="2"
+          BorderBrush="{DynamicResource ToolThemeBorderBrush}" Background="{DynamicResource ToolThemeHeaderBackgroundBrush}">
+   <Grid>
+    <Grid.ColumnDefinitions>
+     <ColumnDefinition Width="*"/>
+     <ColumnDefinition Width="Auto"/>
+     <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+    <Grid.RowDefinitions>
+     <RowDefinition Height="Auto"/>
+     <RowDefinition Height="Auto"/>
+     <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <TextBlock Grid.Row="0" Grid.Column="0" Text="Source (baseline)" Style="{StaticResource SchemaSectionHeaderStyle}"/>
+    <TextBlock Grid.Row="0" Grid.Column="2" Text="Target (will be updated)" Style="{StaticResource SchemaSectionHeaderStyle}"/>
+
+    <Grid Grid.Row="1" Grid.Column="0" Margin="0,0,8,0">
+     <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="Auto"/>
+      <ColumnDefinition Width="*"/>
+     </Grid.ColumnDefinitions>
+     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+     </Grid.RowDefinitions>
+
+     <TextBlock Grid.Row="0" Grid.Column="0" Text="Server:" VerticalAlignment="Center" Margin="0,0,6,4"/>
+     <ComboBox Grid.Row="0" Grid.Column="1" x:Name="SourceServerBox" IsEditable="True" Margin="0,0,0,4"
+               ToolTip="Server name. Use the active connection or type a server that the current login can reach."/>
+
+     <TextBlock Grid.Row="1" Grid.Column="0" Text="Database:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+     <ComboBox Grid.Row="1" Grid.Column="1" x:Name="SourceDatabaseBox" IsEditable="True"
+               ToolTip="Database name. Load the list from the server or type the name."/>
+    </Grid>
+
+    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Vertical" VerticalAlignment="Center" Margin="0,0,8,0">
+     <Button Content="Swap" Width="70" Click="Swap_Click" ToolTip="Exchange the source and the target"/>
+    </StackPanel>
+
+    <Grid Grid.Row="1" Grid.Column="2">
+     <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="Auto"/>
+      <ColumnDefinition Width="*"/>
+     </Grid.ColumnDefinitions>
+     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+     </Grid.RowDefinitions>
+
+     <TextBlock Grid.Row="0" Grid.Column="0" Text="Server:" VerticalAlignment="Center" Margin="0,0,6,4"/>
+     <ComboBox Grid.Row="0" Grid.Column="1" x:Name="TargetServerBox" IsEditable="True" Margin="0,0,0,4"
+               ToolTip="Server name. Use the active connection or type a server that the current login can reach."/>
+
+     <TextBlock Grid.Row="1" Grid.Column="0" Text="Database:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+     <ComboBox Grid.Row="1" Grid.Column="1" x:Name="TargetDatabaseBox" IsEditable="True"
+               ToolTip="Database name. Load the list from the server or type the name."/>
+    </Grid>
+
+    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,6,0,0">
+     <Button Content="Use active connection" Click="UseActiveConnectionSource_Click"
+             ToolTip="Set the source to the connection of the current query window"/>
+     <Button Content="Load databases" Margin="5,0,0,0" Click="LoadDatabasesSource_Click"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Margin="0,6,0,0">
+     <Button Content="Use active connection" Click="UseActiveConnectionTarget_Click"
+             ToolTip="Set the target to the connection of the current query window"/>
+     <Button Content="Load databases" Margin="5,0,0,0" Click="LoadDatabasesTarget_Click"/>
+    </StackPanel>
+   </Grid>
+  </Border>
+
+  <!-- Options -->
+  <Border Grid.Row="2" Padding="8" Margin="0,0,0,6" BorderThickness="1" CornerRadius="2"
+          BorderBrush="{DynamicResource ToolThemeBorderBrush}">
+   <Grid>
+    <Grid.ColumnDefinitions>
+     <ColumnDefinition Width="Auto"/>
+     <ColumnDefinition Width="*"/>
+     <ColumnDefinition Width="Auto"/>
+     <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+    <Grid.RowDefinitions>
+     <RowDefinition Height="Auto"/>
+     <RowDefinition Height="Auto"/>
+     <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <TextBlock Grid.Row="0" Grid.Column="0" Text="Compare:" VerticalAlignment="Center" Margin="0,0,8,4" FontWeight="SemiBold"/>
+    <WrapPanel Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,4">
+     <CheckBox x:Name="ChkTables" Content="Tables and columns" IsChecked="True" Margin="0,0,12,0"/>
+     <CheckBox x:Name="ChkIndexes" Content="Indexes" IsChecked="True" Margin="0,0,12,0"/>
+     <CheckBox x:Name="ChkConstraints" Content="Constraints" IsChecked="True" Margin="0,0,12,0"/>
+     <CheckBox x:Name="ChkViews" Content="Views" IsChecked="True" Margin="0,0,12,0"/>
+     <CheckBox x:Name="ChkRoutines" Content="Procedures and functions" IsChecked="True" Margin="0,0,12,0"/>
+     <CheckBox x:Name="ChkTriggers" Content="Triggers" IsChecked="True"/>
+    </WrapPanel>
+
+    <TextBlock Grid.Row="1" Grid.Column="0" Text="Result:" VerticalAlignment="Center" Margin="0,0,8,4" FontWeight="SemiBold"/>
+    <WrapPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,0,0,4">
+     <CheckBox x:Name="ChkIgnoreWhitespace" Content="Ignore whitespace/comment only differences" Margin="0,0,12,0"
+               ToolTip="Definitions that differ only by formatting are reported as information and are not scripted"/>
+     <CheckBox x:Name="ChkShowInformational" Content="Show informational entries" IsChecked="True" Margin="0,0,12,0"/>
+     <CheckBox x:Name="ChkRowCounts" Content="Read row counts (slower)" ToolTip="Reads sys.partitions to report the approximate row count of dropped tables"/>
+    </WrapPanel>
+
+    <TextBlock Grid.Row="2" Grid.Column="0" Text="Script:" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold"/>
+    <WrapPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3">
+     <CheckBox x:Name="ChkScriptDrops" Content="Include DROP statements" IsChecked="True" Margin="0,0,12,0"
+               ToolTip="Objects that exist only in the target are dropped"/>
+     <CheckBox x:Name="ChkScriptAlter" Content="Include ALTER COLUMN statements" IsChecked="True" Margin="0,0,12,0"
+               ToolTip="High risk statements; unchecked emits them as comments"/>
+     <CheckBox x:Name="ChkScriptIndexes" Content="Include indexes and constraints" IsChecked="True"/>
+    </WrapPanel>
+   </Grid>
+  </Border>
+
+  <!-- Actions -->
+  <DockPanel Grid.Row="3" Margin="0,0,0,6">
+   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+    <ProgressBar x:Name="CompareProgress" Width="120" Height="6" IsIndeterminate="True" VerticalAlignment="Center"
+                 Margin="0,0,10,0" Visibility="Collapsed"/>
+    <Button x:Name="CancelButton" Content="Cancel" Width="80" Click="Cancel_Click" IsEnabled="False" Margin="0,0,5,0"/>
+    <Button x:Name="CompareButton" Content="Compare" Width="100" Click="Compare_Click" Style="{DynamicResource PrimaryButtonStyle}"/>
+   </StackPanel>
+   <TextBlock x:Name="StatusText" Text="Select a source and a target, then click Compare." VerticalAlignment="Center"
+              TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}">
+    <TextBlock.Style>
+     <Style TargetType="TextBlock">
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Style.Triggers>
+       <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Error">
+        <Setter Property="Foreground" Value="#E5534B"/>
+       </DataTrigger>
+       <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Warning">
+        <Setter Property="Foreground" Value="#D99A22"/>
+       </DataTrigger>
+       <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Success">
+        <Setter Property="Foreground" Value="#3AA675"/>
+       </DataTrigger>
+      </Style.Triggers>
+     </Style>
+    </TextBlock.Style>
+   </TextBlock>
+  </DockPanel>
+
+  <!-- Filters -->
+  <DockPanel Grid.Row="4" Margin="0,0,0,4">
+   <TextBlock x:Name="FilterSummaryText" DockPanel.Dock="Right" VerticalAlignment="Center" Opacity="0.8"/>
+   <StackPanel Orientation="Horizontal">
+    <TextBlock Text="Show:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+    <ComboBox x:Name="FilterStatusCombo" Width="130" SelectionChanged="Filter_Changed" SelectedIndex="0">
+     <ComboBoxItem Content="All differences"/>
+     <ComboBoxItem Content="To create"/>
+     <ComboBoxItem Content="To drop"/>
+     <ComboBoxItem Content="To alter"/>
+    </ComboBox>
+    <TextBlock Text="Search:" VerticalAlignment="Center" Margin="12,0,5,0"/>
+    <TextBox x:Name="SearchBox" Width="240" TextChanged="SearchBox_TextChanged"
+             ToolTip="Filters the list by object name or by the summary of the difference"/>
+   </StackPanel>
+  </DockPanel>
+
+  <!-- Differences -->
+  <DataGrid x:Name="DifferenceGrid" Grid.Row="5" IsReadOnly="True" AutoGenerateColumns="False" SelectionMode="Single"
+            SelectionChanged="DifferenceGrid_SelectionChanged" MouseDoubleClick="DifferenceGrid_MouseDoubleClick"
+            RowStyle="{StaticResource SchemaDiffRowStyle}"
+            Style="{DynamicResource ToolThemedDataGridStyle}"
+            ColumnHeaderStyle="{DynamicResource ToolThemedDataGridColumnHeaderStyle}"
+            CellStyle="{DynamicResource ToolThemedDataGridCellStyle}">
+   <DataGrid.Columns>
+    <DataGridTextColumn Header="Object" Binding="{Binding ObjectName}" Width="*" MinWidth="200"/>
+    <DataGridTextColumn Header="Type" Binding="{Binding TypeText}" Width="100"/>
+    <DataGridTemplateColumn Header="Status" Width="90">
+     <DataGridTemplateColumn.CellTemplate>
+      <DataTemplate>
+       <TextBlock Text="{Binding StatusText}" Style="{StaticResource SchemaStatusTextStyle}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+      </DataTemplate>
+     </DataGridTemplateColumn.CellTemplate>
+    </DataGridTemplateColumn>
+    <DataGridTextColumn Header="Details" Binding="{Binding Summary}" Width="2*" MinWidth="200"/>
+   </DataGrid.Columns>
+  </DataGrid>
+
+  <GridSplitter Grid.Row="6" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+
+  <!-- Selected difference details and the generated script -->
+  <Grid Grid.Row="7">
+   <Grid.RowDefinitions>
+    <RowDefinition Height="Auto"/>
+    <RowDefinition Height="Auto"/>
+    <RowDefinition Height="Auto"/>
+    <RowDefinition Height="*"/>
+   </Grid.RowDefinitions>
+
+   <DockPanel Grid.Row="0" Margin="0,2,0,4">
+    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+     <CheckBox x:Name="SelectedOnlyCheck" Content="Script the selected difference only" VerticalAlignment="Center"
+               Margin="0,0,10,0" Click="RegenerateScript_Click"/>
+     <Button Content="Copy script" Click="CopyScript_Click"/>
+     <Button Content="Open in new query window" Margin="5,0,0,0" Click="OpenScript_Click" Style="{DynamicResource PrimaryButtonStyle}"/>
+     <Button Content="Save script..." Margin="5,0,0,0" Click="SaveScript_Click"/>
+    </StackPanel>
+    <TextBlock Text="Selected difference (source / target)" FontWeight="Bold" VerticalAlignment="Center"/>
+   </DockPanel>
+
+   <DataGrid x:Name="DetailGrid" Grid.Row="1" Height="120" IsReadOnly="True" AutoGenerateColumns="False"
+             Style="{DynamicResource ToolThemedDataGridStyle}"
+             ColumnHeaderStyle="{DynamicResource ToolThemedDataGridColumnHeaderStyle}"
+             CellStyle="{DynamicResource ToolThemedDataGridCellStyle}"
+             RowStyle="{DynamicResource ToolThemedDataGridRowStyle}">
+    <DataGrid.Columns>
+     <DataGridTextColumn Header="Property" Binding="{Binding Property}" Width="150"/>
+     <DataGridTextColumn Header="Source (baseline)" Binding="{Binding SourceValue}" Width="*"/>
+     <DataGridTextColumn Header="Target (current)" Binding="{Binding TargetValue}" Width="*"/>
+    </DataGrid.Columns>
+   </DataGrid>
+
+   <DockPanel Grid.Row="2" Margin="0,6,0,4">
+    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+     <Button Content="Generate script" Click="RegenerateScript_Click"/>
+    </StackPanel>
+    <TextBlock Text="Generated sync script (updates the target to match the source)" FontWeight="Bold" VerticalAlignment="Center"/>
+   </DockPanel>
+
+   <avalonedit:TextEditor x:Name="ScriptEditor" Grid.Row="3" FontFamily="Consolas" FontSize="12" IsReadOnly="True"
+                          ShowLineNumbers="True" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"/>
+  </Grid>
+ </Grid>
+</UserControl>

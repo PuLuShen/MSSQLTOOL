@@ -1,0 +1,684 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+    <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
+    <UseWinFormsOutOfProcDesigner>True</UseWinFormsOutOfProcDesigner>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x86'">
+    <UseWinFormsOutOfProcDesigner>True</UseWinFormsOutOfProcDesigner>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|arm64'">
+    <UseWinFormsOutOfProcDesigner>True</UseWinFormsOutOfProcDesigner>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|arm64'">
+    <UseWinFormsOutOfProcDesigner>True</UseWinFormsOutOfProcDesigner>
+  </PropertyGroup>
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectTypeGuids>{82b43b9b-a64c-4715-b499-d71e9ca2bd60};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <ProjectGuid>{0053E521-4D51-4E8C-B3E6-3DAC1912037B}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>MSSQLTool</RootNamespace>
+    <AssemblyName>MSSQLTool</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <RuntimeIdentifier>win</RuntimeIdentifier>
+    <RuntimeIdentifiers>win</RuntimeIdentifiers>
+    <SsmsInstallRoot Condition="'$(SsmsInstallRoot)' == ''">C:\Program Files\Microsoft SQL Server Management Studio 22\Release</SsmsInstallRoot>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <UseCodebase>true</UseCodebase>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
+    <IncludeDebugSymbolsInLocalVSIXDeployment>false</IncludeDebugSymbolsInLocalVSIXDeployment>
+    <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
+    <CopyOutputSymbolsToOutputDirectory>true</CopyOutputSymbolsToOutputDirectory>
+    <StartAction>Program</StartAction>
+    <StartProgram Condition="'$(DevEnvDir)' != ''">$(DevEnvDir)devenv.exe</StartProgram>
+    <StartArguments>/rootsuffix Exp</StartArguments>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <CopyVsixExtensionFiles>True</CopyVsixExtensionFiles>
+    <CopyVsixExtensionLocation>$(SsmsInstallRoot)\Common7\IDE\Extensions\MSSQLTool\</CopyVsixExtensionLocation>
+    <DeployExtension>False</DeployExtension>
+    <UseWinFormsOutOfProcDesigner>True</UseWinFormsOutOfProcDesigner>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <UseWinFormsOutOfProcDesigner>True</UseWinFormsOutOfProcDesigner>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="DataImport\DataImportWindow.cs" />
+    <Compile Include="DataImport\DataImportWindowCommand.cs" />
+    <Compile Include="DataImport\DataImportWindowControl.xaml.cs">
+      <DependentUpon>DataImportWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Modules\ExcelImport.cs" />
+    <Compile Include="Modules\ScriptObjectDefinition.cs" />
+    <Compile Include="Commands\Dialogs\FormatOptionsDialog.xaml.cs">
+      <DependentUpon>FormatOptionsDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Commands\Dialogs\ScriptObjectPickerDialog.xaml.cs">
+      <DependentUpon>ScriptObjectPickerDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="SchemaCompare\SchemaModel.cs" />
+    <Compile Include="SchemaCompare\SchemaCompareConnectionFactory.cs" />
+    <Compile Include="SchemaCompare\SchemaCompareSettings.cs" />
+    <Compile Include="SchemaCompare\SchemaReader.cs" />
+    <Compile Include="SchemaCompare\SchemaComparer.cs" />
+    <Compile Include="SchemaCompare\SchemaCompareWindow.cs" />
+    <Compile Include="SchemaCompare\SchemaCompareWindowCommand.cs" />
+    <Compile Include="SchemaCompare\SchemaCompareWindowControl.xaml.cs">
+      <DependentUpon>SchemaCompareWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="QuickSearch\QuickSearchDatabaseCatalog.cs" />
+    <Compile Include="QuickSearch\QuickSearchMatcher.cs" />
+    <Compile Include="QuickSearch\QuickSearchSearchEngine.cs" />
+    <Compile Include="QuickSearch\QuickSearchSettings.cs" />
+    <Compile Include="QuickSearch\QuickSearchWindow.cs" />
+    <Compile Include="QuickSearch\QuickSearchWindowCommand.cs" />
+    <Compile Include="QuickSearch\QuickSearchWindowControl.xaml.cs">
+      <DependentUpon>QuickSearchWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="QuickSearch\TextMarkerService.cs" />
+    <Compile Include="QueryTemplates\QueryTemplateLibrary.cs" />
+    <Compile Include="QueryTemplates\QueryTemplateInsertionService.cs" />
+    <Compile Include="QueryTemplates\CreateQueryTemplateDialog.xaml.cs">
+      <DependentUpon>CreateQueryTemplateDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="QueryTemplates\QueryTemplatePickerDialog.xaml.cs">
+      <DependentUpon>QueryTemplatePickerDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="QueryTemplates\QueryTemplateWindow.cs" />
+    <Compile Include="QueryTemplates\QueryTemplateWindowCommand.cs" />
+    <Compile Include="QueryTemplates\QueryTemplateWindowControl.xaml.cs">
+      <DependentUpon>QueryTemplateWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="SyncToGitHub\DatabaseScripterToolWindow.cs" />
+    <Compile Include="SyncToGitHub\DatabaseScripterToolWindowCommand.cs" />
+    <Compile Include="SyncToGitHub\DatabaseScripterToolWindowControl.xaml.cs">
+      <DependentUpon>DatabaseScripterToolWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Modules\AuroraCore.cs" />
+    <Compile Include="Modules\AsteriskExpansionService.cs" />
+    <Compile Include="Modules\FeatureDiagnostics.cs" />
+    <Compile Include="Modules\EditorEditTransaction.cs" />
+    <Compile Include="Modules\DatabaseIdentifier.cs" />
+    <Compile Include="Modules\QueryHistoryPrivacy.cs" />
+    <Compile Include="Modules\QueryHistorySqliteStore.cs" />
+    <Compile Include="UpdateChecker.cs" />
+    <Compile Include="UpdateInfoBar.cs" />
+    <Compile Include="Commands\CommandProcessor.cs" />
+    <Compile Include="Commands\ExportGridToAsInsertsCommand.cs" />
+    <Compile Include="Commands\FormatQueryCommand.cs" />
+    <Compile Include="Commands\OpenTemplatesFolderCommand.cs" />
+    <Compile Include="Commands\RefreshTemplatesCommand.cs" />
+    <Compile Include="Commands\RefreshCompletionMetadataCommand.cs" />
+    <Compile Include="Commands\ResultGridCommands.cs" />
+    <Compile Include="Commands\ScriptSelectedObject.cs" />
+    <Compile Include="Commands\SelectCurrentStatementCommand.cs" />
+    <Compile Include="Commands\ToggleBlockCommentCommand.cs" />
+    <Compile Include="SnippetManager\SnippetItem.cs" />
+    <Compile Include="SnippetManager\SnippetService.cs" />
+    <Compile Include="SnippetManager\SnippetVariableProcessor.cs" />
+    <Compile Include="SnippetManager\SnippetManagerWindow.cs" />
+    <Compile Include="SnippetManager\SnippetManagerWindowCommand.cs" />
+    <Compile Include="SnippetManager\SnippetManagerViewModel.cs" />
+    <Compile Include="SnippetManager\SnippetManagerWindowControl.xaml.cs">
+      <DependentUpon>SnippetManagerWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="DataTransfer\DataTransferWindow.cs" />
+    <Compile Include="DataTransfer\DataTransferWindowCommand.cs" />
+    <Compile Include="DataTransfer\DataTransferWindowControl.xaml.cs">
+      <DependentUpon>DataTransferWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="HealthDashboards\HealthDashboard_Server.cs" />
+    <Compile Include="HealthDashboards\HealthDashboard_ServerCommand.cs" />
+    <Compile Include="HealthDashboards\HealthDashboard_ServerControl.xaml.cs">
+      <DependentUpon>HealthDashboard_ServerControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="HealthDashboards\HealthDashboard_Servers.cs" />
+    <Compile Include="HealthDashboards\HealthDashboard_ServersCommand.cs" />
+    <Compile Include="HealthDashboards\HealthDashboard_ServersControl.xaml.cs">
+      <DependentUpon>HealthDashboard_ServersControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Modules\ResultGridControlAdaptor.cs" />
+    <Compile Include="Modules\GridAccess.cs" />
+    <Compile Include="Modules\KeypressCommandFilter.cs" />
+    <Compile Include="Modules\MetricsService.cs" />
+    <Compile Include="Modules\LocalizationManager.cs" />
+    <Compile Include="Modules\ToolWindowThemeSupport.cs" />
+    <Compile Include="Modules\ScriptFactoryAccess.cs" />
+    <Compile Include="Modules\ShortcutManager.cs" />
+    <Compile Include="Modules\StatusFeedback.cs" />
+    <Compile Include="Modules\SettingsManager.cs" />
+    <Compile Include="Modules\FormatterOptions.cs" />
+    <Compile Include="Modules\FormatterLayoutRules.cs" />
+    <Compile Include="Modules\SQLBuilds.cs" />
+    <Compile Include="Modules\TsqlFormatter.cs" />
+    <Compile Include="Modules\WindowsCredentialHelper.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="MSSQLToolPackage.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="QueryHistory\QueryHistoryRecord.cs" />
+    <Compile Include="QueryHistory\QueryHistoryEntry.cs" />
+    <Compile Include="QueryHistory\QueryHistoryViewModel.cs" />
+    <Compile Include="QueryHistory\QueryHistoryWindow.cs" />
+    <Compile Include="QueryHistory\QueryHistoryWindowCommand.cs" />
+    <Compile Include="QueryHistory\QueryHistoryWindowControl.xaml.cs">
+      <DependentUpon>QueryHistoryWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="QueryHistory\RelayCommand.cs" />
+    <Compile Include="StatisticsSummary\StatisticsSummary.cs" />
+    <Compile Include="StatisticsSummary\StatisticsSummaryParser.cs" />
+    <Compile Include="StatisticsSummary\StatisticsSummaryStore.cs" />
+    <Compile Include="StatisticsSummary\StatisticsSummaryViewModel.cs" />
+    <Compile Include="StatisticsSummary\StatisticsSummaryWindow.cs" />
+    <Compile Include="StatisticsSummary\StatisticsSummaryWindowCommand.cs" />
+    <Compile Include="StatisticsSummary\StatisticsSummaryWindowControl.xaml.cs">
+      <DependentUpon>StatisticsSummaryWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="SqlServerBuilds\SqlServerBuildsWindow.cs" />
+    <Compile Include="SqlServerBuilds\SqlServerBuildsWindowCommand.cs" />
+    <Compile Include="SqlServerBuilds\SqlServerBuildsWindowControl.xaml.cs">
+      <DependentUpon>SqlServerBuildsWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="SyncToGitHub\GitHubSyncProfile.cs" />
+    <Compile Include="SyncToGitHub\GitRepo.cs" />
+    <Compile Include="SyncToGitHub\ProfileStore.cs" />
+    <Compile Include="WindowAbout\AboutWindow.cs" />
+    <Compile Include="WindowAbout\AboutWindowCommand.cs" />
+    <Compile Include="WindowAbout\AboutWindowControl.xaml.cs">
+      <DependentUpon>AboutWindowControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="WindowSettings\SettingsWindow.cs" />
+    <Compile Include="WindowSettings\SettingsWindowCommand.cs" />
+    <Compile Include="WindowSettings\SettingsWindowControl.xaml.cs">
+      <DependentUpon>SettingsWindowControl.xaml</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="LICENSE">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <EmbeddedResource Include="QuickSearch\sql.xshd" />
+    <None Include="source.extension.vsixmanifest">
+      <SubType>Designer</SubType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Installer\Install-Or-Reinstall.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Installer\安装或重装.cmd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <Compile Include="Completion\CompletionController.cs" />
+    <Compile Include="Completion\CompletionModels.cs" />
+    <Compile Include="Completion\CompletionPopupPlacement.cs" />
+    <Compile Include="Completion\CompletionPresenter.cs" />
+    <Compile Include="Completion\CompletionUsageStore.cs" />
+    <Compile Include="Completion\SqlCompletionAnalyzer.cs" />
+    <Compile Include="Completion\SqlMetadataCache.cs" />
+    <Compile Include="Completion\SqlSemanticModel.cs" />
+    <Compile Include="Completion\SqlSymbolResolver.cs" />
+    <Compile Include="Completion\SqlTextContext.cs" />
+    <Reference Include="ICSharpCode.AvalonEdit">
+      <HintPath>$(NuGetPackageRoot)avalonedit\6.3.1.120\lib\net462\ICSharpCode.AvalonEdit.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="OxyPlot">
+      <HintPath>$(NuGetPackageRoot)oxyplot.core\2.2.0\lib\net462\OxyPlot.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="OxyPlot.Wpf.Shared">
+      <HintPath>$(NuGetPackageRoot)oxyplot.wpf.shared\2.2.0\lib\net462\OxyPlot.Wpf.Shared.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="OxyPlot.Wpf">
+      <HintPath>$(NuGetPackageRoot)oxyplot.wpf\2.2.0\lib\net462\OxyPlot.Wpf.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <!-- Explicit NuGet references are required by the legacy WPF temporary project. -->
+    <Reference Include="DocumentFormat.OpenXml">
+      <HintPath>$(NuGetPackageRoot)documentformat.openxml\3.5.1\lib\net46\DocumentFormat.OpenXml.dll</HintPath>
+    </Reference>
+    <Reference Include="DocumentFormat.OpenXml.Framework">
+      <HintPath>$(NuGetPackageRoot)documentformat.openxml.framework\3.5.1\lib\net46\DocumentFormat.OpenXml.Framework.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Bcl.AsyncInterfaces">
+      <HintPath>$(NuGetPackageRoot)microsoft.bcl.asyncinterfaces\10.0.10\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Bcl.HashCode">
+      <HintPath>$(NuGetPackageRoot)microsoft.bcl.hashcode\1.1.1\ref\net461\Microsoft.Bcl.HashCode.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.DependencyInjection.Abstractions">
+      <HintPath>$(NuGetPackageRoot)microsoft.extensions.dependencyinjection.abstractions\8.0.2\lib\net462\Microsoft.Extensions.DependencyInjection.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions">
+      <HintPath>$(NuGetPackageRoot)microsoft.extensions.logging.abstractions\8.0.2\lib\net462\Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="NLog">
+      <HintPath>$(NuGetPackageRoot)nlog\6.1.4\lib\net46\NLog.dll</HintPath>
+    </Reference>
+    <Reference Include="Octokit">
+      <HintPath>$(NuGetPackageRoot)octokit\14.0.0\lib\netstandard2.0\Octokit.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Buffers">
+      <HintPath>$(NuGetPackageRoot)system.buffers\4.6.1\lib\net462\System.Buffers.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Collections.Immutable">
+      <HintPath>$(NuGetPackageRoot)system.collections.immutable\10.0.10\lib\net462\System.Collections.Immutable.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Diagnostics.DiagnosticSource">
+      <HintPath>$(NuGetPackageRoot)system.diagnostics.diagnosticsource\8.0.1\lib\net462\System.Diagnostics.DiagnosticSource.dll</HintPath>
+    </Reference>
+    <Reference Include="System.IO.Pipelines">
+      <HintPath>$(NuGetPackageRoot)system.io.pipelines\10.0.10\lib\net462\System.IO.Pipelines.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>$(NuGetPackageRoot)system.memory\4.6.3\lib\net462\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Runtime">
+      <HintPath>$(FrameworkPathOverride)\Facades\System.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Tasks">
+      <HintPath>$(FrameworkPathOverride)\Facades\System.Threading.Tasks.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Data.Common">
+      <HintPath>$(FrameworkPathOverride)\Facades\System.Data.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="netstandard">
+      <HintPath>$(FrameworkPathOverride)\Facades\netstandard.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>$(NuGetPackageRoot)system.numerics.vectors\4.6.1\lib\net462\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>$(NuGetPackageRoot)system.runtime.compilerservices.unsafe\6.1.2\lib\net462\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Security.Cryptography.ProtectedData">
+      <HintPath>$(NuGetPackageRoot)system.security.cryptography.protecteddata\10.0.10\lib\net462\System.Security.Cryptography.ProtectedData.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.Encodings.Web">
+      <HintPath>$(NuGetPackageRoot)system.text.encodings.web\10.0.10\lib\net462\System.Text.Encodings.Web.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Text.Json">
+      <HintPath>$(NuGetPackageRoot)system.text.json\10.0.10\lib\net462\System.Text.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Channels">
+      <HintPath>$(NuGetPackageRoot)system.threading.channels\8.0.0\lib\net462\System.Threading.Channels.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Extensions">
+      <HintPath>$(NuGetPackageRoot)system.threading.tasks.extensions\4.6.3\lib\net462\System.Threading.Tasks.Extensions.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="EnvDTE">
+      <HintPath>$(NuGetPackageRoot)envdte\17.14.40260\lib\net472\envdte.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="EnvDTE80">
+      <HintPath>$(NuGetPackageRoot)envdte80\17.14.40260\lib\net472\envdte80.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.Dac">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Extensions\Application\Microsoft.SqlServer.Dac.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.Dac.Extensions">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Extensions\Application\Microsoft.SqlServer.Dac.Extensions.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.Data.Tools.Schema.Sql">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Extensions\Application\Microsoft.Data.Tools.Schema.Sql.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.Data.Tools.Schema.Tasks.Sql">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Extensions\Application\Microsoft.Data.Tools.Schema.Tasks.Sql.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.Data.Tools.Utilities">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Extensions\Application\Microsoft.Data.Tools.Utilities.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.Data.SqlClient">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.Data.SqlClient.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- The local query history store talks to the SQLite engine that ships with SSMS. The
+         managed provider is deployed with the extension so the matching 3.0.2 API surface is
+         always present. -->
+    <Reference Include="SQLitePCLRaw.core">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\SQLite\SQLitePCLRaw.core.dll</HintPath>
+    </Reference>
+    <Reference Include="SQLitePCLRaw.batteries_v2">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\SQLite\SQLitePCLRaw.batteries_v2.dll</HintPath>
+    </Reference>
+    <Reference Include="SQLitePCLRaw.provider.e_sqlite3">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\SQLite\SQLitePCLRaw.provider.e_sqlite3.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.CommandBars">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.CommandBars.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Imaging">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.VisualStudio.Imaging.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.ImageCatalog">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.VisualStudio.ImageCatalog.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Imaging.Interop.14.0.DesignTime">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.Imaging.Interop.14.0.DesignTime.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Interop">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.Interop.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.OLE.Interop">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.OLE.Interop.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.15.0">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.Shell.15.0.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Framework">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.Shell.Framework.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Shell.Interop">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.Shell.Interop.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.TextManager.Interop">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.TextManager.Interop.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Threading">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.Threading.17.x\Microsoft.VisualStudio.Threading.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.ConnectionInfo, Version=17.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.SqlServer.ConnectionInfo.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.GridControl">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.SqlServer.GridControl.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.Management.Sdk.Sfc, Version=17.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.SqlServer.Management.Sdk.Sfc.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.RegSvrEnum, Version=17.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.SqlServer.RegSvrEnum.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.SqlServer.Smo, Version=17.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.SqlServer.Smo.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualBasic" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PrivateAssemblies\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SQLEditors">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Extensions\Application\SQLEditors.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SqlPackageBase">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\SqlPackageBase.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SqlWorkbench.Interfaces">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\SqlWorkbench.Interfaces.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Design" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Security" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Web" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Xml" />
+    <Reference Include="Microsoft.SqlServer.TransactSql.ScriptDom">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Extensions\Application\Microsoft.SqlServer.TransactSql.ScriptDom.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="WindowsBase" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="AvalonEdit">
+      <Version>6.3.1.120</Version>
+    </PackageReference>
+    <PackageReference Include="DocumentFormat.OpenXml">
+      <Version>3.5.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.5.40034">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="NLog">
+      <Version>6.1.4</Version>
+    </PackageReference>
+    <PackageReference Include="Octokit">
+      <Version>14.0.0</Version>
+    </PackageReference>
+    <PackageReference Include="OxyPlot.Wpf">
+      <Version>2.2.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces">
+      <Version>10.0.10</Version>
+    </PackageReference>
+    <PackageReference Include="System.Buffers">
+      <Version>4.6.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Collections.Immutable">
+      <Version>10.0.10</Version>
+    </PackageReference>
+    <PackageReference Include="System.Memory">
+      <Version>4.6.3</Version>
+    </PackageReference>
+    <PackageReference Include="System.Net.Http">
+      <Version>4.3.4</Version>
+    </PackageReference>
+    <PackageReference Include="System.Numerics.Vectors">
+      <Version>4.6.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe">
+      <Version>6.1.2</Version>
+    </PackageReference>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData">
+      <Version>10.0.10</Version>
+    </PackageReference>
+    <PackageReference Include="System.Text.Encodings.Web">
+      <Version>10.0.10</Version>
+    </PackageReference>
+    <PackageReference Include="System.Text.Json">
+      <Version>10.0.10</Version>
+    </PackageReference>
+    <PackageReference Include="System.Threading.Tasks.Extensions">
+      <Version>4.6.3</Version>
+    </PackageReference>
+    <PackageReference Include="System.ValueTuple">
+      <Version>4.6.2</Version>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <VSCTCompile Include="MSSQLToolPackage.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Resources\attention.png" />
+    <Content Include="Resources\compare-schemas.png" />
+    <Content Include="Resources\data-source-target.png" />
+    <Content Include="Resources\database-scripter.png" />
+    <Content Include="Resources\grid-to-temp-table.png" />
+    <Content Include="Resources\info.png" />
+    <Resource Include="Resources\logo.png" />
+    <Resource Include="..\pics\赞赏码.png">
+      <Link>Resources\appreciation.png</Link>
+    </Resource>
+    <Content Include="Resources\open-folder.png" />
+    <Resource Include="Resources\play.png" />
+    <Content Include="Resources\query-history.png" />
+    <Content Include="Resources\refresh.png" />
+    <Resource Include="Resources\save.png" />
+    <Content Include="Resources\script.png" />
+    <Resource Include="Resources\send.png" />
+    <Content Include="Resources\search.png" />
+    <Content Include="Resources\select.png" />
+    <Content Include="Resources\server-health.png" />
+    <Content Include="Resources\settings.png" />
+    <Content Include="Resources\snippet.png" />
+    <Content Include="Resources\sql-build-info.png" />
+    <Content Include="Resources\statistics-summary.png" />
+    <Content Include="Resources\template.png" />
+    <Content Include="Resources\toggle-comment.png" />
+    <Content Include="Resources\vsix-logo.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="Resources\wizard.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <Page Include="Commands\Dialogs\FormatOptionsDialog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Commands\Dialogs\ScriptObjectPickerDialog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="DataImport\DataImportWindowControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="SchemaCompare\SchemaCompareWindowControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="QuickSearch\QuickSearchWindowControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="QueryTemplates\QueryTemplateWindowControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="QueryTemplates\CreateQueryTemplateDialog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="QueryTemplates\QueryTemplatePickerDialog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="SnippetManager\SnippetManagerWindowControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="StatisticsSummary\StatisticsSummaryWindowControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="SyncToGitHub\DatabaseScripterToolWindowControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="DataTransfer\DataTransferWindowControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>XamlIntelliSenseFileGenerator</Generator>
+    </Page>
+    <Page Include="HealthDashboards\HealthDashboard_ServerControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>XamlIntelliSenseFileGenerator</Generator>
+    </Page>
+    <Page Include="HealthDashboards\HealthDashboard_ServersControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>XamlIntelliSenseFileGenerator</Generator>
+    </Page>
+    <Page Include="QueryHistory\QueryHistoryWindowControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="SqlServerBuilds\SqlServerBuildsWindowControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="WindowAbout\AboutWindowControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="WindowSettings\SettingsWindowControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Themes\SharedToolWindowTheme.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup />
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="Exists('$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets')" />
+  <PropertyGroup>
+    <PostBuildEvent>powershell -NoProfile -ExecutionPolicy Bypass -Command "&amp; { $ErrorActionPreference = 'Stop'; $manifest = '$(ProjectDir)source.extension.vsixmanifest'; [xml]$xml = Get-Content $manifest; $version = $xml.PackageManifest.Metadata.Identity.Version; $vsix = Join-Path '$(TargetDir)' 'MSSQLTool.vsix'; $installerScript = Join-Path '$(TargetDir)' 'Installer\Install-Or-Reinstall.ps1'; $installerCommand = Join-Path '$(TargetDir)' 'Installer\安装或重装.cmd'; $baseName = 'MSSQLTool_SSMS22_' + $version; $destinationDirectory = [IO.Path]::GetFullPath((Join-Path '$(ProjectDir)' '..\artifacts')); New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null; $versionedVsix = Join-Path $destinationDirectory ($baseName + '.vsix'); $dest = Join-Path $destinationDirectory ($baseName + '.zip'); Copy-Item -LiteralPath $vsix -Destination $versionedVsix -Force; Compress-Archive -LiteralPath @($vsix, $installerScript, $installerCommand) -DestinationPath $dest -Force }"
+</PostBuildEvent>
+  </PropertyGroup>
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>

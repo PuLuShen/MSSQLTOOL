@@ -1,0 +1,112 @@
+<Window x:Class="MSSQLTool.QueryTemplatePickerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
+        Title="Query Templates"
+        Width="1000" Height="640" MinWidth="720" MinHeight="440"
+        WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="False"
+        Background="{DynamicResource ToolThemeBackgroundBrush}"
+        Foreground="{DynamicResource ToolThemeForegroundBrush}"
+        Loaded="Window_Loaded"
+        Closed="Window_Closed"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/MSSQLTool;component/Themes/SharedToolWindowTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <DockPanel Margin="10">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button Content="New category" Padding="10,3" Click="NewCategoryButton_Click"
+                    ToolTip="Create a subfolder in the selected category (or in the root when nothing is selected)" />
+            <Button Content="New statement" Padding="10,3" Margin="6,0,0,0" Click="NewStatementButton_Click"
+                    ToolTip="Create a new statement file in the selected category, seeded with the current editor selection when available" />
+            <Button x:Name="RenameButton" Content="Rename" Padding="10,3" Margin="6,0,0,0" Click="RenameButton_Click" />
+            <Button x:Name="DeleteButton" Content="Delete" Padding="10,3" Margin="6,0,0,0" Click="DeleteButton_Click" />
+            <Border Width="1" Height="20" Background="{DynamicResource ToolThemeBorderBrush}" Margin="10,0,4,0" />
+            <Button Content="Open folder" Padding="10,3" Click="OpenFolderButton_Click" />
+            <Button Content="Refresh" Padding="10,3" Margin="6,0,0,0" Click="RefreshButton_Click" />
+            <TextBlock x:Name="RootFolderText" Margin="14,0,0,0" VerticalAlignment="Center" Opacity="0.7"
+                       TextTrimming="CharacterEllipsis" MaxWidth="300" />
+        </StackPanel>
+
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Search:" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <TextBox Grid.Column="1" x:Name="SearchBox" Height="26" VerticalContentAlignment="Center"
+                     TextChanged="SearchBox_TextChanged"
+                     ToolTip="Filter statements by name or folder" />
+        </Grid>
+
+        <Grid DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="SaveButton" Content="Save" Width="80" Height="28" IsEnabled="False"
+                        Click="SaveButton_Click" ToolTip="Save edits made in the preview (Ctrl+S)" />
+                <Button x:Name="InsertButton" Content="Insert" Width="90" Height="28" Margin="6,0,0,0" FontWeight="Bold"
+                        Style="{DynamicResource PrimaryButtonStyle}" Click="InsertButton_Click" />
+                <Button x:Name="NewQueryButton" Content="Open in new query" Width="130" Height="28" Margin="6,0,0,0"
+                        Click="NewQueryButton_Click" />
+                <Button Content="Close" Width="80" Height="28" Margin="6,0,0,0" Click="CloseButton_Click" />
+            </StackPanel>
+        </Grid>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="320" MinWidth="220" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="*" MinWidth="320" />
+            </Grid.ColumnDefinitions>
+
+            <TreeView Grid.Column="0" x:Name="TemplateTree"
+                      Background="Transparent" BorderBrush="{DynamicResource ToolThemeBorderBrush}" BorderThickness="1"
+                      SelectedItemChanged="TemplateTree_SelectedItemChanged"
+                      MouseDoubleClick="TemplateTree_MouseDoubleClick"
+                      VirtualizingPanel.IsVirtualizing="False"
+                      ToolTip="Categories mirror the templates folder structure">
+                <TreeView.ItemContainerStyle>
+                    <Style TargetType="TreeViewItem">
+                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                        <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+                        <Setter Property="Foreground" Value="{DynamicResource ToolThemeForegroundBrush}" />
+                    </Style>
+                </TreeView.ItemContainerStyle>
+                <TreeView.ItemTemplate>
+                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Glyph}" Margin="0,0,5,0" />
+                            <TextBlock Text="{Binding Display}" />
+                        </StackPanel>
+                    </HierarchicalDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                          Background="{DynamicResource ToolThemeBorderBrush}" />
+
+            <DockPanel Grid.Column="2">
+                <TextBlock DockPanel.Dock="Top" x:Name="SelectedPathText" FontWeight="Bold" Margin="0,0,0,6"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                <avalonedit:TextEditor DockPanel.Dock="Top" x:Name="PreviewEditor" Margin="0"
+                                       ShowLineNumbers="True" FontFamily="Consolas" FontSize="13"
+                                       Background="{DynamicResource ToolThemeBackgroundBrush}"
+                                       Foreground="{DynamicResource ToolThemeForegroundBrush}"
+                                       IsReadOnly="False" HorizontalScrollBarVisibility="Auto"
+                                       VerticalScrollBarVisibility="Auto"
+                                       TextChanged="PreviewEditor_TextChanged" />
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -1,0 +1,34 @@
+# git-governance/sensitive-patterns.txt
+# 通用敏感模式清单（POSIX 扩展正则，每行一条；# 开头为注释，空行忽略）
+# 本机专属模式（本机用户名、本机路径等）请放 local-audit/patterns.local.txt，该目录永不入库。
+# 单行误报时可在该行结尾追加标记 audit-ok 人工放行。
+
+# --- 个人常用邮箱（提交身份之外出现在代码/文档/提交说明里同样危险） ---
+[A-Za-z0-9._%+-]+@(qq|foxmail|163|126|sina)\.(com|net|cn)
+[A-Za-z0-9._%+-]+@(outlook|hotmail|live)\.com
+
+# --- 本机用户目录与盘符路径 ---
+[C-Z]:\\[Uu]sers\\
+[C-Z]:/[Uu]sers/
+[C-Z]:\\\\[Uu]sers\\\\
+
+# --- 明文私钥与常见 token 形态 ---
+-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----
+ghp_[A-Za-z0-9]{20,}
+github_pat_[A-Za-z0-9_]{20,}
+xox[baprs]-[A-Za-z0-9-]{10,}
+AIza[A-Za-z0-9_-]{30,}
+sk-[A-Za-z0-9]{20,}
+
+# --- 代码/配置中的字面量密钥赋值（只抓字符串字面量，不抓变量传递） ---
+[Aa]pi[_-]?[Kk]ey[[:space:]]*=[[:space:]]*"[^"]{8,}"
+[Cc]lient[_-]?[Ss]ecret[[:space:]]*=[[:space:]]*"[^"]{8,}"
+[Ss]ecret[[:space:]]*=[[:space:]]*"[^"]{12,}"
+[Tt]oken[[:space:]]*=[[:space:]]*"[^"]{16,}"
+
+# --- 连接串里的明文口令（等号后紧跟值，如 ...;Password=...;...） ---
+[Pp]assword=[^;[:space:]"']{4,}
+[Pp][Ww][Dd]=[^;[:space:]"']{4,}
+
+# --- 中国大陆手机号（11 位，词边界防误伤长数字） ---
+1[3-9][0-9]{9}

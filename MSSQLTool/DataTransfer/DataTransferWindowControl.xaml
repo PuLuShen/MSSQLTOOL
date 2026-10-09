@@ -1,0 +1,102 @@
+<UserControl x:Class="MSSQLTool.DataTransferWindowControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource ToolThemeBackgroundBrush}"
+             Foreground="{DynamicResource ToolThemeForegroundBrush}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/MSSQLTool;component/Themes/SharedToolWindowTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="SQL Server Data Transfer" FontSize="20" FontWeight="SemiBold"/>
+        <Grid Grid.Row="1" Margin="0,12,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0" x:Name="Button_SelectSource" Content="Select source" Click="Button_SelectSource_Click" Margin="0,0,8,0"/>
+            <TextBlock Grid.Column="1" x:Name="Label_SourceDescription" VerticalAlignment="Center" Text="No source selected"/>
+            <Button Grid.Column="2" x:Name="Button_SelectTarget" Content="Select target" Click="Button_SelectTarget_Click" Margin="16,0,8,0"/>
+            <TextBlock Grid.Column="3" x:Name="Label_TargetDescription" VerticalAlignment="Center" Text="No target selected"/>
+        </Grid>
+        <GroupBox Grid.Row="2" Header="Source query" Margin="0,0,0,8">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                    <Button x:Name="Button_Preview" Content="Preview" Click="Button_Preview_Click" Padding="16,2" ToolTip="Run the source query and show the first 100 rows."/>
+                    <TextBlock x:Name="Label_PreviewStatus" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="Gray" Text="Run the source query preview to check its result."/>
+                </StackPanel>
+                <RichTextBox x:Name="RichTextBox_SourceQuery" VerticalScrollBarVisibility="Auto" AcceptsTab="True">
+                    <FlowDocument><Paragraph>SELECT TOP (1000) * FROM dbo.YourTable;</Paragraph></FlowDocument>
+                </RichTextBox>
+            </DockPanel>
+        </GroupBox>
+        <GroupBox Grid.Row="3" Header="Preview" Margin="0,0,0,8">
+            <DataGrid x:Name="PreviewGrid"
+                      Height="150"
+                      IsReadOnly="True"
+                      AutoGenerateColumns="True"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      EnableRowVirtualization="True"
+                      EnableColumnVirtualization="True"
+                      Style="{DynamicResource ToolThemedDataGridStyle}"
+                      ColumnHeaderStyle="{DynamicResource ToolThemedDataGridColumnHeaderStyle}"
+                      CellStyle="{DynamicResource ToolThemedDataGridCellStyle}"
+                      RowStyle="{DynamicResource ToolThemedDataGridRowStyle}"/>
+        </GroupBox>
+        <Grid Grid.Row="4" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="280"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <TextBlock Text="Target table" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox Grid.Column="1" x:Name="TextBox_TargetTable" TextChanged="TextBox_TargetTable_TextChanged"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="16,0,0,0">
+                <CheckBox x:Name="CheckBox_CreateTargetTable" Content="Create if missing" IsChecked="True" Margin="0,0,14,0" Checked="CheckBox_CreateTargetTable_Changed" Unchecked="CheckBox_CreateTargetTable_Changed"/>
+                <CheckBox x:Name="CheckBox_TruncateTargetTable" Content="Truncate first" Margin="0,0,14,0"/>
+                <CheckBox x:Name="CheckBox_KeepIdentity" Content="Keep identity"/>
+                <CheckBox x:Name="CheckBox_CheckConstraints" Content="Check constraints" Margin="14,0,0,0"/>
+                <CheckBox x:Name="CheckBox_FireTriggers" Content="Fire triggers" Margin="14,0,0,0"/>
+            </StackPanel>
+        </Grid>
+        <GroupBox Grid.Row="5" x:Name="Group_ColumnMapping" Header="Column Mapping" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock x:Name="Label_MappingInfo" Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,6"
+                           Text="Select source and target, then enter an existing target table to map columns."/>
+                <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="ItemsControl_ColumnMapping">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="240"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding SourceColumn}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceColumn}"/>
+                                    <TextBlock Grid.Column="1" Text="→" Margin="8,0" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="2" ItemsSource="{Binding TargetColumns}" SelectedItem="{Binding SelectedTarget, Mode=TwoWay}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </GroupBox>
+        <TextBlock Grid.Row="6" x:Name="Label_CopyProgress" Margin="0,0,0,0" Text="Ready."/>
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button x:Name="Button_Cancel" Content="Cancel" Click="Button_Cancel_Click" Visibility="Collapsed" Margin="0,0,8,0"/>
+            <Button x:Name="Button_CopyData" Content="Copy data" Click="ButtonCopyData_Click" IsEnabled="False"/>
+        </StackPanel>
+    </Grid>
+</UserControl>
