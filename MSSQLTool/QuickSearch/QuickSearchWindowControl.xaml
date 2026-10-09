@@ -47,20 +47,16 @@
             </Grid.RowDefinitions>       
         
             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="4,4,0,8">
-            
-                <Button Height="30"
-                        Width="220"
-                        Content="Select Target from Object Explorer"
-                        FontWeight="Bold"
-                        Click="Button_SelectConnection_Click" />
-                <Label Content="Server:" Margin="12,0,0,0" VerticalAlignment="Center"/>
+
+                <!-- The target comes from Object Explorer automatically; this list only switches server. -->
+                <Label Content="Server:" VerticalAlignment="Center"/>
                 <ComboBox x:Name="ComboBox_Server"
-                          Width="240"
+                          Width="280"
                           Height="24"
                           Margin="4,0,0,0"
                           VerticalContentAlignment="Center"
                           SelectionChanged="ComboBox_Server_SelectionChanged"
-                          ToolTip="Every server currently connected in Object Explorer. Pick one to search it, or select a node in Object Explorer first."/>
+                          ToolTip="Every server currently connected in Object Explorer. Pick one to search it."/>
                 <Label x:Name="Label_ConnectionDescription" Margin="8,0,0,0" VerticalAlignment="Center" Content="No connection selected"/>
             </StackPanel>
 
@@ -70,20 +66,27 @@
                     <ColumnDefinition Width="*" MinWidth="160"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Label Grid.Column="0" Content="Search for:" VerticalAlignment="Center"/>
-                <ComboBox Grid.Column="1"
-                          x:Name="ComboBox_SearchText"
-                          Margin="6,0,12,0"
-                          Height="24"
-                          IsEditable="True"
-                          IsTextSearchEnabled="False"
-                          VerticalContentAlignment="Center"
-                          ToolTip="Up/Down recall recent searches. Enter searches, Ctrl+Enter searches every database, Esc clears."
-                          KeyDown="ComboBox_SearchText_KeyDown"
-                          GotKeyboardFocus="ComboBox_SearchText_GotKeyboardFocus"
-                          PreviewTextInput="ComboBox_SearchText_PreviewTextInput"/>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                <!-- A plain TextBox: an editable ComboBox only accepts typing while its inner text box has
+                     the keyboard focus, which is what made this field look dead. -->
+                <TextBox Grid.Column="1"
+                         x:Name="TextBox_SearchText"
+                         Margin="6,0,0,0"
+                         Height="24"
+                         VerticalContentAlignment="Center"
+                         ToolTip="Up/Down recall recent searches. Enter searches, Ctrl+Enter searches every database, Esc clears."
+                         KeyDown="TextBox_SearchText_KeyDown"/>
+                <Button Grid.Column="2"
+                        x:Name="Button_SearchHistory"
+                        Content="▾"
+                        Width="24"
+                        Height="24"
+                        Margin="2,0,12,0"
+                        Click="Button_SearchHistory_Click"
+                        ToolTip="Recent searches"/>
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
                     <CheckBox x:Name="CheckBox_WholeWord" Content="Match whole words only" Margin="0,0,12,0"
                               Checked="CheckBox_WholeWord_Checked"
                               ToolTip="The term must match a whole identifier word. Combined with fuzzy matching, every word of the term must match a distinct word of the identifier."/>
@@ -94,7 +97,7 @@
                               Checked="CheckBox_Fuzzy_Checked"
                               ToolTip="Tolerates typos and separator differences, so uspGetOrd also finds usp_GetOrder. Cannot be combined with wildcards."/>
                 </StackPanel>
-                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="Button_Search" Content="Search" Width="90" Height="28" Click="Button_Search_Click" Style="{DynamicResource PrimaryButtonStyle}"/>
                     <Button x:Name="Button_CopyResults" Content="Copy results" Width="110" Height="28" Margin="6,0,0,0" Click="Button_CopyResults_Click"
                             ToolTip="Copy every result row as text (database, type, schema, object, location, match preview)."/>

@@ -73,69 +73,110 @@ namespace MSSQLTool
             }
 
             ListBox_Databases.ItemsSource = databaseItems;
-            ComboBox_SearchText.ItemsSource = recentTerms;
             PopulateDatabaseModeOptions();
             LoadRecentTerms();
             UpdateDatabaseSummary();
+            BuildSearchHistoryMenu();
 
-            // An editable ComboBox only accepts typing while its inner TextBox holds the keyboard
-            // focus; clicking the control (or the tool window becoming active) can leave the focus on
-            // the ComboBox itself, which looks exactly like "the search box cannot be typed into".
-            ComboBox_SearchText.GotKeyboardFocus += ComboBox_SearchText_GotKeyboardFocus;
-            Loaded += (_, __) => { RefreshServerList(); FocusSearchBox(); };
-            IsVisibleChanged += (_, __) => { if (IsVisible) FocusSearchBox(); };
+            // The search field is a plain TextBox now, but the tool window still has to be given the
+            // keyboard focus when it appears: without that, the shell keeps the keystrokes.
+            Loaded += (_, __) => OnWindowAppeared();
+            IsVisibleChanged += (_, __) => { if (IsVisible) OnWindowAppeared(); };
+            PreviewKeyDown += QuickSearchWindowControl_PreviewKeyDown;
 
             uiReady = true;
         }
 
-        /// <summary>Moves the keyboard focus into the editable part of the search box.</summary>
-        private void FocusSearchBox()
+        /// <summary>Diagnostics for the Quick Search window; written to the extension log.</summary>
+        internal static void Log(string message)
         {
             try
             {
-                ComboBox_SearchText.Focus();
-                TextBox editor = GetSearchTextEditor();
-                if (editor != null && !editor.IsKeyboardFocusWithin)
-                {
-                    editor.Focus();
-                }
+                MSSQLToolPackage._logger?.Info("QuickSearch: " + message);
             }
             catch (Exception)
             {
             }
         }
 
-        private TextBox GetSearchTextEditor()
-            => ComboBox_SearchText.Template?.FindName("PART_EditableTextBox", ComboBox_SearchText) as TextBox;
-
-        private void ComboBox_SearchText_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        /// <summary>
+        /// Runs whenever the window becomes visible: refresh the server list, take the Object Explorer
+        /// target when there is none yet, and put the caret in the search box.
+        /// </summary>
+        private async void OnWindowAppeared()
         {
-            // Only redirect when the ComboBox itself received the focus: the dropdown list and the
-            // text box must be left alone.
-            if (!ReferenceEquals(e.OriginalSource, ComboBox_SearchText)) return;
-            if (ComboBox_SearchText.IsDropDownOpen) return;
-
-            TextBox editor = GetSearchTextEditor();
-            if (editor != null && !editor.IsKeyboardFocusWithin)
+            try
             {
-                editor.Focus();
+                RefreshServerList();
+                await AutoSelectTargetFromObjectExplorerAsync();
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Quick Search", "Preparing the search window failed", ex);
+            }
+
+            FocusSearchBox();
+        }
+
+        /// <summary>
+        /// The target no longer needs a button: the window adopts whatever Object Explorer has
+        /// selected as soon as it is shown, and the server list switches afterwards.
+        /// </summary>
+        private async Task AutoSelectTargetFromObjectExplorerAsync()
+        {
+            if (selectedConnection != null) return;
+
+            var ci = ScriptFactoryAccess.GetCurrentConnectionInfoFromObjectExplorer();
+            if (ci == null)
+            {
+                Label_ConnectionDescription.Content = LocalizationManager.T("Select a server or database node in Object Explorer.");
+                Log("Quick search: no Object Explorer selection to adopt yet.");
+                return;
+            }
+
+            await SelectTargetAsync(ci);
+            SelectServerInList(ci.ServerName);
+            RefreshServerList();
+            Log($"Quick search: adopted Object Explorer target {ci.ServerName} / {ci.Database}.");
+        }
+
+        /// <summary>Moves the keyboard focus into the search box.</summary>
+        private void FocusSearchBox()
+        {
+            try
+            {
+                // Input priority: the focus has to be set once the shell has finished showing the pane.
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (!IsVisible) return;
+                        TextBox_SearchText.Focus();
+                        Keyboard.Focus(TextBox_SearchText);
+                        Log($"Quick search: search box focus requested (focus within: {TextBox_SearchText.IsKeyboardFocusWithin}).");
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }), System.Windows.Threading.DispatcherPriority.Input);
+            }
+            catch (Exception)
+            {
             }
         }
 
         /// <summary>
-        /// Belt and braces for the case where the ComboBox itself still holds the focus: the typed
-        /// characters are put into the editable text instead of being swallowed, and the focus moves
-        /// there so the next keystroke takes the normal path.
+        /// Last resort for keystroke routing: a plain character arriving while nothing that accepts
+        /// text has the focus moves the focus into the search box, so the next keystroke lands there.
         /// </summary>
-        private void ComboBox_SearchText_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        private void QuickSearchWindowControl_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            TextBox editor = GetSearchTextEditor();
-            if (editor == null || editor.IsKeyboardFocusWithin) return;
+            if (e.OriginalSource is TextBox || e.OriginalSource is PasswordBox || e.OriginalSource is DataGrid) return;
+            if (Keyboard.Modifiers != ModifierKeys.None) return;
+            if (e.Key < Key.A || e.Key > Key.Z) return;
 
-            editor.Focus();
-            editor.CaretIndex = editor.Text.Length;
-            editor.AppendText(e.Text ?? string.Empty);
-            e.Handled = true;
+            Log($"Quick search: a key ({e.Key}) arrived with no text box focused; moving the focus.");
+            FocusSearchBox();
         }
 
         private void ApplyThemeBrushResources()
@@ -150,32 +191,38 @@ namespace MSSQLTool
 
         #region Connection and database selection
 
-        private async void Button_SelectConnection_Click(object sender, RoutedEventArgs e)
-        {
-            var ci = ScriptFactoryAccess.GetCurrentConnectionInfoFromObjectExplorer();
-            if (ci == null)
-            {
-                LocalizedMessageBox.Show("Please select a server or database node in Object Explorer first.", "Quick Search");
-                return;
-            }
-
-            await SelectTargetAsync(ci);
-            SelectServerInList(ci.ServerName);
-        }
-
-        /// <summary>Rebuilds the server picker from the servers Object Explorer is connected to.</summary>
+        /// <summary>
+        /// Rebuilds the server picker.  It always contains at least the server currently in use, so
+        /// the list is never blank even when this SSMS build does not hand out the connected-server
+        /// list.
+        /// </summary>
         private void RefreshServerList()
         {
             try
             {
                 List<ScriptFactoryAccess.ObjectExplorerServer> servers = ScriptFactoryAccess.GetObjectExplorerServers();
-                if (servers.Count == 0 && ComboBox_Server.Items.Count > 0) return;
+
+                string activeServer = selectedServer;
+                if (string.IsNullOrWhiteSpace(activeServer))
+                    activeServer = ScriptFactoryAccess.GetCurrentConnectionInfoFromObjectExplorer()?.ServerName;
+
+                if (!string.IsNullOrWhiteSpace(activeServer)
+                    && !servers.Exists(s => string.Equals(s.ServerName, activeServer, StringComparison.OrdinalIgnoreCase)))
+                {
+                    servers.Insert(0, new ScriptFactoryAccess.ObjectExplorerServer
+                    {
+                        ServerName = activeServer,
+                        DisplayName = activeServer,
+                        IsConnected = true
+                    });
+                    Log($"Server list: Object Explorer reported nothing, so the active server '{activeServer}' is shown.");
+                }
 
                 suppressServerNotifications = true;
                 try
                 {
                     ComboBox_Server.ItemsSource = servers;
-                    SelectServerInList(selectedServer ?? ScriptFactoryAccess.GetCurrentConnectionInfoFromObjectExplorer()?.ServerName);
+                    SelectServerInList(activeServer);
                     if (ComboBox_Server.SelectedItem == null && servers.Count == 1)
                         ComboBox_Server.SelectedIndex = 0;
                 }
@@ -183,6 +230,8 @@ namespace MSSQLTool
                 {
                     suppressServerNotifications = false;
                 }
+
+                Log($"Server list: {servers.Count} entries, selected '{ComboBox_Server.SelectedItem}'.");
             }
             catch (Exception ex)
             {
@@ -692,22 +741,22 @@ namespace MSSQLTool
 
         private string GetSearchText()
         {
-            return (ComboBox_SearchText.Text ?? string.Empty).Trim();
+            return (TextBox_SearchText.Text ?? string.Empty).Trim();
         }
 
         private void UpdateRecentTerms(string searchText)
         {
             List<string> terms = QuickSearchSettings.AddRecentTerm(searchText);
 
-            // Refreshing the items of an editable ComboBox can clear its text, so put the search
-            // term back: the user usually wants to refine it instead of retyping it.
-            string current = ComboBox_SearchText.Text;
+            // The history list feeds the dropdown; the box itself keeps what the user typed.
+            string current = TextBox_SearchText.Text;
             recentTerms.Clear();
             foreach (string term in terms) recentTerms.Add(term);
+            BuildSearchHistoryMenu();
 
-            if (!string.Equals(ComboBox_SearchText.Text, current, StringComparison.Ordinal))
+            if (!string.Equals(TextBox_SearchText.Text, current, StringComparison.Ordinal))
             {
-                ComboBox_SearchText.Text = current;
+                TextBox_SearchText.Text = current;
             }
         }
 
@@ -726,7 +775,7 @@ namespace MSSQLTool
                 || CheckBox_AgentJobSteps.IsChecked == true;
         }
 
-        private async void ComboBox_SearchText_KeyDown(object sender, KeyEventArgs e)
+        private async void TextBox_SearchText_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
@@ -755,12 +804,63 @@ namespace MSSQLTool
             {
                 e.Handled = true;
                 FocusResults();
+                return;
             }
+
+            // Plain Up/Down recall earlier searches, which is what the dropdown used to do.
+            if (e.Key == Key.Up || e.Key == Key.Down)
+            {
+                e.Handled = true;
+                RecallRecentTerm(e.Key == Key.Up ? -1 : 1);
+            }
+        }
+
+        /// <summary>Steps through the recent search terms.</summary>
+        private void RecallRecentTerm(int offset)
+        {
+            if (recentTerms.Count == 0) return;
+
+            int index = string.IsNullOrEmpty(TextBox_SearchText.Text)
+                ? -1
+                : recentTerms.IndexOf(TextBox_SearchText.Text);
+            int next = Math.Min(recentTerms.Count - 1, Math.Max(-1, index - offset));
+            if (next < 0) next = offset < 0 ? recentTerms.Count - 1 : 0;
+
+            TextBox_SearchText.Text = recentTerms[next];
+            TextBox_SearchText.CaretIndex = TextBox_SearchText.Text.Length;
+        }
+
+        /// <summary>The little arrow next to the search box lists earlier searches.</summary>
+        private void Button_SearchHistory_Click(object sender, RoutedEventArgs e)
+        {
+            BuildSearchHistoryMenu();
+            if (Button_SearchHistory.ContextMenu == null) return;
+            Button_SearchHistory.ContextMenu.PlacementTarget = Button_SearchHistory;
+            Button_SearchHistory.ContextMenu.IsOpen = true;
+        }
+
+        private void BuildSearchHistoryMenu()
+        {
+            var menu = new ContextMenu();
+            foreach (string term in recentTerms)
+            {
+                var item = new MenuItem { Header = term };
+                string captured = term;
+                item.Click += (_, __) =>
+                {
+                    TextBox_SearchText.Text = captured;
+                    TextBox_SearchText.CaretIndex = TextBox_SearchText.Text.Length;
+                    FocusSearchBox();
+                };
+                menu.Items.Add(item);
+            }
+
+            Button_SearchHistory.ContextMenu = menu.Items.Count > 0 ? menu : null;
         }
 
         private void ClearSearch()
         {
-            ComboBox_SearchText.Text = string.Empty;
+            TextBox_SearchText.Text = string.Empty;
             DataGrid_SearchResults.ItemsSource = null;
             lastRequest = null;
             lastResultTable = null;

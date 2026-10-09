@@ -130,30 +130,32 @@ namespace MSSQLTool
             var servers = new List<ObjectExplorerServer>();
             try
             {
-                var navigation = ServiceCache.ServiceProvider?.GetService(typeof(IObjectExplorerNavigationService))
-                    as IObjectExplorerNavigationService;
+                IObjectExplorerNavigationService navigation = GetNavigationService();
                 if (navigation == null)
                 {
-                    return servers;
+                    QuickSearchWindowControl.Log("Object Explorer navigation service is unavailable; the server list stays empty.");
                 }
-
-                IReadOnlyList<OEServerInfo> connected = navigation.GetConnectedServers();
-                if (connected == null)
+                else
                 {
-                    return servers;
-                }
+                    IReadOnlyList<OEServerInfo> connected = navigation.GetConnectedServers();
+                    int count = connected?.Count ?? 0;
+                    QuickSearchWindowControl.Log($"Object Explorer reports {count} connected server(s).");
 
-                foreach (OEServerInfo server in connected)
-                {
-                    if (server == null || string.IsNullOrWhiteSpace(server.ServerName)) continue;
-
-                    servers.Add(new ObjectExplorerServer
+                    if (connected != null)
                     {
-                        ServerName = server.ServerName,
-                        DisplayName = string.IsNullOrWhiteSpace(server.DisplayName) ? server.ServerName : server.DisplayName,
-                        LoginName = server.LoginName,
-                        IsConnected = server.IsConnected
-                    });
+                        foreach (OEServerInfo server in connected)
+                        {
+                            if (server == null || string.IsNullOrWhiteSpace(server.ServerName)) continue;
+
+                            servers.Add(new ObjectExplorerServer
+                            {
+                                ServerName = server.ServerName,
+                                DisplayName = string.IsNullOrWhiteSpace(server.DisplayName) ? server.ServerName : server.DisplayName,
+                                LoginName = server.LoginName,
+                                IsConnected = server.IsConnected
+                            });
+                        }
+                    }
                 }
 
                 servers.Sort((left, right) => string.Compare(left.ServerName, right.ServerName, StringComparison.OrdinalIgnoreCase));
@@ -164,6 +166,33 @@ namespace MSSQLTool
             }
 
             return servers;
+        }
+
+        /// <summary>
+        /// The navigation service, however this SSMS build exposes it: directly as a service, or
+        /// implemented by the Object Explorer service object.
+        /// </summary>
+        private static IObjectExplorerNavigationService GetNavigationService()
+        {
+            try
+            {
+                // Cast to the interface so the call is IServiceProvider.GetService(Type) and not the
+                // VS SDK's generic GetService<TService, TInterface> extension method.
+                var provider = ServiceCache.ServiceProvider as IServiceProvider;
+                if (provider == null) return null;
+
+                if (provider.GetService(typeof(IObjectExplorerNavigationService)) is IObjectExplorerNavigationService direct)
+                    return direct;
+
+                if (provider.GetService(typeof(IObjectExplorerService)) is IObjectExplorerNavigationService fromExplorer)
+                    return fromExplorer;
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Object Explorer", "Resolving the navigation service failed", ex);
+            }
+
+            return null;
         }
 
         /// <summary>
