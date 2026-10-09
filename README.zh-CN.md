@@ -4,6 +4,20 @@
 
 > MSSQL Tool 是 [Axial-SQL/AxialSqlTools](https://github.com/Axial-SQL/AxialSqlTools)（Apache-2.0）的 fork，在此基础上重构了 SQL 自动补全、格式化选项以及设置与多语言层。
 
+## 界面截图
+
+**智能 SQL 自动补全**——边输入边提示：架构、表、视图、字段、存储过程、函数、参数，带类型图标、分类筛选，以及当前选中对象的详情。
+
+<img src="pics/1.png" width="620" alt="输入 SELECT * FROM 时的 SQL 补全列表">
+
+**设置**——每项功能都有独立选项，保存后立即生效；界面跟随 SSMS 语言（此处为简体中文，也可切换英文）。
+
+<img src="pics/2.png" width="760" alt="MSSQL Tool 设置窗口的 SQL 自动补全页">
+
+**工具菜单**——扩展提供的全部命令，配置了快捷键的会一并显示。
+
+<img src="pics/3.png" width="520" alt="SSMS 工具菜单中的 MSSQL Tool 命令">
+
 ## 功能
 
 ### SQL 编辑

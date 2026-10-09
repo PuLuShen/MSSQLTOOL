@@ -4,6 +4,20 @@
 
 > MSSQL Tool is a fork of [Axial-SQL/AxialSqlTools](https://github.com/Axial-SQL/AxialSqlTools) (Apache-2.0). The SQL completion engine, the formatter options, and the settings and localization layers were reworked on top of it.
 
+## Screenshots
+
+**Smart SQL completion** - context-aware suggestions while you type: schemas, tables, views, columns, procedures, functions and parameters, each with a kind icon, a category filter and the details of the highlighted object.
+
+<img src="pics/1.png" width="620" alt="SQL completion list while typing SELECT * FROM">
+
+**Settings** - every feature has its own options and is saved immediately. The interface follows the SSMS language (Simplified Chinese shown here, English is available too).
+
+<img src="pics/2.png" width="760" alt="MSSQL Tool settings window with the SQL completion tab">
+
+**Tools menu** - the extension's commands, with their keyboard shortcuts where one is configured.
+
+<img src="pics/3.png" width="520" alt="MSSQL Tool commands in the SSMS Tools menu">
+
 ## Features
 
 ### SQL editing
