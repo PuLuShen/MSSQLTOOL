@@ -361,6 +361,16 @@ as select 1;
             UpdateUpdateStatus();
         }
 
+        /// <summary>
+        /// Schedules the install for the moment SSMS closes.  Without this the user had to find the
+        /// InfoBar action, so downloading from this page looked like it should install by itself.
+        /// </summary>
+        private void button_UpdateOnClose_Click(object sender, RoutedEventArgs e)
+        {
+            UpdateChecker.ArmDeferredUpdate();
+            UpdateUpdateStatus();
+        }
+
         private void UpdateChecker_LastUpdateResultChanged()
         {
             try
@@ -406,6 +416,14 @@ as select 1;
             if (CurrentVersionText != null)
             {
                 CurrentVersionText.Text = UpdateChecker.FormatVersion(UpdateChecker.GetCurrentVersion());
+            }
+
+            // The close-time install can also be scheduled from here, so it is offered right next to
+            // the download it belongs to.
+            if (button_UpdateOnClose != null)
+            {
+                bool armed = UpdateChecker.IsDeferredUpdateArmed;
+                button_UpdateOnClose.IsEnabled = !armed && UpdateChecker.IsUpdateAvailable;
             }
 
             if (LatestVersionPanel != null && LatestVersionText != null)

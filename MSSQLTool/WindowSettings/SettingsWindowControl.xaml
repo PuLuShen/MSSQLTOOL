@@ -578,6 +578,15 @@
                                 FontWeight="Bold">
                             <TextBlock Text="Check for updates" VerticalAlignment="Center"/>
                         </Button>
+
+                        <Button x:Name="button_UpdateOnClose"
+                                Click="button_UpdateOnClose_Click"
+                                Width="180"
+                                Height="24"
+                                Margin="10,0,0,0"
+                                ToolTip="Downloads the new version if needed and shows the installer window as soon as SSMS has closed.">
+                            <TextBlock Text="Install when SSMS closes" VerticalAlignment="Center"/>
+                        </Button>
                     </StackPanel>
 
                     <GroupBox Grid.Row="3" Header="Update status" Margin="5">

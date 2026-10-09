@@ -35,7 +35,7 @@ namespace MSSQLTool
         /// </summary>
         private const string StagingFolderName = "MSSQLToolUpdate";
         private const string HelperScriptName = "install-update.ps1";
-        private const string HelperLogName = "install-update.log";
+        private const string HelperLogName = "update-install.log";
         private const string ReadyMarkerSuffix = ".ready";
 
         /// <summary>
@@ -55,6 +55,7 @@ namespace MSSQLTool
         private static string stagedVsixPath;
         private static GitHubRelease stagedRelease;
         private static bool pendingUpdateOnClose;
+        private static bool updateAvailable;
         private static bool stageDownloadInProgress;
         private static bool stageDownloadFailed;
         private static Task stageDownloadTask = Task.CompletedTask;
@@ -63,6 +64,7 @@ namespace MSSQLTool
         private static string stageVersion;
         private static string stageAssetUrl;
         private static string stageSha256;
+        private static long stageAssetSize;
         private static string helperScriptText;
 
         /// <summary>
@@ -222,6 +224,7 @@ namespace MSSQLTool
             string version;
             string assetUrl;
             string sha256;
+            long assetSize;
             bool downloadFailed;
             GitHubRelease release;
             lock (updateStateLock)
@@ -235,6 +238,7 @@ namespace MSSQLTool
                 version = stageVersion;
                 assetUrl = stageAssetUrl;
                 sha256 = stageSha256;
+                assetSize = stageAssetSize;
                 downloadFailed = stageDownloadFailed;
                 release = stagedRelease;
             }
@@ -252,9 +256,9 @@ namespace MSSQLTool
             string vsixPath = string.IsNullOrWhiteSpace(version)
                 ? Path.Combine(folder, "MSSQLTool-update.vsix")
                 : Path.Combine(folder, StagedVsixName(version));
-            string logPath = Path.Combine(folder, HelperLogName);
+            string logPath = HelperLogPath;
 
-            if (!TryStartUpdateHelper(folder, version, vsixPath, assetUrl, sha256, installerPath, logPath, out string failure))
+            if (!TryStartUpdateHelper(folder, version, vsixPath, assetUrl, sha256, assetSize, installerPath, logPath, out string failure))
             {
                 Log($"Deferred update on close: could not start the installer helper ({failure}).");
                 SetLastUpdateResult(LocalizationManager.Format("Could not start the update installer ({0}); opened release page instead.", failure));
@@ -272,7 +276,7 @@ namespace MSSQLTool
 
         /// <summary>Writes the helper script and starts it detached from this process.</summary>
         internal static bool TryStartUpdateHelper(string folder, string version, string vsixPath, string assetUrl,
-            string sha256, string installerPath, string logPath, out string failure)
+            string sha256, long assetSize, string installerPath, string logPath, out string failure)
         {
             failure = null;
             try
@@ -282,7 +286,7 @@ namespace MSSQLTool
                 File.WriteAllText(scriptPath, HelperScriptText, new UTF8Encoding(false));
 
                 string arguments = BuildHelperArguments(Process.GetCurrentProcess().Id, version, vsixPath, assetUrl,
-                    sha256, installerPath, ReleasePageUrl, logPath, HelperWaitMinutes);
+                    sha256, assetSize, installerPath, ReleasePageUrl, logPath, HelperWaitMinutes);
 
                 var start = new ProcessStartInfo
                 {
@@ -313,7 +317,7 @@ namespace MSSQLTool
             => "\"" + (value ?? string.Empty).Replace("\"", "\"\"") + "\"";
 
         internal static string BuildHelperArguments(int processId, string version, string vsixPath, string assetUrl,
-            string sha256, string installerPath, string releasePage, string logPath, int waitMinutes)
+            string sha256, long assetSize, string installerPath, string releasePage, string logPath, int waitMinutes)
         {
             var builder = new StringBuilder();
             builder.Append("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ");
@@ -326,6 +330,7 @@ namespace MSSQLTool
             AppendHelperArgument(builder, "VsixPath", vsixPath);
             AppendHelperArgument(builder, "AssetUrl", assetUrl);
             AppendHelperArgument(builder, "Sha256", sha256);
+            if (assetSize > 0) builder.Append(" -Size ").Append(assetSize.ToString(CultureInfo.InvariantCulture));
             AppendHelperArgument(builder, "Installer", installerPath);
             AppendHelperArgument(builder, "SsmsPath", GetSsmsDirectory());
             AppendHelperArgument(builder, "InstanceId", GetSsmsInstanceId());
@@ -447,6 +452,12 @@ namespace MSSQLTool
 
         internal static string StagingFolder => Path.Combine(Path.GetTempPath(), StagingFolderName);
 
+        /// <summary>
+        /// Where the install helper writes its log.  It lives with the other diagnostics instead of in
+        /// the temp staging folder, which is swept at startup, so a failed install stays readable.
+        /// </summary>
+        internal static string HelperLogPath => Path.Combine(AppPaths.LogsFolder, HelperLogName);
+
         internal static string StagedVsixName(string version) => $"MSSQLTool-{version}.vsix";
 
         internal static string ReadyMarkerPath(string vsixPath) => vsixPath + ReadyMarkerSuffix;
@@ -494,6 +505,7 @@ namespace MSSQLTool
 
             if (latestVersion <= currentVersion && !forceUpdateAvailable)
             {
+                lock (updateStateLock) { updateAvailable = false; }
                 Log($"Update check: already on latest ({currentVersion}).");
                 SetLastUpdateResult(LocalizationManager.Format("Up to date ({0}). Latest release is {1}.",
                     FormatVersion(currentVersion), FormatVersion(latestVersion)));
@@ -507,6 +519,13 @@ namespace MSSQLTool
             }
 
             await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
+
+            // The Updates page offers its own "install when SSMS closes" button, which is enabled by
+            // this flag.
+            lock (updateStateLock)
+            {
+                updateAvailable = true;
+            }
 
             if (forceUpdateAvailable)
             {
@@ -574,13 +593,20 @@ namespace MSSQLTool
         /// <summary>The newest release seen by a check, or null while no check has succeeded.</summary>
         internal static Version LastLatestVersion { get; private set; }
 
+        private static Version currentVersion;
+
         internal static Version GetCurrentVersion()
         {
+            // Cached: the Updates page asks for it on every progress tick, and logging it each time
+            // buried the rest of the log.
+            if (currentVersion != null) return currentVersion;
+
             try
             {
                 var assemblyVersion = Assembly.GetExecutingAssembly().GetName().Version;
                 if (assemblyVersion != null)
                 {
+                    currentVersion = assemblyVersion;
                     Log($"Update check current version (assembly): {assemblyVersion}");
                     return assemblyVersion;
                 }
@@ -661,6 +687,15 @@ namespace MSSQLTool
             }
 
             activeInfoBar = null;
+            ArmDeferredUpdate();
+        }
+
+        /// <summary>
+        /// Schedules the install for the moment SSMS closes.  Used by the InfoBar action and by the
+        /// button on the Updates page, so the download alone never has to be the only hint.
+        /// </summary>
+        internal static void ArmDeferredUpdate()
+        {
             string vsixPath;
             bool inProgress;
             lock (updateStateLock)
@@ -687,6 +722,30 @@ namespace MSSQLTool
             // The close-time helper downloads the package itself, so an unfinished download here is
             // not a failure.
             SetLastUpdateResult(LocalizationManager.T("The update runs the installer once SSMS closes."));
+        }
+
+        /// <summary>True while an install is scheduled or a newer release was found.</summary>
+        internal static bool IsUpdateAvailable
+        {
+            get
+            {
+                lock (updateStateLock)
+                {
+                    return pendingUpdateOnClose || updateAvailable;
+                }
+            }
+        }
+
+        /// <summary>True once the user scheduled the close-time install.</summary>
+        internal static bool IsDeferredUpdateArmed
+        {
+            get
+            {
+                lock (updateStateLock)
+                {
+                    return pendingUpdateOnClose;
+                }
+            }
         }
 
         private static void ShowUpToDatePrompt(AsyncPackage package, Version currentVersion)
@@ -759,6 +818,7 @@ namespace MSSQLTool
                 stageVersion = releaseVersion == null ? null : FormatVersion(releaseVersion);
                 stageAssetUrl = asset.DownloadUrl;
                 stageSha256 = expectedSha256;
+                stageAssetSize = asset.Size;
             }
 
             Task cleanupTask = GetCleanupDownloadedVsixFilesTask();
@@ -1088,7 +1148,7 @@ namespace MSSQLTool
         {
             try
             {
-                string logPath = Path.Combine(StagingFolder, HelperLogName);
+                string logPath = HelperLogPath;
                 if (!File.Exists(logPath)) return;
 
                 string[] lines = File.ReadAllLines(logPath);
@@ -1409,6 +1469,10 @@ namespace MSSQLTool
 
             [JsonProperty("digest")]
             public string Digest { get; set; }
+
+            /// <summary>Byte count of the asset, used to detect a download that was cut short.</summary>
+            [JsonProperty("size")]
+            public long Size { get; set; }
 
             [JsonProperty("browser_download_url")]
             public string DownloadUrl { get; set; }

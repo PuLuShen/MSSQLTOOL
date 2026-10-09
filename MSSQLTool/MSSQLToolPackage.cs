@@ -349,9 +349,7 @@ namespace MSSQLTool
             try
             {
                 await FormatQueryCommand.InitializeAsync(this);
-                await RefreshTemplatesCommand.InitializeAsync(this);
                 await RefreshCompletionMetadataCommand.InitializeAsync(this);
-                await OpenTemplatesFolderCommand.InitializeAsync(this);
                 await SettingsWindowCommand.InitializeAsync(this);
                 await AboutWindowCommand.InitializeAsync(this);
                 await ScriptSelectedObject.InitializeAsync(this);

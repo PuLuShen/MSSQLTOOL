@@ -12,6 +12,7 @@ param(
     [string]$VsixPath = '',
     [string]$AssetUrl = '',
     [string]$Sha256 = '',
+    [long]$Size = 0,
     [string]$Installer = '',
     [string]$SsmsPath = '',
     [string]$InstanceId = '',
@@ -22,6 +23,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
+$DownloadAttempts = 3
 
 function Write-Log([string]$message) {
     $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
@@ -32,13 +34,64 @@ function Get-FileSha256([string]$path) {
     try { return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() } catch { return $null }
 }
 
+# A package is only trusted when it matches what the release says: the byte count always, and the
+# checksum whenever the release provides one.  Installing an unverified file is what produced
+# "the file is not a valid VSIX package" after a download that had been cut short.
 function Test-Package([string]$path) {
     if (-not (Test-Path -LiteralPath $path)) { return $false }
-    if ([string]::IsNullOrWhiteSpace($Sha256)) { return $true }
-    $actual = Get-FileSha256 $path
-    if ($actual -eq $Sha256.ToLowerInvariant()) { return $true }
-    Write-Log "checksum mismatch for $path (expected $Sha256, actual $actual)"
-    return $false
+
+    if ($Size -gt 0) {
+        $length = (Get-Item -LiteralPath $path).Length
+        if ($length -ne $Size) {
+            Write-Log "size mismatch for $path (expected $Size, actual $length)"
+            return $false
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Sha256)) {
+        $actual = Get-FileSha256 $path
+        if ($actual -ne $Sha256.ToLowerInvariant()) {
+            Write-Log "checksum mismatch for $path (expected $Sha256, actual $actual)"
+            return $false
+        }
+    } elseif ($Size -le 0) {
+        Write-Log "refusing $path : neither a checksum nor a byte count was provided"
+        return $false
+    }
+
+    return $true
+}
+
+function Get-Package([string]$destination) {
+    if ([string]::IsNullOrWhiteSpace($AssetUrl)) {
+        Write-Log 'no download URL was provided; nothing to install'
+        return $null
+    }
+
+    $partial = $destination + '.part'
+    for ($attempt = 1; $attempt -le $DownloadAttempts; $attempt++) {
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Write-Log "downloading $AssetUrl (attempt $attempt of $DownloadAttempts)"
+            if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue }
+            Invoke-WebRequest -Uri $AssetUrl -OutFile $partial -UseBasicParsing
+            if (Test-Package $partial) {
+                Move-Item -LiteralPath $partial -Destination $destination -Force
+                Set-Content -LiteralPath ($destination + '.ready') -Value 'verified by the update helper' -Encoding UTF8
+                Write-Log 'download finished and verified'
+                return $destination
+            }
+
+            Write-Log 'download did not pass verification; retrying'
+        } catch {
+            Write-Log "download failed: $($_.Exception.Message)"
+        }
+
+        Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Log "download did not pass verification after $DownloadAttempts attempts"
+    return $null
 }
 
 Write-Log "helper started for version '$Version'; waiting for process $TargetProcessId to exit"
@@ -69,28 +122,7 @@ if ((Test-Path -LiteralPath $VsixPath) -and (Test-Path -LiteralPath $readyMarker
 }
 
 if (-not $package) {
-    if ([string]::IsNullOrWhiteSpace($AssetUrl)) {
-        Write-Log 'no download URL was provided; nothing to install'
-    } else {
-        $partial = $VsixPath + '.part'
-        try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            Write-Log "downloading $AssetUrl"
-            Invoke-WebRequest -Uri $AssetUrl -OutFile $partial -UseBasicParsing
-            if (Test-Package $partial) {
-                Move-Item -LiteralPath $partial -Destination $VsixPath -Force
-                Set-Content -LiteralPath $readyMarker -Value 'verified by the update helper' -Encoding UTF8
-                $package = $VsixPath
-                Write-Log 'download finished and verified'
-            } else {
-                Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
-                Write-Log 'download did not pass verification'
-            }
-        } catch {
-            Write-Log "download failed: $($_.Exception.Message)"
-            Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
-        }
-    }
+    $package = Get-Package -destination $VsixPath
 }
 
 if (-not $package) {

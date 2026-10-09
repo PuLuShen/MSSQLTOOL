@@ -157,6 +157,8 @@ namespace MSSQLTool
             ["SMTP server:"] = "SMTP 服务器：", ["SMTP port:"] = "SMTP 端口：", ["Enable SSL/TLS"] = "启用 SSL/TLS",
             ["Updates"] = "更新", ["Check for MSSQL Tool updates on startup"] = "启动时检查 MSSQL Tool 更新",
             ["Check for updates"] = "检查更新", ["Update status"] = "更新状态", ["GitHub Integration"] = "GitHub 集成",
+            ["Install when SSMS closes"] = "关闭 SSMS 时安装",
+            ["Downloads the new version if needed and shows the installer window as soon as SSMS has closed."] = "需要时先下载新版本，并在 SSMS 关闭后立即显示安装窗口。",
 
             // Settings -> Updates status text and the up-to-date prompt.
             ["Information"] = "信息",
