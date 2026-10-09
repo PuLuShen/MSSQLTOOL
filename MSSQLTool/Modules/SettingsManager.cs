@@ -437,24 +437,75 @@ ORDER BY sd.[name];
         }
 
         // ----------------------------------------------------------------------
+        /// <summary>
+        /// The folder holding the .sql query templates.  Unless the user picked one, it follows the
+        /// configured data folder so templates travel with the rest of the data.
+        /// </summary>
         public static string GetTemplatesFolder()
         {
-            var folder = GetRegisterValue("ScriptTemplatesFolder");
+            string folder = AppPaths.QueryTemplatesFolder;
 
-            if (string.IsNullOrWhiteSpace(folder))
+            try
             {
-                folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "MSSQLToolTemplates");
-
-                SaveTemplatesFolder(folder);
-
-                if (!Directory.Exists(folder))
+                bool wasMissing = !Directory.Exists(folder);
+                if (wasMissing)
                 {
                     Directory.CreateDirectory(folder);
                 }
+
+                AdoptLegacyTemplates(folder, wasMissing);
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Query Templates", "The templates folder could not be created", ex);
             }
 
             return folder;
         }
+
+        private static bool legacyTemplatesAdoptionChecked;
+
+        /// <summary>
+        /// Copies the templates an earlier release kept in Documents into the configured data
+        /// folder, so switching the data folder before this option existed does not strand them.
+        /// Existing files in the data folder always win and nothing is ever deleted.
+        /// </summary>
+        private static void AdoptLegacyTemplates(string folder, bool wasMissing)
+        {
+            if (legacyTemplatesAdoptionChecked) return;
+            legacyTemplatesAdoptionChecked = true;
+
+            if (!wasMissing || !AppPaths.IsCustomRoot || HasExplicitTemplatesFolder) return;
+
+            string legacy = AppPaths.LegacyTemplatesFolder;
+            if (string.Equals(legacy, folder, StringComparison.OrdinalIgnoreCase) || !Directory.Exists(legacy)) return;
+
+            try
+            {
+                int copied = 0;
+                foreach (string file in Directory.GetFiles(legacy, "*", SearchOption.AllDirectories))
+                {
+                    string relative = file.Substring(legacy.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    string destination = Path.Combine(folder, relative);
+                    if (File.Exists(destination)) continue;
+
+                    string parent = Path.GetDirectoryName(destination);
+                    if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+                    File.Copy(file, destination, false);
+                    copied++;
+                }
+
+                if (copied > 0)
+                    FeatureDiagnostics.Report("Query Templates", "Copied " + copied + " template file(s) into the configured data folder: " + folder, null);
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Query Templates", "The templates in the documents folder could not be copied", ex);
+            }
+        }
+
+        /// <summary>True when the user chose the templates folder instead of following the data folder.</summary>
+        public static bool HasExplicitTemplatesFolder => AppPaths.IsTemplatesFolderExplicit;
 
         public static bool SaveTemplatesFolder(string folder)
         {

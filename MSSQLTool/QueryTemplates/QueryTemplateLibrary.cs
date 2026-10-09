@@ -123,7 +123,14 @@ namespace MSSQLTool
                 // Prove that the directory can be enumerated before replacing a
                 // known-good setting. Enumeration does not modify user files.
                 Directory.EnumerateFileSystemEntries(fullPath).Take(1).ToList();
-                if (!SettingsManager.SaveTemplatesFolder(fullPath))
+
+                // Picking the folder the data folder would provide anyway keeps the templates
+                // following the data folder, instead of freezing them in place.
+                bool isDefaultFolder = string.Equals(
+                    fullPath.TrimEnd(Path.DirectorySeparatorChar),
+                    AppPaths.QueryTemplatesFolder.TrimEnd(Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase);
+                if (!SettingsManager.SaveTemplatesFolder(isDefaultFolder ? string.Empty : fullPath))
                     throw new InvalidOperationException("The templates folder setting could not be saved.");
 
                 ConfigureWatcher();

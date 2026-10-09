@@ -34,6 +34,23 @@ namespace MSSQLTool
     }
 
     /// <summary>
+    /// The folder that holds the query templates, and whether the user chose it explicitly.
+    /// </summary>
+    public sealed class TemplatesFolderResolution
+    {
+        internal TemplatesFolderResolution(string folder, bool isExplicit)
+        {
+            Folder = folder;
+            IsExplicit = isExplicit;
+        }
+
+        public string Folder { get; }
+
+        /// <summary>True when the folder was chosen by the user rather than derived from the data folder.</summary>
+        public bool IsExplicit { get; }
+    }
+
+    /// <summary>
     /// Resolves every file and folder MSSQL Tool keeps, so an installation can store its data and
     /// configuration outside the user profile — on another drive, in a synced folder, or on a
     /// portable device.
@@ -54,6 +71,7 @@ namespace MSSQLTool
         public const string DataRootEnvironmentVariable = "MSSQLTOOL_DATA_ROOT";
 
         public const string FolderName = "MSSQLTool";
+        public const string TemplatesFolderName = "QueryTemplates";
         public const string SourceDefault = "default";
         public const string SourceSettings = "settings";
         public const string SourceEnvironment = "environment";
@@ -65,9 +83,20 @@ namespace MSSQLTool
         public static string DefaultRoot => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), FolderName);
 
+        /// <summary>
+        /// A copy of the pointer in the fixed default folder.  The registry is the primary record,
+        /// but it can be wiped by a clean-up tool or a "reset settings" action; the file keeps the
+        /// configured folder discoverable in that case.
+        /// </summary>
+        public static string PointerFile => Path.Combine(DefaultRoot, "data-root.txt");
+
         /// <summary>Roaming folder the snippet file used before data folders became configurable.</summary>
         public static string LegacySnippetsFile => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), FolderName, "snippets.json");
+
+        /// <summary>Documents folder that held the query templates before data folders became configurable.</summary>
+        public static string LegacyTemplatesFolder => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "MSSQLToolTemplates");
 
         public static AppPathResolution Resolution
         {
@@ -100,12 +129,66 @@ namespace MSSQLTool
             ? Path.Combine(Root, "snippets.json")
             : LegacySnippetsFile;
 
+        /// <summary>
+        /// The query template folder.  A folder the user picked explicitly always wins; otherwise it
+        /// follows the data folder, so templates travel with the rest of the data.
+        /// </summary>
+        public static string QueryTemplatesFolder => TemplatesResolution.Current.Folder;
+
+        /// <summary>True when the template folder was chosen by the user instead of following the data folder.</summary>
+        public static bool IsTemplatesFolderExplicit => TemplatesResolution.Current.IsExplicit;
+
+        private static TemplatesFolderResolution templates;
+
+        private static class TemplatesResolution
+        {
+            internal static TemplatesFolderResolution Current
+            {
+                get
+                {
+                    TemplatesFolderResolution current = templates;
+                    if (current != null) return current;
+
+                    lock (Gate)
+                    {
+                        return templates ?? (templates = ResolveTemplatesFolder(
+                            AppPaths.Resolution, SettingsStore.Read(TemplatesFolderValueName), LegacyTemplatesFolder));
+                    }
+                }
+            }
+        }
+
+        /// <summary>Registry value holding a user-chosen template folder.</summary>
+        public const string TemplatesFolderValueName = "ScriptTemplatesFolder";
+
+        /// <summary>
+        /// Chooses the template folder: an explicit user choice wins, the legacy Documents folder is
+        /// kept as the default, and a configured data folder takes the templates with it.
+        /// </summary>
+        internal static TemplatesFolderResolution ResolveTemplatesFolder(AppPathResolution resolution,
+            string configuredFolder, string legacyDefault)
+        {
+            string legacy = TrimSeparators(Normalize(legacyDefault) ?? legacyDefault ?? string.Empty);
+            string configured = Normalize(configuredFolder);
+
+            // A stored value equal to the old default is what earlier releases wrote on first use;
+            // it must not freeze the folder in place.
+            if (configured != null && !string.Equals(configured, legacy, StringComparison.OrdinalIgnoreCase))
+                return new TemplatesFolderResolution(configured, true);
+
+            if (resolution != null && resolution.IsCustom)
+                return new TemplatesFolderResolution(Path.Combine(resolution.Root, TemplatesFolderName), false);
+
+            return new TemplatesFolderResolution(legacy, false);
+        }
+
         /// <summary>Drops the cached resolution so the next read picks up a changed setting.</summary>
         public static void Invalidate()
         {
             lock (Gate)
             {
                 cached = null;
+                templates = null;
             }
         }
 
@@ -143,6 +226,7 @@ namespace MSSQLTool
                 return false;
             }
 
+            WritePointerFile(normalized);
             Invalidate();
             SettingsStore.Invalidate();
             return true;
@@ -163,6 +247,15 @@ namespace MSSQLTool
                 FeatureDiagnostics.Report("Storage", "The data folder setting could not be cleared", ex);
             }
 
+            try
+            {
+                if (File.Exists(PointerFile)) File.Delete(PointerFile);
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Storage", "The stored data folder pointer could not be removed", ex);
+            }
+
             Invalidate();
             SettingsStore.Invalidate();
         }
@@ -180,7 +273,8 @@ namespace MSSQLTool
                 new KeyValuePair<string, string>("Query history", QueryHistoryFolder),
                 new KeyValuePair<string, string>("Completion ranking", CompletionUsageFile),
                 new KeyValuePair<string, string>("GitHub sync profiles", GitHubProfilesFile),
-                new KeyValuePair<string, string>("Snippets", SnippetsFile)
+                new KeyValuePair<string, string>("Snippets", SnippetsFile),
+                new KeyValuePair<string, string>("Query templates", QueryTemplatesFolder)
             };
         }
 
@@ -239,7 +333,42 @@ namespace MSSQLTool
                 // A hostile environment block must not stop the extension from starting.
             }
 
-            return Resolve(environmentValue, ReadDataRootSetting(), DefaultRoot, path => TryPrepareFolder(path, out string _));
+            return Resolve(environmentValue, ResolveStoredDataRoot(ReadDataRootSetting(), ReadPointerFile()),
+                DefaultRoot, path => TryPrepareFolder(path, out string _));
+        }
+
+        /// <summary>
+        /// The registry value is the primary record; the pointer file is only consulted when the
+        /// registry has nothing, which is what happens after a registry clean-up.
+        /// </summary>
+        internal static string ResolveStoredDataRoot(string registryValue, string pointerFileValue)
+            => string.IsNullOrWhiteSpace(registryValue) ? pointerFileValue : registryValue;
+
+        private static string ReadPointerFile()
+        {
+            try
+            {
+                if (!File.Exists(PointerFile)) return null;
+                string value = File.ReadAllText(PointerFile).Trim();
+                return value.Length == 0 ? null : value.Split('\r', '\n')[0].Trim();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void WritePointerFile(string value)
+        {
+            try
+            {
+                Directory.CreateDirectory(DefaultRoot);
+                File.WriteAllText(PointerFile, value);
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Storage", "The data folder pointer could not be written", ex);
+            }
         }
 
         /// <summary>

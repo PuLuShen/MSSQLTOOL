@@ -664,13 +664,13 @@ namespace MSSQLTool
             // Storage page: data and configuration folder.
             ["Storage"] = "数据与配置",
             ["Data and configuration folder"] = "数据与配置目录",
-            ["MSSQL Tool keeps its settings, query history, completion ranking, GitHub sync profiles, snippets and log files in one folder. Point that folder at another drive, a synced folder or a portable device to keep the data outside your Windows profile. The pointer itself stays in the registry, and every setting is mirrored there, so the default location keeps working if the folder is unavailable."] = "MSSQL Tool 会把设置、查询历史、补全排序、GitHub 同步配置、代码片段和日志统一存放在一个目录中。将该目录指向其他磁盘、同步文件夹或便携设备，即可让这些数据脱离 Windows 用户配置文件。目录指针本身仍保存在注册表中，并且每项设置都会在注册表留一份镜像，因此该目录不可用时会自动回到默认位置继续工作。",
+            ["MSSQL Tool keeps its settings, query history, completion ranking, GitHub sync profiles, snippets, query templates and log files in one folder. Point that folder at another drive, a synced folder or a portable device to keep the data outside your Windows profile. The pointer itself stays in the registry, and every setting is mirrored there, so the default location keeps working if the folder is unavailable. A query template folder you picked yourself is left where it is."] = "MSSQL Tool 会把设置、查询历史、补全排序、GitHub 同步配置、代码片段、查询模板和日志统一存放在一个目录中。将该目录指向其他磁盘、同步文件夹或便携设备，即可让这些数据脱离 Windows 用户配置文件。目录指针本身仍保存在注册表中，并且每项设置都会在注册表留一份镜像，因此该目录不可用时会自动回到默认位置继续工作。你自行指定的查询模板目录会保持原位不动。",
             ["Data folder:"] = "数据目录：",
             ["Restore default"] = "恢复默认值",
             ["Select the folder MSSQL Tool should keep its data in"] = "选择 MSSQL Tool 存放数据的目录",
             ["Copy existing data to the new folder"] = "将现有数据复制到新目录",
             ["Locations in use"] = "当前使用的位置",
-            ["Changes apply immediately: the completion ranking, query history, snippets and settings move to the new folder at once. The log file follows after the next SSMS start."] = "修改立即生效：补全排序、查询历史、代码片段和设置会立即切换到新目录；日志文件在下次启动 SSMS 后跟随。",
+            ["Changes apply immediately: the completion ranking, query history, snippets, query templates and settings move to the new folder at once. The log file follows after the next SSMS start."] = "修改立即生效：补全排序、查询历史、代码片段、查询模板和设置会立即切换到新目录；日志文件在下次启动 SSMS 后跟随。",
             ["Location: {0}. {1}"] = "来源：{0}。{1}",
             ["set by the MSSQLTOOL_DATA_ROOT environment variable"] = "由环境变量 MSSQLTOOL_DATA_ROOT 指定",
             ["chosen in this window"] = "在本窗口中指定",
@@ -698,6 +698,7 @@ namespace MSSQLTool
             ["Completion ranking"] = "补全排序",
             ["GitHub sync profiles"] = "GitHub 同步配置",
             ["Snippets"] = "代码片段",
+            ["Query templates"] = "查询模板",
         };
 
         public static string CurrentLanguage { get; private set; } = ChineseLanguage;

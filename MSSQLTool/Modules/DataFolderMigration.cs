@@ -28,6 +28,14 @@ namespace MSSQLTool
         /// Runs the migration and returns a report for the user, or throws with a reason.
         /// </summary>
         public static string CopyData(string sourceRoot, string targetRoot)
+            => CopyData(sourceRoot, targetRoot, !SettingsManager.HasExplicitTemplatesFolder);
+
+        /// <summary>
+        /// Runs the migration and returns a report for the user, or throws with a reason.
+        /// <paramref name="includeTemplates"/> is false when the user picked a template folder
+        /// himself, in which case it must be left alone.
+        /// </summary>
+        public static string CopyData(string sourceRoot, string targetRoot, bool includeTemplates)
         {
             if (string.IsNullOrWhiteSpace(sourceRoot) || string.IsNullOrWhiteSpace(targetRoot))
                 return string.Empty;
@@ -65,6 +73,16 @@ namespace MSSQLTool
             }
 
             files += CopyFolder(Path.Combine(sourceRoot, "QueryHistory"), Path.Combine(targetRoot, "QueryHistory"), report);
+
+            // Query templates live in their own folder. They are only migrated while the user has not
+            // picked a folder himself, because an explicit choice must be left alone.
+            if (includeTemplates)
+            {
+                string templatesSource = Directory.Exists(Path.Combine(sourceRoot, "QueryTemplates"))
+                    ? Path.Combine(sourceRoot, "QueryTemplates")
+                    : AppPaths.LegacyTemplatesFolder;
+                files += CopyFolder(templatesSource, Path.Combine(targetRoot, "QueryTemplates"), report);
+            }
 
             if (files == 0)
                 return string.Empty;

@@ -580,6 +580,11 @@ as select 1;
             SnippetService.ReloadSnippets();
             QueryHistorySqliteStore.ResetForDataFolderChange();
             LoggingSetup.Apply(AppPaths.LogsFolder);
+
+            // Templates follow the data folder unless the user picked one, so the library has to
+            // re-point its folder and its file watcher.
+            try { QueryTemplateLibrary.Instance.Initialize(); }
+            catch (Exception ex) { FeatureDiagnostics.Report("Storage", "The query template library could not be reloaded", ex); }
         }
 
         private void Button_RefreshDiagnostics_Click(object sender, RoutedEventArgs e) => RefreshDiagnostics();
