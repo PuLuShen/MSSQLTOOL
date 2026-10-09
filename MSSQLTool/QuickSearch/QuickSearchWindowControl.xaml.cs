@@ -129,7 +129,7 @@ namespace MSSQLTool
             var ci = ScriptFactoryAccess.GetCurrentConnectionInfoFromObjectExplorer();
             if (ci == null)
             {
-                Label_ConnectionDescription.Content = LocalizationManager.T("Select a server or database node in Object Explorer.");
+                Label_ConnectionDescription.Text = LocalizationManager.T("Select a server or database node in Object Explorer.");
                 Log("Quick search: no Object Explorer selection to adopt yet.");
                 return;
             }
@@ -288,7 +288,8 @@ namespace MSSQLTool
             selectedConnection = ci;
             selectedDatabase = ci.Database;
             selectedServer = ci.ServerName;
-            Label_ConnectionDescription.Content = LocalizationManager.T($"Server: [{selectedServer}] / Database: [{selectedDatabase}]");
+            // The server is already visible in the picker above, so this line only reports the database.
+            Label_ConnectionDescription.Text = LocalizationManager.Format("Database: [{0}]", selectedDatabase);
             SearchInputsGrid.IsEnabled = true;
             SearchScopeGrid.IsEnabled = true;
 
