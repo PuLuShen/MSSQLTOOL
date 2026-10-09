@@ -1,20 +1,20 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 
 public static class ProfileStore
 {
-    private static readonly string _path =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                     "MSSQLTool", "github-sync-profiles.json");
+    /// <summary>Follows the configured data folder; resolved on every access.</summary>
+    private static string Path => MSSQLTool.AppPaths.GitHubProfilesFile;
 
     public static List<GitHubSyncProfile> Load()
     {
+        string path = Path;
         try
         {
-            if (!File.Exists(_path)) return new List<GitHubSyncProfile>();
-            var json = File.ReadAllText(_path);
+            if (!File.Exists(path)) return new List<GitHubSyncProfile>();
+            var json = File.ReadAllText(path);
             return JsonConvert.DeserializeObject<List<GitHubSyncProfile>>(json);
         }
         catch { return new List<GitHubSyncProfile>(); }
@@ -22,8 +22,9 @@ public static class ProfileStore
 
     public static void Save(IEnumerable<GitHubSyncProfile> profiles)
     {
-        var dir = Path.GetDirectoryName(_path);
+        string path = Path;
+        var dir = System.IO.Path.GetDirectoryName(path);
         if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(_path, JsonConvert.SerializeObject(profiles, Formatting.Indented));
+        File.WriteAllText(path, JsonConvert.SerializeObject(profiles, Formatting.Indented));
     }
 }

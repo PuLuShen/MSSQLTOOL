@@ -1,4 +1,4 @@
-﻿namespace MSSQLTool
+namespace MSSQLTool
 {
     using System;
     using System.Diagnostics;
@@ -30,11 +30,7 @@
 
             TextBlock_CurrentVersion.Text = LocalizationManager.Format("SSMS extension version {0}", currentVersionString);
 
-            _logFolder = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "MSSQLTool",
-                        "MSSQLToolLog"
-                );
+            _logFolder = AppPaths.LogsFolder;
 
             HyperlinkText_LogFolder.Text = _logFolder;
         }

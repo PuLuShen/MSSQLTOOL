@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -355,8 +355,9 @@ ORDER BY sd.[name];
 
         // Registry I/O sits on the completion hot path (settings are read several
         // times per keystroke and once per suggested item), so values are cached
-        // in memory. SaveRegisterValue keeps the cache coherent; the registry
-        // remains the persisted store.
+        // in memory. SaveRegisterValue keeps the cache coherent. The persisted
+        // store is the registry by default and a settings file inside the data
+        // folder once the user configures one; SettingsStore picks between them.
         private static readonly ConcurrentDictionary<string, string> RegisterValueCache =
             new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
 
@@ -369,11 +370,7 @@ ORDER BY sd.[name];
         {
             try
             {
-                using (var rootKey = GetRoot())
-                {
-                    var value = rootKey.GetValue(parameter);
-                    return value?.ToString() ?? string.Empty;
-                }
+                return SettingsStore.Read(parameter) ?? string.Empty;
             }
             catch (Exception)
             {
@@ -385,19 +382,27 @@ ORDER BY sd.[name];
         {
             try
             {
-                using (var rootKey = GetRoot())
-                {
-                    rootKey.SetValue(parameterName, parameterValue);
-                }
+                bool saved = SettingsStore.Write(parameterName, parameterValue);
 
                 RegisterValueCache[parameterName] = parameterValue;
-                return true;
+                return saved;
             }
             catch (Exception)
             {
                 RegisterValueCache.TryRemove(parameterName ?? string.Empty, out string _);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Drops every cached setting so the next read comes from the store again.  Called after the
+        /// settings location changed (the data folder moved), where the cached values were read from
+        /// the previous store.
+        /// </summary>
+        internal static void InvalidateSettingsCache()
+        {
+            RegisterValueCache.Clear();
+            cachedFormatterOptions = null;
         }
 
         public class SqlCompletionSettings
@@ -758,10 +763,7 @@ ORDER BY sd.[name];
 
         public static string GetQueryHistoryTextFileFolder()
         {
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "MSSQLTool",
-                "QueryHistory");
+            return AppPaths.QueryHistoryFolder;
         }
 
 

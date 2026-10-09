@@ -169,6 +169,10 @@
     <Compile Include="Modules\ShortcutManager.cs" />
     <Compile Include="Modules\StatusFeedback.cs" />
     <Compile Include="Modules\SettingsManager.cs" />
+    <Compile Include="Modules\AppPaths.cs" />
+    <Compile Include="Modules\SettingsStore.cs" />
+    <Compile Include="Modules\LoggingSetup.cs" />
+    <Compile Include="Modules\DataFolderMigration.cs" />
     <Compile Include="Modules\FormatterOptions.cs" />
     <Compile Include="Modules\FormatterLayoutRules.cs" />
     <Compile Include="Modules\SQLBuilds.cs" />

@@ -68,11 +68,7 @@ namespace MSSQLTool.SchemaCompare
         {
             try
             {
-                using (var key = Registry.CurrentUser.OpenSubKey(SubKeyPath, false))
-                {
-                    object value = key == null ? null : key.GetValue(name);
-                    return value == null ? null : value.ToString();
-                }
+                return SettingsStore.Read(name);
             }
             catch (Exception ex)
             {
@@ -85,13 +81,7 @@ namespace MSSQLTool.SchemaCompare
         {
             try
             {
-                using (var key = Registry.CurrentUser.CreateSubKey(SubKeyPath))
-                {
-                    if (key != null)
-                    {
-                        key.SetValue(name, value ?? string.Empty, RegistryValueKind.String);
-                    }
-                }
+                SettingsStore.Write(name, value ?? string.Empty);
             }
             catch (Exception ex)
             {

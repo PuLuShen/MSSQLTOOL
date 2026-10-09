@@ -39,6 +39,7 @@
 - **Right-aligned numeric grid values**
 - **SQL Server version information**
 - **Sync database scripts to GitHub**
+- **Configurable data and settings folder** (another drive, a synced folder or a portable device)
 - **Simplified Chinese and English interfaces**
 
 ## Support

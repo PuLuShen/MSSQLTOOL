@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -63,21 +63,24 @@ namespace MSSQLTool
         /// <summary>Name of the history database file.</summary>
         public const string DatabaseFileName = "query-history.db";
 
-        /// <summary>Where the history database is kept.</summary>
-        public static string DatabasePath
-        {
-            get
-            {
-                return Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "MSSQLTool",
-                    "QueryHistory",
-                    DatabaseFileName);
-            }
-        }
+        /// <summary>Where the history database is kept. Follows the configured data folder.</summary>
+        public static string DatabasePath => Path.Combine(AppPaths.QueryHistoryFolder, DatabaseFileName);
 
         /// <summary>Non-null when the engine could not be initialized.</summary>
         public static string InitializationError => initializationError;
+
+        /// <summary>
+        /// Forces the schema check to run again, so a history database in a newly configured data
+        /// folder is created and upgraded on first use.
+        /// </summary>
+        internal static void ResetForDataFolderChange()
+        {
+            lock (SyncRoot)
+            {
+                initialized = false;
+                initializationError = null;
+            }
+        }
 
         public static string EngineVersion => engineVersion ?? string.Empty;
 

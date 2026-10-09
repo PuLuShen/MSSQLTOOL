@@ -17,10 +17,9 @@ namespace MSSQLTool
         {
             get
             {
-                string folder = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "MSSQLTool");
-                return Path.Combine(folder, "snippets.json");
+                // Snippets follow a configured data folder; otherwise they stay in the roaming
+                // profile, which is where earlier releases kept them.
+                return AppPaths.SnippetsFile;
             }
         }
 

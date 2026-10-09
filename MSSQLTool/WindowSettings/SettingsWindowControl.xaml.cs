@@ -4,6 +4,7 @@ namespace MSSQLTool
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
     using System.Diagnostics;
+    using System.IO;
     using System.Linq;
     using System.Text;
     using System.Threading;
@@ -182,6 +183,8 @@ as select 1;
                 UpdateUpdateStatus();
 
                 LoadConnectionColorRules();
+
+                RefreshStoragePage();
 
             }
             catch (Exception ex)
@@ -425,6 +428,160 @@ as select 1;
             return current?.Message ?? string.Empty;
         }
 
+        // ---------------------------------------------------------------- Storage page
+
+        /// <summary>Shows where the extension currently keeps its data and configuration.</summary>
+        private void RefreshStoragePage()
+        {
+            AppPathResolution resolution = AppPaths.Resolution;
+            DataFolderPath.Text = resolution.Root;
+            DataFolderStorage.Text = DescribeStorage(resolution);
+            DataFolderStatus.Text = resolution.UnavailableReason ?? string.Empty;
+            DataFolderStatus.Visibility = string.IsNullOrEmpty(resolution.UnavailableReason)
+                ? Visibility.Collapsed : Visibility.Visible;
+
+            var report = new StringBuilder();
+            foreach (KeyValuePair<string, string> location in AppPaths.DescribeLocations())
+                report.AppendLine(LocalizationManager.T(location.Key) + ": " + location.Value);
+            DataFolderLocations.Text = report.ToString().TrimEnd();
+        }
+
+        private static string DescribeStorage(AppPathResolution resolution)
+        {
+            string source = resolution.Source == AppPaths.SourceEnvironment
+                ? LocalizationManager.T("set by the MSSQLTOOL_DATA_ROOT environment variable")
+                : resolution.Source == AppPaths.SourceSettings
+                    ? LocalizationManager.T("chosen in this window")
+                    : LocalizationManager.T("the default location");
+
+            string store = SettingsStore.IsFileBacked
+                ? LocalizationManager.T("Settings are written to settings.json in this folder and mirrored into the Windows registry.")
+                : LocalizationManager.T("Settings are kept in the Windows registry.");
+
+            return LocalizationManager.Format("Location: {0}. {1}", source, store);
+        }
+
+        private void Button_BrowseDataFolder_Click(object sender, RoutedEventArgs e)
+        {
+            using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
+            {
+                dialog.Description = LocalizationManager.T("Select the folder MSSQL Tool should keep its data in");
+                dialog.ShowNewFolderButton = true;
+                try { dialog.SelectedPath = AppPaths.Root; } catch { }
+                if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+                ApplyDataFolder(dialog.SelectedPath);
+            }
+        }
+
+        private void Button_OpenDataFolder_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Directory.CreateDirectory(AppPaths.Root);
+                Process.Start(new ProcessStartInfo("explorer.exe", "\"" + AppPaths.Root + "\"") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                LocalizedMessageBox.Show(LocalizationManager.Format("The folder could not be opened: {0}", ex.Message),
+                    "Storage", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void Button_ResetDataFolder_Click(object sender, RoutedEventArgs e)
+        {
+            if (!AppPaths.IsCustomRoot)
+            {
+                RefreshStoragePage();
+                return;
+            }
+
+            MessageBoxResult answer = LocalizedMessageBox.Show(
+                LocalizationManager.T("Use the default data folder again? The files in the current folder are kept."),
+                "Storage", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            if (answer != MessageBoxResult.OK) return;
+
+            string previousRoot = AppPaths.Root;
+            AppPaths.ClearDataRoot();
+            ReloadAfterDataFolderChange();
+            RefreshStoragePage();
+
+            LocalizedMessageBox.Show(
+                LocalizationManager.Format("The default folder is used again: {0}", AppPaths.Root)
+                    + Environment.NewLine + Environment.NewLine
+                    + LocalizationManager.Format("The files in the previous folder were left untouched: {0}", previousRoot),
+                "Storage", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        /// <summary>Points the extension at another folder, copying the existing data on request.</summary>
+        private void ApplyDataFolder(string folder)
+        {
+            string normalized = AppPaths.Normalize(folder);
+            if (normalized == null)
+            {
+                LocalizedMessageBox.Show(LocalizationManager.T("Enter a valid absolute folder path, for example D:\\MSSQLToolData."),
+                    "Storage", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (string.Equals(normalized, AppPaths.Root, StringComparison.OrdinalIgnoreCase))
+            {
+                RefreshStoragePage();
+                return;
+            }
+
+            string previousRoot = AppPaths.Root;
+            string error;
+            if (!AppPaths.TrySetDataRoot(normalized, out error))
+            {
+                LocalizedMessageBox.Show(error, "Storage", MessageBoxButton.OK, MessageBoxImage.Error);
+                RefreshStoragePage();
+                return;
+            }
+
+            string copied = string.Empty;
+            if (DataFolderMoveExisting.IsChecked == true)
+            {
+                try
+                {
+                    copied = DataFolderMigration.CopyData(previousRoot, AppPaths.Root);
+                }
+                catch (Exception ex)
+                {
+                    copied = LocalizationManager.Format("Existing data could not be copied: {0}", ex.Message);
+                }
+            }
+
+            ReloadAfterDataFolderChange();
+            LoadSavedSettings();
+            RefreshStoragePage();
+
+            var message = new StringBuilder();
+            message.AppendLine(LocalizationManager.Format("Data folder: {0}", AppPaths.Root));
+            if (!string.IsNullOrWhiteSpace(copied))
+            {
+                message.AppendLine();
+                message.AppendLine(copied);
+            }
+
+            message.AppendLine();
+            message.AppendLine(LocalizationManager.T("The log file follows after the next SSMS start; everything else uses the new folder immediately."));
+
+            LocalizedMessageBox.Show(message.ToString(), "Storage", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        /// <summary>
+        /// Drops the in-memory copies of everything that is read from the data folder, so the new
+        /// location takes effect without restarting SSMS.
+        /// </summary>
+        private static void ReloadAfterDataFolderChange()
+        {
+            SettingsManager.InvalidateSettingsCache();
+            Completion.CompletionUsageStore.Reload();
+            SnippetService.ReloadSnippets();
+            QueryHistorySqliteStore.ResetForDataFolderChange();
+            LoggingSetup.Apply(AppPaths.LogsFolder);
+        }
+
         private void Button_RefreshDiagnostics_Click(object sender, RoutedEventArgs e) => RefreshDiagnostics();
 
         private void Button_CopyDiagnostics_Click(object sender, RoutedEventArgs e)
@@ -440,6 +597,12 @@ as select 1;
             report.AppendLine("Assembly: " + typeof(SettingsWindowControl).Assembly.GetName().Version);
             var connection = ScriptFactoryAccess.GetCurrentOrLastConnectionInfo();
             report.AppendLine("Connection: " + (connection?.DisplayName ?? "<none>"));
+            report.AppendLine("Storage: " + AppPaths.RootSource + " | " + AppPaths.Root
+                + " | settings store: " + (SettingsStore.IsFileBacked ? "file" : "registry"));
+            if (!string.IsNullOrEmpty(AppPaths.UnavailableReason))
+                report.AppendLine("Storage warning: " + AppPaths.UnavailableReason);
+            foreach (KeyValuePair<string, string> location in AppPaths.DescribeLocations())
+                report.AppendLine("  " + location.Key + ": " + location.Value);
             foreach (FeatureDiagnostic item in FeatureDiagnostics.Snapshot())
                 report.AppendLine($"{item.TimestampUtc:u} [{item.Feature}] {item.Message}{(item.Exception == null ? string.Empty : " | " + item.Exception.Message)}");
             DiagnosticsText.Text = report.ToString();

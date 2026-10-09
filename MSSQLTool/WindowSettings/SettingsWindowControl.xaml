@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="MSSQLTool.SettingsWindowControl"
+<UserControl x:Class="MSSQLTool.SettingsWindowControl"
 	xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
 	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 	xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -133,6 +133,46 @@
                             Click="Button_ApplyLanguage_Click" />
                     <TextBlock Text="The language setting applies immediately to MSSQL Tool windows. Toolbar command labels use the package default language."
                                TextWrapping="Wrap" Margin="0,10,0,0" />
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Storage">
+                <StackPanel Margin="16" MaxWidth="760" HorizontalAlignment="Left">
+                    <TextBlock Text="Data and configuration folder" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <TextBlock TextWrapping="Wrap" Opacity="0.8" Margin="0,0,0,12"
+                               Text="MSSQL Tool keeps its settings, query history, completion ranking, GitHub sync profiles, snippets and log files in one folder. Point that folder at another drive, a synced folder or a portable device to keep the data outside your Windows profile. The pointer itself stays in the registry, and every setting is mirrored there, so the default location keeps working if the folder is unavailable."/>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Data folder:" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1" x:Name="DataFolderPath" IsReadOnly="True" Margin="0,0,8,0"
+                                 VerticalContentAlignment="Center"/>
+                        <Button Grid.Column="2" Content="Browse..." Width="90" Click="Button_BrowseDataFolder_Click"/>
+                        <Button Grid.Column="3" Content="Open folder" Width="100" Margin="8,0,0,0"
+                                Click="Button_OpenDataFolder_Click"/>
+                        <Button Grid.Column="4" Content="Restore default" Width="120" Margin="8,0,0,0"
+                                Click="Button_ResetDataFolder_Click"/>
+                    </Grid>
+
+                    <CheckBox x:Name="DataFolderMoveExisting" Margin="0,12,0,0" IsChecked="True"
+                              Content="Copy existing data to the new folder"/>
+
+                    <TextBlock x:Name="DataFolderStatus" TextWrapping="Wrap" Margin="0,12,0,0" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="DataFolderStorage" TextWrapping="Wrap" Opacity="0.8" Margin="0,6,0,0"/>
+
+                    <TextBlock Text="Locations in use" FontWeight="SemiBold" Margin="0,18,0,6"/>
+                    <TextBox x:Name="DataFolderLocations" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas"
+                             TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             Height="150"/>
+
+                    <TextBlock TextWrapping="Wrap" Opacity="0.8" Margin="0,10,0,0"
+                               Text="Changes apply immediately: the completion ranking, query history, snippets and settings move to the new folder at once. The log file follows after the next SSMS start."/>
                 </StackPanel>
             </TabItem>
 

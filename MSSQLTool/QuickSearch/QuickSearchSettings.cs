@@ -187,10 +187,7 @@ namespace MSSQLTool
         {
             try
             {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath, false))
-                {
-                    return key?.GetValue(valueName) as string ?? string.Empty;
-                }
+                return SettingsStore.Read(valueName) ?? string.Empty;
             }
             catch (Exception)
             {
@@ -202,18 +199,13 @@ namespace MSSQLTool
         {
             try
             {
-                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryPath))
+                if (string.IsNullOrEmpty(value))
                 {
-                    if (key == null) return;
-
-                    if (string.IsNullOrEmpty(value))
-                    {
-                        key.DeleteValue(valueName, false);
-                    }
-                    else
-                    {
-                        key.SetValue(valueName, value, RegistryValueKind.String);
-                    }
+                    SettingsStore.Remove(valueName);
+                }
+                else
+                {
+                    SettingsStore.Write(valueName, value);
                 }
             }
             catch (Exception)

@@ -10,7 +10,13 @@ namespace MSSQLTool.Completion
     internal static class CompletionUsageStore
     {
         private static readonly object Gate = new object();
-        private static readonly string FilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MSSQLTool", "completion-usage.json");
+
+        /// <summary>
+        /// Where the learned ranking is kept.  Resolved on every access so a changed data folder
+        /// takes effect without restarting SSMS.
+        /// </summary>
+        private static string FilePath => AppPaths.CompletionUsageFile;
+
         private static Dictionary<string, int> counts = Load();
         private static int saveGeneration;
 
@@ -18,6 +24,12 @@ namespace MSSQLTool.Completion
         {
             if (item == null) return 0;
             lock (Gate) return counts.TryGetValue(Key(item), out int count) ? Math.Min(40, count * 2) : 0;
+        }
+
+        /// <summary>Re-reads the ranking from the current data folder.</summary>
+        internal static void Reload()
+        {
+            lock (Gate) counts = Load();
         }
 
         public static void Record(CompletionItem item)

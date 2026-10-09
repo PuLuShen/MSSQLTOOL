@@ -1,4 +1,4 @@
-﻿using Aurora;
+using Aurora;
 using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.CommandBars;
@@ -116,42 +116,8 @@ namespace MSSQLTool
 
         private void InitializeLogging()
         {
-
-            var logDirectory = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "MSSQLTool",
-                        "MSSQLToolLog"
-                );
-            Directory.CreateDirectory(logDirectory);
-
-            // If using the NLog.config approach:
-            LogManager.Setup()
-                  .LoadConfiguration(builder =>
-                  {
-                      // Create a file target
-                      var fileTarget = new FileTarget("fileLog")
-                      {
-                          FileName = Path.Combine(logDirectory, "log_${shortdate}.log"),
-                          Layout = "${longdate}|${level}|${logger}|${message}${exception:format=ToString}",
-
-                          // Optionally, configure archive settings, etc.
-                          ArchiveFileName = Path.Combine(logDirectory, "archive/log.{###}.txt"),
-                          ArchiveAboveSize = 1024 * 1024 * 5, // 5 MB, for example
-                          MaxArchiveFiles = 5
-                      };
-
-                      // Add the file target to the builder
-                      // builder.AddTarget(fileTarget);
-
-                      // Create a rule: "Write all logs from Info to Fatal to fileTarget"
-                      builder.ForLogger()
-                             .FilterMinLevel(LogLevel.Info)
-                             .WriteTo(fileTarget);
-                  });
-
+            LoggingSetup.Apply(AppPaths.LogsFolder);
             _logger = LogManager.GetCurrentClassLogger();
-            // If needed, create directories here if they do not exist
-            // Or do nothing if the config is specifying a folder that NLog will create automatically
         }
 
         private static void EnqueueDataForProcessing(QueryHistoryEntry data)

@@ -17,6 +17,7 @@ namespace MSSQLTool.RegressionTests
         private static int Main()
         {
             if (HasCommandLineSwitch("--format-probe")) return FormatterProbe.Run(Environment.GetCommandLineArgs());
+            if (HasCommandLineSwitch("--storage")) return StorageProbe.Run();
 
             // The insert-text assertions expect square brackets, but Quote()
             // follows the machine's saved useSquareBrackets setting. Pin the
@@ -192,6 +193,7 @@ namespace MSSQLTool.RegressionTests
             Run("Resizable completion details pane", TestCompletionSplitter);
             Run("Completion popup constructs", TestCompletionPopupConstructs);
             RunCompletionSelectionTests();
+            RunStorageTests();
             RunFormattingTests();
             RunSqlServerIntegration();
 
