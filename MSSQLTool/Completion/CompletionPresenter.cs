@@ -181,6 +181,21 @@ namespace MSSQLTool.Completion
 
         public void Show(IVsTextView textView, IReadOnlyList<CompletionItem> newItems, MetadataSnapshot metadata, CompletionContext context)
         {
+            // The popup is refreshed from the editor's key handling; a failure here must never take
+            // the editor (or the whole SSMS window) down with it.
+            try
+            {
+                ShowCore(textView, newItems, metadata, context);
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("SQL Completion", "The completion popup could not be refreshed", ex);
+                try { window.Hide(); } catch { }
+            }
+        }
+
+        private void ShowCore(IVsTextView textView, IReadOnlyList<CompletionItem> newItems, MetadataSnapshot metadata, CompletionContext context)
+        {
             if (!themeResolved) ApplySsmsTheme();
 
             // A popup that was hidden starts a new session, and so does a request raised

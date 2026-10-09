@@ -436,9 +436,18 @@ namespace MSSQLTool
             }
 
             var rows = new List<ColumnMappingRow>();
+            var takenTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (ExcelImport.ExcelColumnMetadata column in previewAnalysis.Columns)
             {
                 string matched = targetColumns.FirstOrDefault(t => string.Equals(t, column.Name, StringComparison.OrdinalIgnoreCase));
+                // Mapping is filled in first-come-first-served: a second Excel column with the same
+                // header must not be aimed at a destination column that is already used, because
+                // SqlBulkCopy rejects two sources for one destination.
+                if (matched != null && !takenTargets.Add(matched))
+                {
+                    matched = null;
+                }
+
                 rows.Add(new ColumnMappingRow
                 {
                     ExcelColumn = column.Name,
@@ -598,15 +607,34 @@ namespace MSSQLTool
 
                     if (columnMappings != null && columnMappings.Count > 0)
                     {
+                        // SqlBulkCopy keys its mapping collection by destination column, so mapping
+                        // two Excel columns onto one destination column throws a duplicate-key error.
+                        var usedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        var duplicates = new List<string>();
                         foreach (KeyValuePair<string, string> mapping in columnMappings)
                         {
+                            if (!usedTargets.Add(mapping.Value))
+                            {
+                                duplicates.Add(mapping.Key + " -> " + mapping.Value);
+                                continue;
+                            }
+
                             bulkCopy.ColumnMappings.Add(mapping.Key, mapping.Value);
                         }
+
+                        if (duplicates.Count > 0)
+                            throw new InvalidOperationException(LocalizationManager.Format(
+                                "More than one Excel column is mapped to the same destination column: {0}. Give every Excel column its own destination column.",
+                                string.Join(", ", duplicates)));
                     }
                     else
                     {
+                        var mapped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                         foreach (ExcelImport.ExcelColumnMetadata column in worksheetData.Columns)
                         {
+                            // A worksheet may repeat a header; the second mapping would be rejected
+                            // with a duplicate-key error.
+                            if (string.IsNullOrWhiteSpace(column.Name) || !mapped.Add(column.Name)) continue;
                             bulkCopy.ColumnMappings.Add(column.Name, column.Name);
                         }
                     }

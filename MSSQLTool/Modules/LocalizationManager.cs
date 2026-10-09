@@ -699,6 +699,10 @@ namespace MSSQLTool
             ["GitHub sync profiles"] = "GitHub 同步配置",
             ["Snippets"] = "代码片段",
             ["Query templates"] = "查询模板",
+
+            // Column mapping failures that used to surface as a raw duplicate-key error.
+            ["More than one source column is mapped to the same target column: {0}. Give every source column its own target column."] = "有多个源列映射到了同一个目标列：{0}。请为每个源列选择各自的目标列。",
+            ["More than one Excel column is mapped to the same destination column: {0}. Give every Excel column its own destination column."] = "有多个 Excel 列映射到了同一个目标列：{0}。请为每个 Excel 列选择各自的目标列。",
         };
 
         public static string CurrentLanguage { get; private set; } = ChineseLanguage;

@@ -300,9 +300,17 @@ namespace MSSQLTool
             }
 
             var rows = new List<ColumnMappingRow>();
+            var takenTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string sourceColumn in sourceColumns)
             {
                 string matched = targetColumns.FirstOrDefault(t => string.Equals(t, sourceColumn, StringComparison.OrdinalIgnoreCase));
+                // One target column can only receive one source column; the mapping is filled in
+                // first-come-first-served so the copy step never builds a duplicate mapping.
+                if (matched != null && !takenTargets.Add(matched))
+                {
+                    matched = null;
+                }
+
                 rows.Add(new ColumnMappingRow
                 {
                     SourceColumn = sourceColumn,
@@ -420,17 +428,37 @@ namespace MSSQLTool
                         if (columnMappings != null && columnMappings.Count > 0)
                         {
                             var schemaNames = new HashSet<string>(schema.Rows.Cast<DataRow>().Select(row => Convert.ToString(row["ColumnName"])), StringComparer.OrdinalIgnoreCase);
+                            // SqlBulkCopy keys its mapping collection by destination column: two
+                            // source columns aimed at one target make it throw a duplicate-key
+                            // error, so the first mapping wins and the rest are reported.
+                            var usedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                            var duplicates = new List<string>();
                             foreach (var mapping in columnMappings)
                             {
-                                if (schemaNames.Contains(mapping.Key))
-                                    bulk.ColumnMappings.Add(mapping.Key, mapping.Value);
+                                if (!schemaNames.Contains(mapping.Key)) continue;
+                                if (!usedTargets.Add(mapping.Value))
+                                {
+                                    duplicates.Add(mapping.Key + " -> " + mapping.Value);
+                                    continue;
+                                }
+
+                                bulk.ColumnMappings.Add(mapping.Key, mapping.Value);
                             }
+
+                            if (duplicates.Count > 0)
+                                throw new InvalidOperationException(LocalizationManager.Format(
+                                    "More than one source column is mapped to the same target column: {0}. Give every source column its own target column.",
+                                    string.Join(", ", duplicates)));
                         }
                         if (bulk.ColumnMappings.Count == 0)
                         {
+                            var mapped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                             foreach (DataRow row in schema.Rows)
                             {
                                 string name = Convert.ToString(row["ColumnName"]);
+                                // A result set may repeat a column name; SqlBulkCopy rejects the
+                                // second mapping with a duplicate-key error.
+                                if (string.IsNullOrWhiteSpace(name) || !mapped.Add(name)) continue;
                                 bulk.ColumnMappings.Add(name, name);
                             }
                         }

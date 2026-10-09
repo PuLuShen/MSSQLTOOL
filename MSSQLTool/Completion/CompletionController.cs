@@ -133,8 +133,15 @@ namespace MSSQLTool.Completion
         {
             uiContext.Post(_ =>
             {
-                if (!token.IsCancellationRequested && ReferenceEquals(currentContext, context) && IsCurrentSnapshot())
-                    presenter.Hide();
+                try
+                {
+                    if (!token.IsCancellationRequested && ReferenceEquals(currentContext, context) && IsCurrentSnapshot())
+                        presenter.Hide();
+                }
+                catch (Exception ex)
+                {
+                    FeatureDiagnostics.Report("SQL Completion", "The completion list could not be dismissed", ex);
+                }
             }, null);
         }
 
@@ -275,17 +282,27 @@ namespace MSSQLTool.Completion
         {
             uiContext.Post(_ =>
             {
-                if (token.IsCancellationRequested || !ReferenceEquals(currentContext, context) || !IsCurrentSnapshot()) return;
-                if (items.Count == 0 && !CompletionPresenter.HasParameterInfo(metadata, context))
-                    presenter.Hide();
-                else
+                // This callback runs on the UI thread from the message loop: anything that escapes
+                // here surfaces as an SSMS error dialog with a raw .NET message and is never logged.
+                try
                 {
-                    // Dismiss SSMS's native completion only when opening our popup.
-                    // Sending CANCEL for every in-place refresh can disturb the
-                    // editor and causes a visible close/reopen cycle.
-                    if (!presenter.IsVisible)
-                        BeforePopupShown?.Invoke();
-                    presenter.Show(textView, items, metadata, context);
+                    if (token.IsCancellationRequested || !ReferenceEquals(currentContext, context) || !IsCurrentSnapshot()) return;
+                    if (items.Count == 0 && !CompletionPresenter.HasParameterInfo(metadata, context))
+                        presenter.Hide();
+                    else
+                    {
+                        // Dismiss SSMS's native completion only when opening our popup.
+                        // Sending CANCEL for every in-place refresh can disturb the
+                        // editor and causes a visible close/reopen cycle.
+                        if (!presenter.IsVisible)
+                            BeforePopupShown?.Invoke();
+                        presenter.Show(textView, items, metadata, context);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FeatureDiagnostics.Report("SQL Completion", "The completion list could not be shown", ex);
+                    try { presenter.Hide(); } catch { }
                 }
             }, null);
         }

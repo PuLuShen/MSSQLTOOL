@@ -1,4 +1,4 @@
-﻿using Microsoft.VisualStudio;
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.OLE.Interop;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System;
@@ -47,6 +47,23 @@ namespace MSSQLTool
         }
 
         public int Exec(ref Guid cmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
+        {
+            // Every keystroke reaches this filter.  An exception escaping it is reported by SSMS as a
+            // dialog with a raw .NET message and breaks the key, so failures are logged and the key
+            // is passed on to the editor instead.
+            try
+            {
+                return ExecCore(ref cmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("SQL editor keys", "A key or command could not be processed by MSSQL Tool", ex);
+                try { return nextCommandTarget?.Exec(ref cmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut) ?? VSConstants.S_OK; }
+                catch { return VSConstants.S_OK; }
+            }
+        }
+
+        private int ExecCore(ref Guid cmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
         {
             if (cmdGroup == VSConstants.GUID_VSStandardCommandSet97
                 && (nCmdID == (uint)VSConstants.VSStd97CmdID.Paste
