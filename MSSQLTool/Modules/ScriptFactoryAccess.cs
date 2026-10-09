@@ -1,4 +1,4 @@
-﻿using Microsoft.SqlServer.Management.Smo;
+using Microsoft.SqlServer.Management.Smo;
 using Microsoft.SqlServer.Management.Smo.RegSvrEnum;
 using Microsoft.SqlServer.Management.UI.VSIntegration;
 using Microsoft.SqlServer.Management.UI.VSIntegration.ObjectExplorer;
@@ -87,7 +87,6 @@ namespace MSSQLTool
 
         public static ConnectionInfo GetCurrentConnectionInfoFromObjectExplorer(bool inMaster = false)
         {
-
             var oeService = (IObjectExplorerService)ServiceCache.ServiceProvider.GetService(typeof(IObjectExplorerService));
             if (oeService == null)
                 return null;
@@ -108,7 +107,133 @@ namespace MSSQLTool
                 }
             }
 
-            var objectExplorerConnection = selectedNode.Connection;
+            return BuildConnectionInfo(selectedNode, databaseName);
+        }
+
+        /// <summary>A server that is currently open in Object Explorer.</summary>
+        public sealed class ObjectExplorerServer
+        {
+            public string ServerName { get; set; }
+            public string DisplayName { get; set; }
+            public string LoginName { get; set; }
+            public bool IsConnected { get; set; }
+
+            public override string ToString() => string.IsNullOrWhiteSpace(DisplayName) ? ServerName : DisplayName;
+        }
+
+        /// <summary>
+        /// Every server connected in Object Explorer, so the user can pick the search target instead
+        /// of having to select the right node in the tree first.
+        /// </summary>
+        public static List<ObjectExplorerServer> GetObjectExplorerServers()
+        {
+            var servers = new List<ObjectExplorerServer>();
+            try
+            {
+                var navigation = ServiceCache.ServiceProvider?.GetService(typeof(IObjectExplorerNavigationService))
+                    as IObjectExplorerNavigationService;
+                if (navigation == null)
+                {
+                    return servers;
+                }
+
+                IReadOnlyList<OEServerInfo> connected = navigation.GetConnectedServers();
+                if (connected == null)
+                {
+                    return servers;
+                }
+
+                foreach (OEServerInfo server in connected)
+                {
+                    if (server == null || string.IsNullOrWhiteSpace(server.ServerName)) continue;
+
+                    servers.Add(new ObjectExplorerServer
+                    {
+                        ServerName = server.ServerName,
+                        DisplayName = string.IsNullOrWhiteSpace(server.DisplayName) ? server.ServerName : server.DisplayName,
+                        LoginName = server.LoginName,
+                        IsConnected = server.IsConnected
+                    });
+                }
+
+                servers.Sort((left, right) => string.Compare(left.ServerName, right.ServerName, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Object Explorer", "Could not list the connected servers", ex);
+            }
+
+            return servers;
+        }
+
+        /// <summary>
+        /// Connection (including the credentials Object Explorer holds) for a server it has open.
+        /// </summary>
+        public static ConnectionInfo GetConnectionInfoFromObjectExplorerServer(string serverName, string database = null)
+        {
+            if (string.IsNullOrWhiteSpace(serverName)) return null;
+
+            try
+            {
+                var oeService = (IObjectExplorerService)ServiceCache.ServiceProvider.GetService(typeof(IObjectExplorerService));
+                if (oeService == null) return null;
+
+                INodeInformation node = null;
+                try
+                {
+                    node = oeService.FindNode($"Server[@Name='{serverName}']");
+                }
+                catch (Exception ex)
+                {
+                    FeatureDiagnostics.Report("Object Explorer", "Looking up a connected server failed", ex);
+                }
+
+                if (node == null)
+                {
+                    // Fall back to the selection when it happens to be the same server.
+                    INodeInformation selected = GetSelectedNode(oeService);
+                    if (selected != null && string.Equals(NodeServerName(selected), serverName, StringComparison.OrdinalIgnoreCase))
+                        node = selected;
+                }
+
+                if (node == null) return null;
+
+                string databaseName = string.IsNullOrWhiteSpace(database) ? "master" : database;
+                return BuildConnectionInfo(node, databaseName);
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Object Explorer", "Could not build a connection for a connected server", ex);
+                return null;
+            }
+        }
+
+        /// <summary>The server name an Object Explorer node belongs to, from its context path.</summary>
+        private static string NodeServerName(INodeInformation node)
+        {
+            try
+            {
+                Match match = Regex.Match(node?.Context ?? string.Empty, @"Server\[@Name='(.*?)'\]");
+                if (match.Success) return match.Groups[1].Value;
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return node?.Connection?.ServerName;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Turns an Object Explorer node into the connection string used to query it.</summary>
+        private static ConnectionInfo BuildConnectionInfo(INodeInformation node, string databaseName)
+        {
+            var objectExplorerConnection = node.Connection;
             string userName = objectExplorerConnection.UserName;
             string password = objectExplorerConnection.Password;
             string auth = GetAuthenticationMode(objectExplorerConnection);

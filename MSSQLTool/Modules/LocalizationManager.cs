@@ -160,8 +160,7 @@ namespace MSSQLTool
 
             // Settings -> Updates status text and the up-to-date prompt.
             ["Information"] = "信息",
-            ["Update check skipped because it is disabled in settings."] = "已跳过更新检查：设置中已关闭。",
-            ["Startup update check scheduled."] = "已安排在启动后检查更新。",
+            ["Update check skipped because it is disabled in settings."] = "已跳过更新检查：设置中已关闭。",            ["Startup update check scheduled."] = "已安排在启动后检查更新。",
             ["Running startup update check."] = "正在执行启动时的更新检查。",
             ["Startup update check failed: {0}"] = "启动时的更新检查失败：{0}",
             ["Manual update check skipped because it is disabled in settings."] = "已跳动手动更新检查：设置中已关闭。",
@@ -240,6 +239,8 @@ namespace MSSQLTool
             ["Invalid mail config"] = "邮件配置无效", ["Select a saved connection."] = "请选择一个已保存的连接。",
             ["Select a connection to save."] = "请选择要保存的连接。",
             ["Please select a server or database node in Object Explorer first."] = "请先在对象资源管理器中选择服务器或数据库节点。",
+            ["Every server currently connected in Object Explorer. Pick one to search it, or select a node in Object Explorer first."] = "这里列出对象资源管理器中已连接的所有服务器。可直接挑选一个进行搜索，也可以先在对象资源管理器中选择节点。",
+            ["Could not use the connection to {0}. Select a node in Object Explorer and use the button instead."] = "无法使用到 {0} 的连接。请在对象资源管理器中选择节点后改用按钮选择。",
             ["Select a connection from Object Explorer first."] = "请先从对象资源管理器中选择连接。",
             ["Enter text to search."] = "请输入要搜索的文本。", ["Select at least one object type."] = "请至少选择一种对象类型。",
             ["Search canceled"] = "搜索已取消", ["Search failed"] = "搜索失败", ["Searching..."] = "正在搜索…",

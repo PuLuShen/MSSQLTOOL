@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="MSSQLTool.QuickSearchWindowControl"
+<UserControl x:Class="MSSQLTool.QuickSearchWindowControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -53,6 +53,14 @@
                         Content="Select Target from Object Explorer"
                         FontWeight="Bold"
                         Click="Button_SelectConnection_Click" />
+                <Label Content="Server:" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                <ComboBox x:Name="ComboBox_Server"
+                          Width="240"
+                          Height="24"
+                          Margin="4,0,0,0"
+                          VerticalContentAlignment="Center"
+                          SelectionChanged="ComboBox_Server_SelectionChanged"
+                          ToolTip="Every server currently connected in Object Explorer. Pick one to search it, or select a node in Object Explorer first."/>
                 <Label x:Name="Label_ConnectionDescription" Margin="8,0,0,0" VerticalAlignment="Center" Content="No connection selected"/>
             </StackPanel>
 
@@ -72,7 +80,9 @@
                           IsTextSearchEnabled="False"
                           VerticalContentAlignment="Center"
                           ToolTip="Up/Down recall recent searches. Enter searches, Ctrl+Enter searches every database, Esc clears."
-                          KeyDown="ComboBox_SearchText_KeyDown"/>
+                          KeyDown="ComboBox_SearchText_KeyDown"
+                          GotKeyboardFocus="ComboBox_SearchText_GotKeyboardFocus"
+                          PreviewTextInput="ComboBox_SearchText_PreviewTextInput"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
                     <CheckBox x:Name="CheckBox_WholeWord" Content="Match whole words only" Margin="0,0,12,0"
                               Checked="CheckBox_WholeWord_Checked"

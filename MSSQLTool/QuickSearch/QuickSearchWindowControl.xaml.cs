@@ -53,6 +53,7 @@ namespace MSSQLTool
         private DateTime catalogLoadedUtc = DateTime.MinValue;
         private bool databaseListLoaded;
         private bool suppressDatabaseNotifications;
+        private bool suppressServerNotifications;
         private bool uiReady;
 
         public QuickSearchWindowControl()
@@ -77,7 +78,64 @@ namespace MSSQLTool
             LoadRecentTerms();
             UpdateDatabaseSummary();
 
+            // An editable ComboBox only accepts typing while its inner TextBox holds the keyboard
+            // focus; clicking the control (or the tool window becoming active) can leave the focus on
+            // the ComboBox itself, which looks exactly like "the search box cannot be typed into".
+            ComboBox_SearchText.GotKeyboardFocus += ComboBox_SearchText_GotKeyboardFocus;
+            Loaded += (_, __) => { RefreshServerList(); FocusSearchBox(); };
+            IsVisibleChanged += (_, __) => { if (IsVisible) FocusSearchBox(); };
+
             uiReady = true;
+        }
+
+        /// <summary>Moves the keyboard focus into the editable part of the search box.</summary>
+        private void FocusSearchBox()
+        {
+            try
+            {
+                ComboBox_SearchText.Focus();
+                TextBox editor = GetSearchTextEditor();
+                if (editor != null && !editor.IsKeyboardFocusWithin)
+                {
+                    editor.Focus();
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private TextBox GetSearchTextEditor()
+            => ComboBox_SearchText.Template?.FindName("PART_EditableTextBox", ComboBox_SearchText) as TextBox;
+
+        private void ComboBox_SearchText_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            // Only redirect when the ComboBox itself received the focus: the dropdown list and the
+            // text box must be left alone.
+            if (!ReferenceEquals(e.OriginalSource, ComboBox_SearchText)) return;
+            if (ComboBox_SearchText.IsDropDownOpen) return;
+
+            TextBox editor = GetSearchTextEditor();
+            if (editor != null && !editor.IsKeyboardFocusWithin)
+            {
+                editor.Focus();
+            }
+        }
+
+        /// <summary>
+        /// Belt and braces for the case where the ComboBox itself still holds the focus: the typed
+        /// characters are put into the editable text instead of being swallowed, and the focus moves
+        /// there so the next keystroke takes the normal path.
+        /// </summary>
+        private void ComboBox_SearchText_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        {
+            TextBox editor = GetSearchTextEditor();
+            if (editor == null || editor.IsKeyboardFocusWithin) return;
+
+            editor.Focus();
+            editor.CaretIndex = editor.Text.Length;
+            editor.AppendText(e.Text ?? string.Empty);
+            e.Handled = true;
         }
 
         private void ApplyThemeBrushResources()
@@ -101,6 +159,83 @@ namespace MSSQLTool
                 return;
             }
 
+            await SelectTargetAsync(ci);
+            SelectServerInList(ci.ServerName);
+        }
+
+        /// <summary>Rebuilds the server picker from the servers Object Explorer is connected to.</summary>
+        private void RefreshServerList()
+        {
+            try
+            {
+                List<ScriptFactoryAccess.ObjectExplorerServer> servers = ScriptFactoryAccess.GetObjectExplorerServers();
+                if (servers.Count == 0 && ComboBox_Server.Items.Count > 0) return;
+
+                suppressServerNotifications = true;
+                try
+                {
+                    ComboBox_Server.ItemsSource = servers;
+                    SelectServerInList(selectedServer ?? ScriptFactoryAccess.GetCurrentConnectionInfoFromObjectExplorer()?.ServerName);
+                    if (ComboBox_Server.SelectedItem == null && servers.Count == 1)
+                        ComboBox_Server.SelectedIndex = 0;
+                }
+                finally
+                {
+                    suppressServerNotifications = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Quick Search", "Could not fill the server list", ex);
+            }
+        }
+
+        private void SelectServerInList(string serverName)
+        {
+            if (string.IsNullOrWhiteSpace(serverName)) return;
+
+            bool previous = suppressServerNotifications;
+            suppressServerNotifications = true;
+            try
+            {
+                foreach (object item in ComboBox_Server.Items)
+                {
+                    var server = item as ScriptFactoryAccess.ObjectExplorerServer;
+                    if (server != null && string.Equals(server.ServerName, serverName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ComboBox_Server.SelectedItem = item;
+                        return;
+                    }
+                }
+            }
+            finally
+            {
+                suppressServerNotifications = previous;
+            }
+        }
+
+        private async void ComboBox_Server_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!uiReady || suppressServerNotifications) return;
+
+            var server = ComboBox_Server.SelectedItem as ScriptFactoryAccess.ObjectExplorerServer;
+            if (server == null) return;
+
+            var ci = ScriptFactoryAccess.GetConnectionInfoFromObjectExplorerServer(server.ServerName);
+            if (ci == null)
+            {
+                LocalizedMessageBox.Show(
+                    LocalizationManager.Format("Could not use the connection to {0}. Select a node in Object Explorer and use the button instead.", server.ServerName),
+                    "Quick Search");
+                return;
+            }
+
+            await SelectTargetAsync(ci);
+        }
+
+        /// <summary>Points the window at a connection and reloads the database list for it.</summary>
+        private async Task SelectTargetAsync(ScriptFactoryAccess.ConnectionInfo ci)
+        {
             selectedConnection = ci;
             selectedDatabase = ci.Database;
             selectedServer = ci.ServerName;
