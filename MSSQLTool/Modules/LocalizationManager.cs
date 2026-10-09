@@ -338,6 +338,8 @@ namespace MSSQLTool
             // SQL completion suggestions.
             ["SQL completion suggestions"] = "SQL 补全建议",
             ["Parameters"] = "参数",
+            ["Current version:"] = "当前版本：",
+            ["Latest release:"] = "最新版本：",
 
             // Settings window.
             ["Search settings:"] = "搜索设置：",

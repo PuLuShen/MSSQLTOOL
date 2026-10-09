@@ -529,15 +529,34 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <CheckBox Grid.Row="0"
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5,5,5,2">
+                        <TextBlock Text="Current version:" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="CurrentVersionText"
+                                   Margin="6,0,0,0"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <StackPanel x:Name="LatestVersionPanel"
+                                    Orientation="Horizontal"
+                                    Margin="24,0,0,0"
+                                    Visibility="Collapsed">
+                            <TextBlock Text="Latest release:" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="LatestVersionText"
+                                       Margin="6,0,0,0"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <CheckBox Grid.Row="1"
                               x:Name="EnableUpdateChecks"
                               Content="Check for MSSQL Tool updates on startup"
                               Margin="5"/>
 
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="5">
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="5">
                         <Button x:Name="button_SaveUpdateSettings"
                                 Click="button_SaveUpdateSettings_Click"
                                 Width="80"
@@ -561,7 +580,7 @@
                         </Button>
                     </StackPanel>
 
-                    <GroupBox Grid.Row="2" Header="Update status" Margin="5">
+                    <GroupBox Grid.Row="3" Header="Update status" Margin="5">
                         <TextBlock x:Name="UpdateCheckStatus"
                                    TextWrapping="Wrap"
                                    Margin="5"/>

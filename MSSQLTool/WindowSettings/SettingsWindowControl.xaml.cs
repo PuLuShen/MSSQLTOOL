@@ -378,6 +378,19 @@ as select 1;
             {
                 UpdateCheckStatus.Text = UpdateChecker.LastUpdateResult;
             }
+
+            // The page answers "which version am I on, and is there a newer one?" before any check.
+            if (CurrentVersionText != null)
+            {
+                CurrentVersionText.Text = UpdateChecker.FormatVersion(UpdateChecker.GetCurrentVersion());
+            }
+
+            if (LatestVersionPanel != null && LatestVersionText != null)
+            {
+                Version latest = UpdateChecker.LastLatestVersion;
+                LatestVersionText.Text = latest == null ? string.Empty : UpdateChecker.FormatVersion(latest);
+                LatestVersionPanel.Visibility = latest == null ? Visibility.Collapsed : Visibility.Visible;
+            }
         }
 
         private void Hyperlink_RequestNavigateFormatQueryWiki(object sender, RequestNavigateEventArgs e)

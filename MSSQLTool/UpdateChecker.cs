@@ -228,8 +228,9 @@ namespace MSSQLTool
             var release = await GetLatestReleaseAsync(token);
             if (release == null || release.Draft)
             {
+                string detail = string.IsNullOrWhiteSpace(lastFetchDetail) ? string.Empty : " (" + lastFetchDetail + ")";
                 Log("Update check failed: release info unavailable.");
-                SetLastUpdateResult("Update check failed because latest release info was unavailable.");
+                SetLastUpdateResult("Update check failed because latest release info was unavailable" + detail + ".");
                 return;
             }
 
@@ -240,6 +241,8 @@ namespace MSSQLTool
                 SetLastUpdateResult("Update check failed because latest release version could not be parsed.");
                 return;
             }
+
+            LastLatestVersion = latestVersion;
 
             bool forceUpdateAvailable = false;
 #if DEBUG
@@ -302,10 +305,14 @@ namespace MSSQLTool
                     {
                         if (!response.IsSuccessStatusCode)
                         {
+                            // GitHub answers 404 for a private repository when the request carries no
+                            // token, which is why the status has to name the response.
+                            lastFetchDetail = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}".Trim();
                             Log($"Update check HTTP {response.StatusCode}");
                             return null;
                         }
 
+                        lastFetchDetail = null;
                         string json = await response.Content.ReadAsStringAsync();
                         return JsonConvert.DeserializeObject<GitHubRelease>(json);
                     }
@@ -313,10 +320,17 @@ namespace MSSQLTool
             }
             catch (Exception ex)
             {
+                lastFetchDetail = ex.Message;
                 Log($"Update check fetch failed: {ex.Message}");
                 return null;
             }
         }
+
+        /// <summary>Why the last release lookup failed, shown next to the failure message.</summary>
+        private static volatile string lastFetchDetail;
+
+        /// <summary>The newest release seen by a check, or null while no check has succeeded.</summary>
+        internal static Version LastLatestVersion { get; private set; }
 
         internal static Version GetCurrentVersion()
         {

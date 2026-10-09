@@ -87,6 +87,13 @@ namespace MSSQLTool.RegressionTests
         private static int MainCore()
         {
             Run("Settings window constructs", TestSettingsWindowConstructs);
+            Run("Update page shows the running version", () =>
+            {
+                // The Updates tab prints exactly this, so it must read 4.61 and not 4.61.0.0.
+                Equal("4.61", UpdateChecker.FormatVersion(new Version(4, 61, 0, 0)));
+                Equal("4.61.2", UpdateChecker.FormatVersion(new Version(4, 61, 2, 0)));
+                Equal("4.61.2.7", UpdateChecker.FormatVersion(new Version(4, 61, 2, 7)));
+            });
             Run("Automatic localization is extension-scoped", () => True(
                 LocalizationManager.IsExtensionUiType(typeof(LocalizationManager))
                 && !LocalizationManager.IsExtensionUiType(typeof(string))));
