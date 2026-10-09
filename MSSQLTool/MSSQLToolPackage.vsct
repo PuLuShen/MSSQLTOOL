@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
 
   <!--  This is the file that defines the actual layout and type of the commands.
@@ -65,6 +65,11 @@
       </Group>
 
       <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_AI" priority="0x6000">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>
+
+      <!-- Settings closes the Tools menu, separated from the feature commands above it. -->
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Settings" priority="0x7000">
         <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
       </Group>
 
@@ -269,8 +274,8 @@
         </Strings>
       </Button>
 
-      <Button guid="guidMSSQLToolPackageCmdSet" id="SettingsButton" priority="0x1000" type="Button">
-        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolbarGroup" />
+      <Button guid="guidMSSQLToolPackageCmdSet" id="SettingsButton" priority="0x0000" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Settings" />
         <Icon guid="guidImagesSettings" id="bmpSettings" />        
         <Strings>
           <ButtonText>设置</ButtonText>
@@ -357,6 +362,7 @@
       <IDSymbol name="ToolsSubMenuGroup_DataTransfer" value="0x1204" />
       <IDSymbol name="ToolsSubMenuGroup_Timelines" value="0x1205" />
       <IDSymbol name="ToolsSubMenuGroup_AI" value="0x1206" />
+      <IDSymbol name="ToolsSubMenuGroup_Settings" value="0x120B" />
       <IDSymbol name="ToolsSubMenuGroup_Copy" value="0x1207" />
       <IDSymbol name="SqlEditorContextMenuGroup" value="0x1208" />
 
