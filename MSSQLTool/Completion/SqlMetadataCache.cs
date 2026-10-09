@@ -305,6 +305,8 @@ namespace MSSQLTool.Completion
                 {
                     connection.Open();
                     TryLoadObjects(connection, result, errors);
+                    // A separate command: if the column join is slow, the object list stays complete.
+                    TryLoadColumns(connection, result, errors);
                 }
             }
             catch (Exception ex) { RecordFailure("connection", ex, errors); }
@@ -381,30 +383,49 @@ namespace MSSQLTool.Completion
                     else
                     {
                         string catalog = server + "." + DatabaseIdentifier.SqlServerPart(database);
+                        // Objects first (no column join, no server-side sort) and then the columns: a slow
+                        // or timing-out column query on a linked server must not cost the object list.
                         using (var command = connection.CreateCommand())
                         {
                             command.CommandTimeout = 20;
-                            command.CommandText = "SELECT s.name,o.name,o.type,c.name,ty.name,c.max_length,c.precision,c.scale,c.is_nullable,c.is_identity,c.is_computed,o.is_ms_shipped "
+                            command.CommandText = "SELECT s.name,o.name,o.type,o.is_ms_shipped "
                                 + "FROM " + catalog + ".[sys].[all_objects] o JOIN " + catalog + ".[sys].[schemas] s ON s.schema_id=o.schema_id "
-                                + "LEFT JOIN " + catalog + ".[sys].[all_columns] c ON c.object_id=o.object_id "
-                                + "LEFT JOIN " + catalog + ".[sys].[types] ty ON ty.user_type_id=c.user_type_id "
-                                + "WHERE o.type IN ('U','V','P','PC','X','FN','IF','TF','FS','FT') AND (o.is_ms_shipped=0 OR s.name='sys') ORDER BY s.name,o.name,c.column_id;";
+                                + "WHERE o.type IN ('U','V','P','PC','X','FN','IF','TF','FS','FT') AND (o.is_ms_shipped=0 OR s.name='sys');";
                             using (var reader = command.ExecuteReader())
                             {
-                                DatabaseObjectMetadata current = null; string objectKey = null;
                                 while (reader.Read())
                                 {
-                                    string schema = reader.GetString(0), name = reader.GetString(1), type = reader.GetString(2), next = schema + "." + name + "|" + type;
-                                    if (!string.Equals(objectKey, next, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        if (!result.Schemas.Contains(schema)) result.Schemas.Add(schema);
-                                        current = new DatabaseObjectMetadata { Server = linkedServer, Database = database, Schema = schema, Name = name, Kind = ToKind(type), IsTableValuedFunction = type == "IF" || type == "TF" || type == "FT", IsSystem = !reader.IsDBNull(11) && reader.GetBoolean(11) };
-                                        result.Objects.Add(current); objectKey = next;
-                                    }
-                                    if (!reader.IsDBNull(3)) current.Columns.Add(new ColumnMetadata { Name = reader.GetString(3), DataType = reader.IsDBNull(4) ? "" : reader.GetString(4), MaxLength = reader.IsDBNull(5) ? (short)0 : reader.GetInt16(5), Precision = reader.IsDBNull(6) ? (byte)0 : reader.GetByte(6), Scale = reader.IsDBNull(7) ? (byte)0 : reader.GetByte(7), IsNullable = !reader.IsDBNull(8) && reader.GetBoolean(8), IsIdentity = !reader.IsDBNull(9) && reader.GetBoolean(9), IsComputed = !reader.IsDBNull(10) && reader.GetBoolean(10) });
+                                    string schema = reader.GetString(0), name = reader.GetString(1), type = reader.GetString(2);
+                                    if (!result.Schemas.Contains(schema)) result.Schemas.Add(schema);
+                                    result.Objects.Add(new DatabaseObjectMetadata { Server = linkedServer, Database = database, Schema = schema, Name = name, Kind = ToKind(type), IsTableValuedFunction = type == "IF" || type == "TF" || type == "FT", IsSystem = !reader.IsDBNull(3) && reader.GetBoolean(3) });
                                 }
                             }
                         }
+
+                        var index = new SnapshotObjectIndex(result);
+                        try
+                        {
+                            using (var command = connection.CreateCommand())
+                            {
+                                command.CommandTimeout = 25;
+                                command.CommandText = "SELECT s.name,o.name,c.name,ty.name,c.max_length,c.precision,c.scale,c.is_nullable,c.is_identity,c.is_computed,c.column_id "
+                                    + "FROM " + catalog + ".[sys].[all_columns] c JOIN " + catalog + ".[sys].[all_objects] o ON o.object_id=c.object_id "
+                                    + "JOIN " + catalog + ".[sys].[schemas] s ON s.schema_id=o.schema_id "
+                                    + "JOIN " + catalog + ".[sys].[types] ty ON ty.user_type_id=c.user_type_id "
+                                    + "WHERE o.type IN ('U','V','FN','IF','TF','FS','FT') AND o.is_ms_shipped=0;";
+                                using (var reader = command.ExecuteReader())
+                                {
+                                    while (reader.Read())
+                                    {
+                                        DatabaseObjectMetadata item = index.Find(reader.GetString(0), reader.GetString(1));
+                                        if (item == null) continue;
+                                        lock (item.Columns)
+                                            item.Columns.Add(new ColumnMetadata { Name = reader.GetString(2), DataType = reader.IsDBNull(3) ? "" : reader.GetString(3), MaxLength = reader.IsDBNull(4) ? (short)0 : reader.GetInt16(4), Precision = reader.IsDBNull(5) ? (byte)0 : reader.GetByte(5), Scale = reader.IsDBNull(6) ? (byte)0 : reader.GetByte(6), IsNullable = !reader.IsDBNull(7) && reader.GetBoolean(7), IsIdentity = !reader.IsDBNull(8) && reader.GetBoolean(8), IsComputed = !reader.IsDBNull(9) && reader.GetBoolean(9), Ordinal = reader.IsDBNull(10) ? 0 : reader.GetInt32(10) });
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex) { RecordOptionalFailure("linked server columns", ex); }
 
                         using (var command = connection.CreateCommand())
                         {
@@ -460,38 +481,107 @@ namespace MSSQLTool.Completion
             {
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandTimeout = 15;
+                    command.CommandTimeout = 20;
+                    // Object names only.  Joining sys.all_columns and sorting the whole result set made
+                    // this query heavy enough to time out on a busy server, and a timeout left the
+                    // snapshot with just the rows read before it - a handful of objects, with no way to
+                    // complete the list afterwards.
                     command.CommandText = @"
- SELECT s.name, o.name, o.type, c.name, ty.name, c.max_length, c.precision, c.scale, c.is_nullable, c.is_identity, c.is_computed, o.is_ms_shipped, c.column_id
+SELECT s.name, o.name, o.type, o.is_ms_shipped
 FROM sys.all_objects o
 JOIN sys.schemas s ON s.schema_id=o.schema_id
-LEFT JOIN sys.all_columns c ON c.object_id=o.object_id
-LEFT JOIN sys.types ty ON ty.user_type_id=c.user_type_id
 WHERE o.type IN ('U','V','P','PC','X','FN','IF','TF','FS','FT')
-  AND (o.is_ms_shipped=0 OR s.name='sys')
-ORDER BY s.name,o.name,c.column_id;";
+  AND (o.is_ms_shipped=0 OR s.name='sys');";
                     using (var reader = command.ExecuteReader())
                     {
-                        DatabaseObjectMetadata current = null; string key = null;
                         while (reader.Read())
                         {
                             string schema = reader.GetString(0), name = reader.GetString(1), type = reader.GetString(2);
-                            string nextKey = schema + "." + name + "|" + type;
-                            if (!string.Equals(key, nextKey, StringComparison.OrdinalIgnoreCase))
+                            if (!result.Schemas.Contains(schema)) result.Schemas.Add(schema);
+                            result.Objects.Add(new DatabaseObjectMetadata
                             {
-                                if (!result.Schemas.Contains(schema)) result.Schemas.Add(schema);
-                                current = new DatabaseObjectMetadata { Database = connection.Database, Schema = schema, Name = name, Kind = ToKind(type), IsTableValuedFunction = type == "IF" || type == "TF" || type == "FT", IsSystem = !reader.IsDBNull(11) && reader.GetBoolean(11) };
-                                result.Objects.Add(current); key = nextKey;
-                            }
-                            if (!reader.IsDBNull(3)) current.Columns.Add(new ColumnMetadata { Name = reader.GetString(3), DataType = reader.IsDBNull(4) ? string.Empty : reader.GetString(4), MaxLength = reader.IsDBNull(5) ? (short)0 : reader.GetInt16(5), Precision = reader.IsDBNull(6) ? (byte)0 : reader.GetByte(6), Scale = reader.IsDBNull(7) ? (byte)0 : reader.GetByte(7), IsNullable = !reader.IsDBNull(8) && reader.GetBoolean(8), IsIdentity = !reader.IsDBNull(9) && reader.GetBoolean(9), IsComputed = !reader.IsDBNull(10) && reader.GetBoolean(10), Ordinal = reader.IsDBNull(12) ? 0 : reader.GetInt32(12) });
+                                Database = connection.Database,
+                                Schema = schema,
+                                Name = name,
+                                Kind = ToKind(type),
+                                IsTableValuedFunction = type == "IF" || type == "TF" || type == "FT",
+                                IsSystem = !reader.IsDBNull(3) && reader.GetBoolean(3)
+                            });
+                        }
+                    }
+                }
+
+                // Sorted in memory instead of in SQL: the server no longer sorts the whole result set
+                // before it can return the first row.
+                result.Objects.Sort((left, right) =>
+                {
+                    int bySchema = string.Compare(left.Schema, right.Schema, StringComparison.OrdinalIgnoreCase);
+                    if (bySchema != 0) return bySchema;
+                    int byName = string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
+                    return byName != 0 ? byName : left.Kind.CompareTo(right.Kind);
+                });
+            }
+            catch (Exception ex)
+            {
+                RecordFailure("objects and columns", ex, errors);
+                TryLoadObjectNamesFallback(connection, result, errors);
+            }
+        }
+
+        /// <summary>
+        /// Columns for the objects that were just loaded.  A separate command with its own failure path,
+        /// so a slow column join can never take the object list down with it.
+        /// </summary>
+        private static void TryLoadColumns(SqlConnection connection, MetadataSnapshot result, List<string> errors)
+        {
+            if (result.Objects.Count == 0) return;
+
+            string schema = string.Empty, name = string.Empty;
+            try
+            {
+                var index = new SnapshotObjectIndex(result);
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandTimeout = 25;
+                    command.CommandText = @"
+SELECT s.name, o.name, c.name, ty.name, c.max_length, c.precision, c.scale, c.is_nullable, c.is_identity, c.is_computed, c.column_id
+FROM sys.all_columns c
+JOIN sys.all_objects o ON o.object_id=c.object_id
+JOIN sys.schemas s ON s.schema_id=o.schema_id
+JOIN sys.types ty ON ty.user_type_id=c.user_type_id
+WHERE o.type IN ('U','V','FN','IF','TF','FS','FT')
+  AND o.is_ms_shipped=0;";
+                    using (var reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            schema = reader.GetString(0);
+                            name = reader.GetString(1);
+                            DatabaseObjectMetadata item = index.Find(schema, name);
+                            if (item == null) continue;
+
+                            var column = new ColumnMetadata
+                            {
+                                Name = reader.GetString(2),
+                                DataType = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                                MaxLength = reader.IsDBNull(4) ? (short)0 : reader.GetInt16(4),
+                                Precision = reader.IsDBNull(5) ? (byte)0 : reader.GetByte(5),
+                                Scale = reader.IsDBNull(6) ? (byte)0 : reader.GetByte(6),
+                                IsNullable = !reader.IsDBNull(7) && reader.GetBoolean(7),
+                                IsIdentity = !reader.IsDBNull(8) && reader.GetBoolean(8),
+                                IsComputed = !reader.IsDBNull(9) && reader.GetBoolean(9),
+                                Ordinal = reader.IsDBNull(10) ? 0 : reader.GetInt32(10)
+                            };
+                            lock (item.Columns) item.Columns.Add(column);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                RecordFailure("objects and columns", ex, errors);
-                TryLoadObjectNamesFallback(connection, result, errors);
+                // Recorded (not swallowed) so the snapshot stays marked as partial and the cache retries
+                // it soon; the object list itself is complete and keeps working.
+                RecordFailure("object columns", ex, errors);
             }
         }
 
@@ -525,16 +615,21 @@ WHERE o.type IN ('V','P','PC','FN','IF','TF','FS','FT')
         {
             try
             {
+                // The command that just failed may have left the connection closed; reopening it keeps
+                // the credentials the caller already established.
+                if (connection.State != System.Data.ConnectionState.Open) connection.Open();
+
                 using (var command = connection.CreateCommand())
                 {
-                    command.CommandTimeout = 10;
+                    command.CommandTimeout = 15;
+                    // No ORDER BY: the names are sorted in memory, which is what lets the server answer
+                    // this query while the object list is still incomplete.
                     command.CommandText = @"
 SELECT s.name,o.name,o.type,o.is_ms_shipped
 FROM sys.all_objects o
 JOIN sys.schemas s ON s.schema_id=o.schema_id
 WHERE o.type IN ('U','V','P','PC','X','FN','IF','TF','FS','FT')
-  AND (o.is_ms_shipped=0 OR s.name='sys')
-ORDER BY s.name,o.name;";
+  AND (o.is_ms_shipped=0 OR s.name='sys');";
                     using (var reader = command.ExecuteReader())
                     {
                         while (reader.Read())

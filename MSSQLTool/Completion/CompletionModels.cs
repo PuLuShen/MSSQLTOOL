@@ -268,8 +268,10 @@ namespace MSSQLTool.Completion
             index = null;
         }
         public string StatusText => !string.IsNullOrWhiteSpace(ErrorMessage)
-            ? (IsPartial ? "metadata partially loaded" : "metadata unavailable")
-            : $"metadata {Objects.Count} objects / {Objects.Sum(o => o.Columns.Count)} columns";
+            ? (IsPartial
+                ? LocalizationManager.T("metadata partially loaded")
+                : LocalizationManager.T("metadata unavailable"))
+            : LocalizationManager.Format("metadata {0} objects / {1} columns", Objects.Count, Objects.Sum(o => o.Columns.Count));
 
         // Built lazily on first completion request after load; the object and
         // foreign-key lists are stable afterwards, so one index serves every
