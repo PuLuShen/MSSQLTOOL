@@ -393,11 +393,6 @@ namespace MSSQLTool.Completion
                 }
             }
             finally { Marshal.FreeHGlobal(value); }
-            foreach (CompletionItem selected in insertMultipleColumns ? selectedItems : new List<CompletionItem> { item })
-                CompletionUsageStore.Record(selected);
-            // An inserted value is ranked by the usage store; it must not also be promoted as a
-            // "remembered highlight" when the popup hides right after.
-            presenter.NotifyCommitted();
             bool requestAfterSnippet = ShouldRequestCompletionAfterCommit(item);
             bool explicitSnippetContinuation = currentContext.IsExplicitRequest;
             Dismiss();

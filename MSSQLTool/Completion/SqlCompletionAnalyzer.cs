@@ -1206,7 +1206,10 @@ namespace MSSQLTool.Completion
         {
             prefix = Clean(prefix ?? string.Empty).TrimStart('@');
             var settings = CompletionSettings();
-            return items.Select(i => new { Item = i, Match = MatchItem(i, prefix) }).Where(x => x.Match >= 0).OrderByDescending(x => x.Item.Score + (settings.learnFromUsage ? CompletionUsageStore.GetScore(x.Item) : 0) + x.Match).ThenBy(x => x.Item.DisplayText, StringComparer.OrdinalIgnoreCase).Take(settings.maximumItems).Select(x => x.Item).ToList();
+            // Ranking is purely contextual: the base score of the candidate plus how well it matches
+            // the typed prefix.  Nothing is learned from earlier insertions, so the order a list has
+            // for a given context is always the same.
+            return items.Select(i => new { Item = i, Match = MatchItem(i, prefix) }).Where(x => x.Match >= 0).OrderByDescending(x => x.Item.Score + x.Match).ThenBy(x => x.Item.DisplayText, StringComparer.OrdinalIgnoreCase).Take(settings.maximumItems).Select(x => x.Item).ToList();
         }
 
         private static int MatchItem(CompletionItem item, string prefix)

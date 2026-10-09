@@ -18,7 +18,6 @@ namespace MSSQLTool
         /// <summary>Files kept directly in the data folder.</summary>
         private static readonly string[] DataFiles =
         {
-            "completion-usage.json",
             "github-sync-profiles.json",
             "settings.json",
             "snippets.json"

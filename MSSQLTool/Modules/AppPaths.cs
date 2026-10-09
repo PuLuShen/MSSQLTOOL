@@ -117,7 +117,6 @@ namespace MSSQLTool
 
         public static string LogsFolder => Path.Combine(Root, "MSSQLToolLog");
         public static string QueryHistoryFolder => Path.Combine(Root, "QueryHistory");
-        public static string CompletionUsageFile => Path.Combine(Root, "completion-usage.json");
         public static string GitHubProfilesFile => Path.Combine(Root, "github-sync-profiles.json");
         public static string SettingsFile => Path.Combine(Root, "settings.json");
 
@@ -271,7 +270,6 @@ namespace MSSQLTool
                 new KeyValuePair<string, string>("Settings", SettingsFile),
                 new KeyValuePair<string, string>("Logs", LogsFolder),
                 new KeyValuePair<string, string>("Query history", QueryHistoryFolder),
-                new KeyValuePair<string, string>("Completion ranking", CompletionUsageFile),
                 new KeyValuePair<string, string>("GitHub sync profiles", GitHubProfilesFile),
                 new KeyValuePair<string, string>("Snippets", SnippetsFile),
                 new KeyValuePair<string, string>("Query templates", QueryTemplatesFolder)

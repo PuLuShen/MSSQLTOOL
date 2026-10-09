@@ -208,7 +208,6 @@
                                   ToolTip="Applies only to the background connection used to load completion metadata."/>
                         <StackPanel Orientation="Horizontal" Margin="0,4">
                             <CheckBox x:Name="CompletionSquareBrackets" Content="Insert square brackets"/>
-                            <CheckBox x:Name="CompletionUsageLearning" Content="Learn completion ranking locally" Margin="18,0,0,0"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,4">
                             <CheckBox x:Name="CompletionAutoRefreshMetadata" Content="Refresh metadata after schema changes"/>

@@ -243,7 +243,6 @@
     <Compile Include="Completion\CompletionModels.cs" />
     <Compile Include="Completion\CompletionPopupPlacement.cs" />
     <Compile Include="Completion\CompletionPresenter.cs" />
-    <Compile Include="Completion\CompletionUsageStore.cs" />
     <Compile Include="Completion\SqlCompletionAnalyzer.cs" />
     <Compile Include="Completion\SqlMetadataCache.cs" />
     <Compile Include="Completion\SqlSemanticModel.cs" />

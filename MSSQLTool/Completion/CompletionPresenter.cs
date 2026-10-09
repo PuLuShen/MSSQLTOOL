@@ -198,22 +198,10 @@ namespace MSSQLTool.Completion
         {
             if (!themeResolved) ApplySsmsTheme();
 
-            // A popup that was hidden starts a new session, and so does a request raised
-            // somewhere else while the previous popup is still visible (a mouse click in
-            // another part of the document, a new line, a re-triggered Ctrl+Space).  Only a
-            // refresh of the very same completion session keeps the user's highlighted row.
-            bool continuingSession = IsSameCompletionSession(lastContext, context, window.Visible);
-
             lastTextView = textView;
             lastMetadata = metadata;
             lastContext = context;
             allItems = newItems?.ToList() ?? new List<CompletionItem>();
-
-            // A new session starts from the top of the list.  The item the user highlighted
-            // but never inserted last time is moved to the front, so it is the first thing Tab
-            // inserts and the default selection lands on it.
-            if (!continuingSession)
-                PromoteRememberedItem(allItems, lastUncommittedSelectionKey);
 
             UpdateCategories();
             newItems = FilterCategory(allItems);
@@ -222,7 +210,6 @@ namespace MSSQLTool.Completion
                 ? SelectionMode.MultiExtended : SelectionMode.One;
             contentSplit.Panel2Collapsed = !completionSettings.showObjectDetails;
             UpdateParameterInfo(metadata, context);
-            string selectedKey = continuingSession ? ItemKey(SelectedItem) : null;
             list.BeginUpdate();
             try
             {
@@ -243,19 +230,11 @@ namespace MSSQLTool.Completion
             }
             finally { list.EndUpdate(); }
             if (list.Items.Count == 0 && !parameterInfo.Visible) { Hide(); return; }
-            int restoredIndex = -1;
-            if (!string.IsNullOrEmpty(selectedKey))
-            {
-                for (int i = 0; i < newItems.Count; i++)
-                {
-                    if (string.Equals(ItemKey(newItems[i]), selectedKey, StringComparison.Ordinal))
-                    {
-                        restoredIndex = i;
-                        break;
-                    }
-                }
-            }
-            list.SelectedIndex = ResolveSelectedIndex(list.Items.Count, restoredIndex);
+
+            // The highlight always sits on the first row: neither the row the user moved to earlier
+            // nor a remembered value from a previous popup is restored, so the list never opens with
+            // the selection parked further down.
+            list.SelectedIndex = InitialSelectionIndex(list.Items.Count);
             UpdateDetails();
             int maximumItems = SettingsManager.GetSqlCompletionSettings().maximumItems;
             footer.Text = newItems.Count >= maximumItems
@@ -441,54 +420,10 @@ namespace MSSQLTool.Completion
         private static string ItemKey(CompletionItem item) => item == null ? null : item.Kind + "|" + item.DisplayText;
 
         /// <summary>
-        /// True when <paramref name="current"/> refreshes the popup that is already showing
-        /// <paramref name="previous"/>.  A closed popup, a request from another line, or a
-        /// request whose word starts somewhere else all start a new completion session, which
-        /// resets the selection to the first row instead of restoring the previous highlight.
+        /// The row a refreshed list selects.  Always the first one: the popup never restores a row
+        /// the user moved to earlier, so the highlight cannot end up parked further down the list.
         /// </summary>
-        internal static bool IsSameCompletionSession(CompletionContext previous, CompletionContext current, bool popupVisible)
-        {
-            if (!popupVisible || previous == null || current == null) return false;
-            // Frames of one request (metadata placeholder, then the real list) share the context.
-            if (ReferenceEquals(previous, current)) return true;
-
-            // Another request at the same caret is an explicit re-trigger: it starts a new session.
-            if (previous.CaretLine != current.CaretLine) return false;
-            if (previous.CaretColumn == current.CaretColumn) return false;
-
-            // The caret must still be inside the word the previous frame was completing.
-            return previous.ReplacementStartColumn == current.ReplacementStartColumn
-                && current.CaretColumn >= current.ReplacementStartColumn;
-        }
-
-        /// <summary>
-        /// Moves the item that matches <paramref name="rememberedKey"/> to the front of the list.
-        /// Returns the index it ended up at, or -1 when the list does not contain it any more.
-        /// </summary>
-        internal static int PromoteRememberedItem(IList<CompletionItem> items, string rememberedKey)
-        {
-            if (items == null || items.Count == 0 || string.IsNullOrEmpty(rememberedKey)) return -1;
-
-            for (int i = 0; i < items.Count; i++)
-            {
-                if (!string.Equals(ItemKey(items[i]), rememberedKey, StringComparison.Ordinal)) continue;
-                if (i == 0) return 0;
-
-                CompletionItem remembered = items[i];
-                items.RemoveAt(i);
-                items.Insert(0, remembered);
-                return 0;
-            }
-
-            return -1;
-        }
-
-        /// <summary>
-        /// The row a refreshed list selects: the restore match while the same session keeps
-        /// typing, otherwise the first row.
-        /// </summary>
-        internal static int ResolveSelectedIndex(int itemCount, int restoredIndex)
-            => itemCount <= 0 ? -1 : restoredIndex >= 0 && restoredIndex < itemCount ? restoredIndex : 0;
+        internal static int InitialSelectionIndex(int itemCount) => itemCount <= 0 ? -1 : 0;
 
         private void UpdateCategories()
         {
@@ -780,43 +715,10 @@ namespace MSSQLTool.Completion
                 || right.EndsWith("." + left, StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>
-        /// The item highlighted when the previous popup session ended without an insert.  It is
-        /// promoted to the top of the next list so the default selection lands on it.
-        /// </summary>
-        private string lastUncommittedSelectionKey;
-
-        /// <summary>Set while a commit is closing the popup, so the inserted item is not remembered.</summary>
-        private bool selectionWasCommitted;
-
         public void Hide()
         {
-            if (!window.Visible)
-            {
-                selectionWasCommitted = false;
-                return;
-            }
-
-            // A committed value is ranked by the usage store; remembering it as an
-            // uncommitted highlight as well would promote it twice.
-            if (!selectionWasCommitted)
-            {
-                CompletionItem selected = SelectedItem;
-                if (selected != null) lastUncommittedSelectionKey = ItemKey(selected);
-            }
-
-            selectionWasCommitted = false;
+            if (!window.Visible) return;
             window.Hide();
-        }
-
-        /// <summary>
-        /// Clears the remembered highlight.  Called when an item is actually inserted: a committed
-        /// value is already fed into the usage-based ranking and must not be promoted as well.
-        /// </summary>
-        public void NotifyCommitted()
-        {
-            lastUncommittedSelectionKey = null;
-            selectionWasCommitted = true;
         }
         public void Dispose()
         {

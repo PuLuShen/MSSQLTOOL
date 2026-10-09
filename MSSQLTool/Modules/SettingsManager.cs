@@ -412,7 +412,6 @@ ORDER BY sd.[name];
             public bool autoRefreshMetadata = true;
             public bool trustServerCertificate = true;
             public bool useSquareBrackets = true;
-            public bool learnFromUsage = true;
             public bool showObjectDetails = true;
             public bool enableColumnPicker = true;
             public bool autoAddAliases = false;
