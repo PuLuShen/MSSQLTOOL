@@ -193,6 +193,7 @@ namespace MSSQLTool.RegressionTests
             Run("Resizable completion details pane", TestCompletionSplitter);
             Run("Completion popup constructs", TestCompletionPopupConstructs);
             RunCompletionSelectionTests();
+            RunCompletionParameterInfoTests();
             RunStorageTests();
             RunFormattingTests();
             RunSqlServerIntegration();

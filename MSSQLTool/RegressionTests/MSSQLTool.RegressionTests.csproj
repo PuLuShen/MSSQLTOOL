@@ -41,6 +41,7 @@
     <Compile Include="FormatterProbe.cs" />
     <Compile Include="FormattingTests.cs" />
     <Compile Include="CompletionSelectionTests.cs" />
+    <Compile Include="CompletionParameterInfoTests.cs" />
     <Compile Include="StorageTests.cs" />
     <Compile Include="StorageProbe.cs" />
   </ItemGroup>

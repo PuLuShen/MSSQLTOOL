@@ -43,6 +43,8 @@ namespace MSSQLTool.Completion
         private bool updatingCategory;
         private bool updatingSplitter;
         private int textLineHeight;
+        private int parameterMinHeight;
+        private Font parameterBoldFont;
 
         /// <summary>
         /// The size the user last had, before any placement-driven shrinking.  Kept separately
@@ -97,9 +99,11 @@ namespace MSSQLTool.Completion
                 Height = 58,
                 ReadOnly = true,
                 DetectUrls = false,
-                WordWrap = false,
+                // Parameters wrap instead of scrolling sideways: a procedure with a dozen arguments
+                // cannot be read on a single line, and the horizontal scrollbar hid most of it.
+                WordWrap = true,
                 BorderStyle = BorderStyle.FixedSingle,
-                ScrollBars = RichTextBoxScrollBars.Horizontal,
+                ScrollBars = RichTextBoxScrollBars.Vertical,
                 Font = new Font("Consolas", 9F),
                 Visible = false,
                 TabStop = false
@@ -157,6 +161,8 @@ namespace MSSQLTool.Completion
                 // not raise ResizeEnd.
                 preferredWindowSize = window.Size;
                 SettingsManager.SaveCompletionWindowSize(window.Size);
+                // A wider or narrower popup rewraps the parameters.
+                UpdateParameterInfoHeight();
             };
             contentSplit.SplitterMoved += (_, __) =>
             {
@@ -248,6 +254,9 @@ namespace MSSQLTool.Completion
             if (diagnostic != null) footer.Text += " | Warning: " + diagnostic.Message;
 
             PositionAndShow(textView);
+            // The strip wraps against the popup width, so its height is only final once the
+            // window has the size it is shown with.
+            UpdateParameterInfoHeight();
         }
 
         /// <summary>
@@ -520,7 +529,8 @@ namespace MSSQLTool.Completion
             iconSize = Math.Max(16, textLineHeight - 1);
             list.ItemHeight = textLineHeight + 8;
             footer.Height = textLineHeight + 10;
-            parameterInfo.Height = (textLineHeight * 2) + 14;
+            parameterMinHeight = (textLineHeight * 2) + 14;
+            parameterInfo.Height = parameterMinHeight;
             footer.Padding = new Padding(6, Math.Max(2, (footer.Height - list.Font.Height) / 2), 6, 0);
             list.Invalidate();
         }
@@ -679,7 +689,19 @@ namespace MSSQLTool.Completion
                 (IsActiveParameter(p, index, context) ? "> " : "  ") + p.Name + " " + p.TypeDisplay
                 + (p.HasDefaultValue ? " = default" : string.Empty) + (p.IsOutput ? " OUTPUT" : string.Empty)).ToList();
             if (parameters.Count == 0) return null;
-            return target + Environment.NewLine + string.Join("    ", parameters);
+            // The strip used to be an unlabelled object name over one long parameter line; a
+            // "Parameters" header says what the area is, and the arguments wrap on their own.
+            return LocalizationManager.T("Parameters") + "  " + target
+                + Environment.NewLine + string.Join("    ", parameters);
+        }
+
+        /// <summary>Length of the header line ([Parameters]  object), which is drawn in bold.</summary>
+        internal static int ParameterHeaderLength(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+            int breakIndex = text.IndexOf('\r');
+            if (breakIndex < 0) breakIndex = text.IndexOf('\n');
+            return breakIndex < 0 ? text.Length : breakIndex;
         }
 
         internal static bool HasParameterInfo(MetadataSnapshot metadata, CompletionContext context)
@@ -691,14 +713,54 @@ namespace MSSQLTool.Completion
             parameterInfo.Visible = !string.IsNullOrWhiteSpace(value);
             parameterInfo.Text = value ?? string.Empty;
             if (!parameterInfo.Visible) return;
+
+            // Header: "Parameters  dbo.Proc" in bold, so the strip explains itself.
+            int header = ParameterHeaderLength(parameterInfo.Text);
+            if (header > 0)
+            {
+                parameterInfo.Select(0, header);
+                parameterInfo.SelectionFont = GetParameterBoldFont();
+            }
+
             int marker = parameterInfo.Text.IndexOf("> ", StringComparison.Ordinal);
-            if (marker < 0) return;
-            int end = parameterInfo.Text.IndexOf("    ", marker, StringComparison.Ordinal);
-            if (end < 0) end = parameterInfo.Text.Length;
-            parameterInfo.Select(marker, end - marker);
-            parameterInfo.SelectionBackColor = selectionBackColor;
-            parameterInfo.SelectionColor = selectionForeColor;
+            if (marker >= 0)
+            {
+                int end = parameterInfo.Text.IndexOf("    ", marker, StringComparison.Ordinal);
+                if (end < 0) end = parameterInfo.Text.Length;
+                parameterInfo.Select(marker, end - marker);
+                parameterInfo.SelectionBackColor = selectionBackColor;
+                parameterInfo.SelectionColor = selectionForeColor;
+                parameterInfo.SelectionFont = GetParameterBoldFont();
+            }
+
             parameterInfo.Select(0, 0);
+            UpdateParameterInfoHeight();
+        }
+
+        private Font GetParameterBoldFont()
+            => parameterBoldFont ?? (parameterBoldFont = new Font(parameterInfo.Font, FontStyle.Bold));
+
+        /// <summary>
+        /// Fits the strip to the wrapped arguments, up to about 40% of the popup so the list keeps
+        /// the rest; anything longer scrolls vertically instead of disappearing to the right.
+        /// </summary>
+        private void UpdateParameterInfoHeight()
+        {
+            if (!parameterInfo.Visible) return;
+            int height = parameterMinHeight;
+            try
+            {
+                // Where the last character ended up: with word wrap on, that is the number of
+                // lines the arguments really need at the current width.
+                Point last = parameterInfo.GetPositionFromCharIndex(parameterInfo.TextLength);
+                height = last.Y + textLineHeight + 12;
+            }
+            catch
+            {
+            }
+
+            int maximum = Math.Max(parameterMinHeight, (int)(window.ClientSize.Height * 0.4));
+            parameterInfo.Height = Math.Max(parameterMinHeight, Math.Min(maximum, height));
         }
 
         private static bool IsActiveParameter(RoutineParameterMetadata parameter, int index, CompletionContext context)
@@ -728,6 +790,8 @@ namespace MSSQLTool.Completion
                 themeEventSubscribed = false;
             }
             iconFont.Dispose();
+            parameterBoldFont?.Dispose();
+            parameterBoldFont = null;
             selectionBackBrush?.Dispose();
             foreach (SolidBrush brush in kindBrushCache.Values) brush.Dispose();
             kindBrushCache.Clear();
