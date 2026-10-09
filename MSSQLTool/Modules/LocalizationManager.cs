@@ -38,7 +38,7 @@ namespace MSSQLTool
         private static readonly Dictionary<string, string> Chinese = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["MSSQL Tool - Settings"] = "MSSQL Tool - 设置",
-            ["Settings"] = "设置", ["About"] = "关于", ["Tools"] = "工具",
+            ["About"] = "关于", ["Tools"] = "工具",
             ["Language"] = "语言", ["Interface language:"] = "界面语言：",
             ["Simplified Chinese"] = "简体中文", ["English"] = "English",
             ["The language setting applies immediately to MSSQL Tool windows. Toolbar command labels use the package default language."] = "语言设置会立即应用到 MSSQL Tool 窗口。工具栏命令标签使用扩展包的默认语言。",
@@ -104,7 +104,6 @@ namespace MSSQLTool
             ["General"] = "常规", ["Preview"] = "预览",
             ["Keyword casing:"] = "关键字大小写：",
             ["Uppercase"] = "全部大写", ["Lowercase"] = "全部小写", ["PascalCase"] = "首字母大写",
-            ["Indent size:"] = "缩进空格数：",
             ["Align clause bodies (SELECT/SET lists)"] = "对齐子句主体（SELECT/SET 列表）",
             ["Add semicolons after statements"] = "为语句添加分号",
             ["Save as default"] = "保存为默认",
@@ -116,8 +115,7 @@ namespace MSSQLTool
             ["Unable to format T-SQL"] = "无法格式化 T-SQL",
             ["The selection is not valid T-SQL on its own. Format the current statement instead?"] = "选区本身不是完整合法的 T-SQL。是否改为格式化光标所在的完整语句？",
             ["The document changed while it was being formatted. Formatting was canceled to avoid losing any code."] = "文档在格式化期间被修改。为避免丢失代码，已取消本次格式化。",
-            ["Source query"] = "源查询", ["Formatted query"] = "格式化后的查询",
-            ["Excel Export"] = "Excel 导出", ["Google Sheets"] = "Google 表格",
+            ["Source query"] = "源查询", ["Excel Export"] = "Excel 导出", ["Google Sheets"] = "Google 表格",
             ["Default Directory:"] = "默认目录：", ["Default Filename:"] = "默认文件名：",
             ["Default Spreadsheet Title:"] = "默认电子表格标题：", ["Client ID:"] = "客户端 ID：",
             ["Client Secret:"] = "客户端密钥：", ["Authorization Status:"] = "授权状态：",
@@ -159,6 +157,42 @@ namespace MSSQLTool
             ["SMTP server:"] = "SMTP 服务器：", ["SMTP port:"] = "SMTP 端口：", ["Enable SSL/TLS"] = "启用 SSL/TLS",
             ["Updates"] = "更新", ["Check for MSSQL Tool updates on startup"] = "启动时检查 MSSQL Tool 更新",
             ["Check for updates"] = "检查更新", ["Update status"] = "更新状态", ["GitHub Integration"] = "GitHub 集成",
+
+            // Settings -> Updates status text and the up-to-date prompt.
+            ["Information"] = "信息",
+            ["Update check skipped because it is disabled in settings."] = "已跳过更新检查：设置中已关闭。",
+            ["Startup update check scheduled."] = "已安排在启动后检查更新。",
+            ["Running startup update check."] = "正在执行启动时的更新检查。",
+            ["Startup update check failed: {0}"] = "启动时的更新检查失败：{0}",
+            ["Manual update check skipped because it is disabled in settings."] = "已跳动手动更新检查：设置中已关闭。",
+            ["Manual update check started."] = "已开始手动检查更新。",
+            ["Manual update check failed: {0}"] = "手动更新检查失败：{0}",
+            ["Update check failed because current version could not be determined."] = "更新检查失败：无法确定当前版本。",
+            ["Update check failed because latest release info was unavailable."] = "更新检查失败：无法获取最新发布信息。",
+            ["Update check failed because latest release info was unavailable ({0})."] = "更新检查失败：无法获取最新发布信息（{0}）。",
+            ["Update check failed because latest release version could not be parsed."] = "更新检查失败：无法解析最新发布的版本号。",
+            ["Up to date ({0}). Latest release is {1}."] = "已是最新版本（{0}），最新发布为 {1}。",
+            ["Update available: {0} -> {1}."] = "发现新版本：{0} → {1}。",
+            ["{0} is up to date ({1})."] = "{0} 已是最新版本（{1}）。",
+            ["Debug update test forced. Showing latest release {0} while current version is {1}."] = "调试用的强制更新：当前版本 {1}，显示最新发布 {0}。",
+            ["Update is available, but the InfoBar was unavailable. Opened release page."] = "发现新版本，但信息栏不可用，已打开发布页面。",
+            ["Update will install when SSMS closes."] = "更新将在关闭 SSMS 后安装。",
+            ["Update will install when SSMS closes after the download finishes."] = "更新将在下载完成后、关闭 SSMS 时安装。",
+            ["Deferred update skipped because the VSIX download did not finish before SSMS closed."] = "已跳过关闭时更新：更新包未能在 SSMS 关闭前下载完成。",
+            ["Deferred update skipped because the staged VSIX was not ready."] = "已跳过关闭时更新：更新包尚未就绪。",
+            ["Could not launch VSIXInstaller automatically; opened release page instead."] = "无法自动启动 VSIXInstaller，已改为打开发布页面。",
+            ["Update download failed; opened release page."] = "更新包下载失败，已打开发布页面。",
+            ["Update package is not ready; opened release page."] = "更新包尚未就绪，已打开发布页面。",
+            ["Downloading update package in background."] = "正在后台下载更新包。",
+            ["downloaded and verified"] = "下载并校验完成",
+            ["downloaded without checksum verification"] = "下载完成（未校验）",
+            ["Update package {0}. It will install when SSMS closes."] = "更新包已{0}，将在关闭 SSMS 后安装。",
+            ["Update package {0}. Ready to install on close."] = "更新包已{0}，关闭后即可安装。",
+            ["Update download failed: no ZIP or VSIX release asset was found."] = "更新包下载失败：发布中未找到 ZIP 或 VSIX 资产。",
+            ["Update download failed: invalid GitHub release digest."] = "更新包下载失败：GitHub 发布的摘要无效。",
+            ["Update download failed: checksum verification failed."] = "更新包下载失败：校验和不匹配。",
+            ["Update download failed: {0}"] = "更新包下载失败：{0}",
+            ["VSIXInstaller launched."] = "已启动 VSIXInstaller。",
             ["GitHub Token:"] = "GitHub 令牌：", ["API key:"] = "API 密钥：",
             ["Quick Search"] = "快速搜索", ["Snippet Manager"] = "代码片段管理器",
             ["Statistics Summary"] = "统计信息摘要", ["SQL Server Builds"] = "SQL Server 版本",
@@ -772,6 +806,10 @@ namespace MSSQLTool
         /// </summary>
         internal static bool HasChineseEntry(string text)
             => !string.IsNullOrEmpty(text) && Chinese.ContainsKey(text);
+
+        /// <summary>The Chinese text for <paramref name="text"/>, or null when there is no entry.</summary>
+        internal static string ChineseTranslation(string text)
+            => !string.IsNullOrEmpty(text) && Chinese.TryGetValue(text, out string value) ? value : null;
 
         private static string TranslateDynamic(string text)
         {

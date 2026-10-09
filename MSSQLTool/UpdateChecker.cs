@@ -86,13 +86,13 @@ namespace MSSQLTool
             if (!enableUpdateChecks)
             {
                 Log("Update check skipped: disabled by settings.");
-                SetLastUpdateResult("Update check skipped because it is disabled in settings.");
+                SetLastUpdateResult(LocalizationManager.T("Update check skipped because it is disabled in settings."));
                 return;
             }
 
             Interlocked.Exchange(ref pendingStartupCheck, 1);
             Log("Update check scheduled shortly after package initialization.");
-            SetLastUpdateResult("Startup update check scheduled.");
+            SetLastUpdateResult(LocalizationManager.T("Startup update check scheduled."));
 
             _ = package.JoinableTaskFactory.RunAsync(async () =>
             {
@@ -108,7 +108,7 @@ namespace MSSQLTool
                     }
 
                     Log("Running startup update check after initialization delay.");
-                    SetLastUpdateResult("Running startup update check.");
+                    SetLastUpdateResult(LocalizationManager.T("Running startup update check."));
                     await CheckForUpdatesAsync(package, token, showUpToDate: false);
                 }
                 catch (OperationCanceledException)
@@ -117,7 +117,7 @@ namespace MSSQLTool
                 catch (Exception ex)
                 {
                     Log($"Startup update check failed: {ex.Message}");
-                    SetLastUpdateResult($"Startup update check failed: {ex.Message}");
+                    SetLastUpdateResult(LocalizationManager.Format("Startup update check failed: {0}", ex.Message));
                 }
             });
         }
@@ -132,7 +132,7 @@ namespace MSSQLTool
             if (!ignoreSettings && !SettingsManager.GetEnableUpdateChecks())
             {
                 Log("Manual update check skipped: disabled by settings.");
-                SetLastUpdateResult("Manual update check skipped because it is disabled in settings.");
+                SetLastUpdateResult(LocalizationManager.T("Manual update check skipped because it is disabled in settings."));
                 return;
             }
 
@@ -141,7 +141,7 @@ namespace MSSQLTool
                 try
                 {
                     Log("Manual update check started.");
-                    SetLastUpdateResult("Manual update check started.");
+                    SetLastUpdateResult(LocalizationManager.T("Manual update check started."));
                     await CheckForUpdatesAsync(package, package.DisposalToken, showUpToDate: true);
                 }
                 catch (OperationCanceledException)
@@ -150,7 +150,7 @@ namespace MSSQLTool
                 catch (Exception ex)
                 {
                     Log($"Manual update check failed: {ex.Message}");
-                    SetLastUpdateResult($"Manual update check failed: {ex.Message}");
+                    SetLastUpdateResult(LocalizationManager.Format("Manual update check failed: {0}", ex.Message));
                 }
             });
         }
@@ -181,7 +181,7 @@ namespace MSSQLTool
                         }
 
                         Log("Deferred update on close: staging did not finish before timeout. Skipping.");
-                        SetLastUpdateResult("Deferred update skipped because the VSIX download did not finish before SSMS closed.");
+                        SetLastUpdateResult(LocalizationManager.T("Deferred update skipped because the VSIX download did not finish before SSMS closed."));
                         return;
                     }
                 }
@@ -203,14 +203,14 @@ namespace MSSQLTool
             if (string.IsNullOrWhiteSpace(vsixPath) || !File.Exists(vsixPath))
             {
                 Log("Deferred update on close: staged VSIX not found. Skipping.");
-                SetLastUpdateResult("Deferred update skipped because the staged VSIX was not ready.");
+                SetLastUpdateResult(LocalizationManager.T("Deferred update skipped because the staged VSIX was not ready."));
                 return;
             }
 
             Log("Deferred update on close: launching VSIXInstaller.");
             if (!LaunchVsixInstaller(vsixPath))
             {
-                SetLastUpdateResult("Could not launch VSIXInstaller automatically; opened release page instead.");
+                SetLastUpdateResult(LocalizationManager.T("Could not launch VSIXInstaller automatically; opened release page instead."));
                 OpenUrl(release?.HtmlUrl ?? ReleasePageUrl);
             }
         }
@@ -221,7 +221,7 @@ namespace MSSQLTool
             if (currentVersion == null)
             {
                 Log("Update check failed: current version unavailable.");
-                SetLastUpdateResult("Update check failed because current version could not be determined.");
+                SetLastUpdateResult(LocalizationManager.T("Update check failed because current version could not be determined."));
                 return;
             }
 
@@ -230,7 +230,9 @@ namespace MSSQLTool
             {
                 string detail = string.IsNullOrWhiteSpace(lastFetchDetail) ? string.Empty : " (" + lastFetchDetail + ")";
                 Log("Update check failed: release info unavailable.");
-                SetLastUpdateResult("Update check failed because latest release info was unavailable" + detail + ".");
+                SetLastUpdateResult(detail.Length == 0
+                    ? LocalizationManager.T("Update check failed because latest release info was unavailable.")
+                    : LocalizationManager.Format("Update check failed because latest release info was unavailable ({0}).", detail));
                 return;
             }
 
@@ -238,7 +240,7 @@ namespace MSSQLTool
             if (latestVersion == null)
             {
                 Log("Update check failed: latest version parse failed.");
-                SetLastUpdateResult("Update check failed because latest release version could not be parsed.");
+                SetLastUpdateResult(LocalizationManager.T("Update check failed because latest release version could not be parsed."));
                 return;
             }
 
@@ -256,7 +258,8 @@ namespace MSSQLTool
             if (latestVersion <= currentVersion && !forceUpdateAvailable)
             {
                 Log($"Update check: already on latest ({currentVersion}).");
-                SetLastUpdateResult($"Up to date ({FormatVersion(currentVersion)}). Latest release is {FormatVersion(latestVersion)}.");
+                SetLastUpdateResult(LocalizationManager.Format("Up to date ({0}). Latest release is {1}.",
+                    FormatVersion(currentVersion), FormatVersion(latestVersion)));
                 if (showUpToDate)
                 {
                     await package.JoinableTaskFactory.SwitchToMainThreadAsync(token);
@@ -271,12 +274,14 @@ namespace MSSQLTool
             if (forceUpdateAvailable)
             {
                 Log($"Update prompt forced for testing: latest {latestVersion}, current {currentVersion}.");
-                SetLastUpdateResult($"Debug update test forced. Showing latest release {FormatVersion(latestVersion)} while current version is {FormatVersion(currentVersion)}.");
+                SetLastUpdateResult(LocalizationManager.Format("Debug update test forced. Showing latest release {0} while current version is {1}.",
+                    FormatVersion(latestVersion), FormatVersion(currentVersion)));
             }
             else
             {
                 Log($"Update available: {latestVersion} (current {currentVersion}).");
-                SetLastUpdateResult($"Update available: {FormatVersion(currentVersion)} -> {FormatVersion(latestVersion)}.");
+                SetLastUpdateResult(LocalizationManager.Format("Update available: {0} -> {1}.",
+                    FormatVersion(currentVersion), FormatVersion(latestVersion)));
             }
 
             ShowUpdatePrompt(package, release, latestVersion);
@@ -400,7 +405,7 @@ namespace MSSQLTool
 
                 Log("InfoBar unavailable; opening release page as fallback.");
                 activeInfoBar = null;
-                SetLastUpdateResult("Update is available, but the InfoBar was unavailable. Opened release page.");
+                SetLastUpdateResult(LocalizationManager.T("Update is available, but the InfoBar was unavailable. Opened release page."));
                 OpenUrl(release?.HtmlUrl ?? ReleasePageUrl);
             }
             catch (Exception ex)
@@ -436,24 +441,24 @@ namespace MSSQLTool
 
             if (!string.IsNullOrWhiteSpace(vsixPath) && File.Exists(vsixPath))
             {
-                SetLastUpdateResult("Update will install when SSMS closes.");
+                SetLastUpdateResult(LocalizationManager.T("Update will install when SSMS closes."));
                 return;
             }
 
             if (inProgress)
             {
-                SetLastUpdateResult("Update will install when SSMS closes after the download finishes.");
+                SetLastUpdateResult(LocalizationManager.T("Update will install when SSMS closes after the download finishes."));
                 return;
             }
 
             if (failed)
             {
-                SetLastUpdateResult("Update download failed; opened release page.");
+                SetLastUpdateResult(LocalizationManager.T("Update download failed; opened release page."));
                 OpenUrl(release?.HtmlUrl ?? ReleasePageUrl);
                 return;
             }
 
-            SetLastUpdateResult("Update package is not ready; opened release page.");
+            SetLastUpdateResult(LocalizationManager.T("Update package is not ready; opened release page."));
             OpenUrl(release?.HtmlUrl ?? ReleasePageUrl);
         }
 
@@ -464,8 +469,8 @@ namespace MSSQLTool
                 ThreadHelper.ThrowIfNotOnUIThread();
                 VsShellUtilities.ShowMessageBox(
                     package,
-                    $"{DisplayName} is up to date ({FormatVersion(currentVersion)}).",
-                    "Information",
+                    LocalizationManager.Format("{0} is up to date ({1}).", DisplayName, FormatVersion(currentVersion)),
+                    LocalizationManager.T("Information"),
                     OLEMSGICON.OLEMSGICON_INFO,
                     OLEMSGBUTTON.OLEMSGBUTTON_OK,
                     OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
@@ -493,7 +498,7 @@ namespace MSSQLTool
             if (asset == null || string.IsNullOrWhiteSpace(asset.DownloadUrl))
             {
                 Log("Stage download skipped: no ZIP or VSIX asset found.");
-                MarkStageDownloadFailed("Update download failed: no ZIP or VSIX release asset was found.");
+                MarkStageDownloadFailed(LocalizationManager.T("Update download failed: no ZIP or VSIX release asset was found."));
                 return;
             }
 
@@ -514,7 +519,7 @@ namespace MSSQLTool
 
                 try
                 {
-                    SetLastUpdateResult("Downloading update package in background.");
+                    SetLastUpdateResult(LocalizationManager.T("Downloading update package in background."));
 
                     await cleanupTask;
 
@@ -523,7 +528,7 @@ namespace MSSQLTool
                     if (hasDigest && string.IsNullOrWhiteSpace(expectedSha256))
                     {
                         Log("Stage download aborted: GitHub release digest is invalid.");
-                        MarkStageDownloadFailed("Update download failed: invalid GitHub release digest.");
+                        MarkStageDownloadFailed(LocalizationManager.T("Update download failed: invalid GitHub release digest."));
                         return;
                     }
 
@@ -543,7 +548,7 @@ namespace MSSQLTool
                         if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
                         {
                             Log($"Stage download aborted: checksum mismatch. Expected={expectedSha256}, Actual={actualSha256}");
-                            MarkStageDownloadFailed("Update download failed: checksum verification failed.");
+                            MarkStageDownloadFailed(LocalizationManager.T("Update download failed: checksum verification failed."));
                             return;
                         }
 
@@ -567,22 +572,22 @@ namespace MSSQLTool
                     }
 
                     string statusSuffix = verified
-                        ? "downloaded and verified"
-                        : "downloaded without checksum verification";
+                        ? LocalizationManager.T("downloaded and verified")
+                        : LocalizationManager.T("downloaded without checksum verification");
 
                     if (installPending)
                     {
-                        SetLastUpdateResult($"Update package {statusSuffix}. It will install when SSMS closes.");
+                        SetLastUpdateResult(LocalizationManager.Format("Update package {0}. It will install when SSMS closes.", statusSuffix));
                     }
                     else
                     {
-                        SetLastUpdateResult($"Update package {statusSuffix}. Ready to install on close.");
+                        SetLastUpdateResult(LocalizationManager.Format("Update package {0}. Ready to install on close.", statusSuffix));
                     }
                 }
                 catch (Exception ex)
                 {
                     Log($"Stage download failed: {ex.Message}");
-                    MarkStageDownloadFailed($"Update download failed: {ex.Message}");
+                    MarkStageDownloadFailed(LocalizationManager.Format("Update download failed: {0}", ex.Message));
                 }
                 finally
                 {
@@ -876,7 +881,7 @@ namespace MSSQLTool
                 });
 
                 Log($"Launched VSIXInstaller: {installerPath} \"{vsixPath}\"");
-                SetLastUpdateResult("VSIXInstaller launched.");
+                SetLastUpdateResult(LocalizationManager.T("VSIXInstaller launched."));
                 return true;
             }
             catch (Exception ex)
