@@ -29,8 +29,8 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("4.69.0.0")]
-[assembly: AssemblyFileVersion("4.69.0.0")]
+[assembly: AssemblyVersion("4.70.0.0")]
+[assembly: AssemblyFileVersion("4.70.0.0")]
 
 // The regression test console exercises internal completion types and
 // therefore needs access to the plugin's internals.

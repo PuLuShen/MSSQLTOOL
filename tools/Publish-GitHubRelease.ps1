@@ -121,12 +121,13 @@ function Send-ReleaseAsset {
         $client.DefaultRequestHeaders.UserAgent.ParseAdd('MSSQLTool-Release')
         $client.DefaultRequestHeaders.Accept.ParseAdd('application/vnd.github+json')
 
-        $content = New-Object System.Net.Http.MultipartFormDataContent
+        # The asset endpoint takes the file as the raw request body.  Wrapping it in
+        # MultipartFormDataContent made GitHub store the multipart envelope instead of the VSIX, so
+        # every published package was rejected by VSIXInstaller as "not a valid VSIX package".
         $bytes = [System.IO.File]::ReadAllBytes($FilePath)
-        $fileContent = New-Object System.Net.Http.ByteArrayContent(@(, $bytes))
-        $fileContent.Headers.ContentType =
+        $content = New-Object System.Net.Http.ByteArrayContent(@(, $bytes))
+        $content.Headers.ContentType =
             New-Object System.Net.Http.Headers.MediaTypeHeaderValue('application/octet-stream')
-        $content.Add($fileContent, 'file', $name)
 
         $response = $client.PostAsync($uri, $content).GetAwaiter().GetResult()
         $text = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
@@ -138,6 +139,38 @@ function Send-ReleaseAsset {
     }
     finally {
         $client.Dispose()
+    }
+}
+
+function Assert-ReleaseAssetMatches {
+    param(
+        [string]$DownloadUrl,
+        [string]$AuthToken,
+        [string]$FilePath
+    )
+
+    # Verifies what GitHub actually stored: an upload that mangles the bytes must fail here rather
+    # than inside VSIXInstaller on a user's machine.
+    $expectedSize = (Get-Item -LiteralPath $FilePath).Length
+    $expectedHash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $temp = Join-Path $env:TEMP ("mssqltool-verify-" + [Guid]::NewGuid().ToString('N') + ".vsix")
+    try {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $temp -UseBasicParsing `
+            -Headers @{ Authorization = "Bearer $AuthToken"; 'User-Agent' = 'MSSQLTool-Release' }
+        $actualSize = (Get-Item -LiteralPath $temp).Length
+        $actualHash = (Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash.ToLowerInvariant()
+
+        if ($actualSize -ne $expectedSize -or $actualHash -ne $expectedHash) {
+            throw ("The stored release asset does not match the file: expected {0} bytes / {1}, stored {2} bytes / {3}" -f
+                $expectedSize, $expectedHash, $actualSize, $actualHash)
+        }
+
+        Write-Host "verified: the release asset matches ($actualSize bytes, sha256 $($actualHash.Substring(0, 12))...)"
+    }
+    finally
+    {
+        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -211,4 +244,5 @@ foreach ($asset in @($release.assets)) {
 
 $uploaded = Send-ReleaseAsset -UploadUrlTemplate $release.upload_url -AuthToken $token -FilePath $VsixPath
 Write-Host "uploaded: $($uploaded.name) ($([Math]::Round($uploaded.size / 1MB, 2)) MB)"
+Assert-ReleaseAssetMatches -DownloadUrl $uploaded.browser_download_url -AuthToken $token -FilePath $VsixPath
 Write-Host "latest  : https://github.com/$Repo/releases/latest"

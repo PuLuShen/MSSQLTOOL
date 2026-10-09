@@ -284,9 +284,18 @@ namespace MSSQLTool
                 Directory.CreateDirectory(folder);
                 string scriptPath = Path.Combine(folder, HelperScriptName);
                 File.WriteAllText(scriptPath, HelperScriptText, new UTF8Encoding(false));
+                if (!File.Exists(scriptPath))
+                {
+                    failure = "the helper script could not be written";
+                    Log($"Start update helper failed: {scriptPath} is missing after writing it.");
+                    return false;
+                }
 
-                string arguments = BuildHelperArguments(Process.GetCurrentProcess().Id, version, vsixPath, assetUrl,
-                    sha256, assetSize, installerPath, ReleasePageUrl, logPath, HelperWaitMinutes);
+                // The script path is passed explicitly: deriving it from the log path broke the launch
+                // as soon as the log moved to a different folder (PowerShell exits without a word when
+                // -File points at a file that does not exist).
+                string arguments = BuildHelperArguments(scriptPath, Process.GetCurrentProcess().Id, version, vsixPath,
+                    assetUrl, sha256, assetSize, installerPath, ReleasePageUrl, logPath, HelperWaitMinutes);
 
                 var start = new ProcessStartInfo
                 {
@@ -297,7 +306,20 @@ namespace MSSQLTool
                     WindowStyle = ProcessWindowStyle.Hidden
                 };
 
-                Process.Start(start);
+                Log($"Starting update helper: {start.FileName} {arguments}");
+                using (Process helper = Process.Start(start))
+                {
+                    // The helper waits for SSMS to exit, so an immediate exit means it never ran: that is
+                    // exactly what a -File path pointing at a missing script looks like (PowerShell exits
+                    // silently).  Report it instead of believing the update is scheduled.
+                    if (helper != null && helper.WaitForExit(500))
+                    {
+                        failure = "the helper exited immediately with code " + helper.ExitCode;
+                        Log($"Start update helper failed: {failure}");
+                        return false;
+                    }
+                }
+
                 return true;
             }
             catch (Exception ex)
@@ -316,12 +338,13 @@ namespace MSSQLTool
         internal static string QuoteForPowerShell(string value)
             => "\"" + (value ?? string.Empty).Replace("\"", "\"\"") + "\"";
 
-        internal static string BuildHelperArguments(int processId, string version, string vsixPath, string assetUrl,
-            string sha256, long assetSize, string installerPath, string releasePage, string logPath, int waitMinutes)
+        internal static string BuildHelperArguments(string scriptPath, int processId, string version, string vsixPath,
+            string assetUrl, string sha256, long assetSize, string installerPath, string releasePage, string logPath,
+            int waitMinutes)
         {
             var builder = new StringBuilder();
             builder.Append("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ");
-            builder.Append(QuoteForPowerShell(Path.Combine(Path.GetDirectoryName(logPath) ?? string.Empty, HelperScriptName)));
+            builder.Append(QuoteForPowerShell(scriptPath));
             builder.Append(" -TargetProcessId ").Append(processId.ToString(CultureInfo.InvariantCulture));
             builder.Append(" -WaitMinutes ").Append(waitMinutes.ToString(CultureInfo.InvariantCulture));
             // Empty values are omitted rather than passed as '': PowerShell's -File parser drops an
