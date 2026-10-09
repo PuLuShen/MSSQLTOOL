@@ -266,8 +266,8 @@ namespace MSSQLTool
                 + (downloadFailed ? " (the in-session download had failed; the helper downloads it)" : string.Empty)
                 + "; it installs once SSMS has exited.");
             SetLastUpdateResult(downloadFailed
-                ? LocalizationManager.T("The update is downloaded and installed automatically after SSMS closes.")
-                : LocalizationManager.T("The update installs automatically after SSMS closes."));
+                ? LocalizationManager.T("The update is downloaded and installed once SSMS closes.")
+                : LocalizationManager.T("The update runs the installer once SSMS closes."));
         }
 
         /// <summary>Writes the helper script and starts it detached from this process.</summary>
@@ -686,7 +686,7 @@ namespace MSSQLTool
 
             // The close-time helper downloads the package itself, so an unfinished download here is
             // not a failure.
-            SetLastUpdateResult(LocalizationManager.T("The update installs automatically after SSMS closes."));
+            SetLastUpdateResult(LocalizationManager.T("The update runs the installer once SSMS closes."));
         }
 
         private static void ShowUpToDatePrompt(AsyncPackage package, Version currentVersion)

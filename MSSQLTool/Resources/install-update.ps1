@@ -133,9 +133,11 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedInstanceId)) {
 $targetArguments = @($package)
 if ($instanceArgument) { $targetArguments += $instanceArgument }
 
-Write-Log "installing $package quietly"
+# The installer window is always shown: the user asked to see the update happen, and the window is
+# also what can raise the elevation prompt when the extension needs it.
+Write-Log "starting VSIXInstaller (visible) for $package"
 try {
-    $process = Start-Process -FilePath $Installer -ArgumentList (@('/quiet') + $targetArguments) -PassThru -Wait
+    $process = Start-Process -FilePath $Installer -ArgumentList $targetArguments -PassThru -Wait
     Write-Log "VSIXInstaller exit code $($process.ExitCode)"
     if ($process.ExitCode -eq 0) {
         Remove-Item -LiteralPath $package -Force -ErrorAction SilentlyContinue
@@ -143,24 +145,13 @@ try {
         Write-Log "update installed; restart SSMS to run version $Version"
         return
     }
-} catch {
-    Write-Log "quiet VSIXInstaller run failed: $($_.Exception.Message)"
-}
 
-# A quiet install fails when the extension needs elevation, which is also why the install helper in
-# the released package runs the visible installer; the window can ask for elevation.
-Write-Log 'retrying with the visible installer window'
-try {
-    $visible = Start-Process -FilePath $Installer -ArgumentList $targetArguments -PassThru -Wait
-    Write-Log "visible VSIXInstaller exit code $($visible.ExitCode)"
-    if ($visible.ExitCode -eq 0) {
-        Remove-Item -LiteralPath $package -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $readyMarker -Force -ErrorAction SilentlyContinue
-        Write-Log "update installed; restart SSMS to run version $Version"
-        return
-    }
+    # The window was visible, so a non-zero code means the user cancelled or the install failed;
+    # either way the Updates page reports it after the next start instead of opening a browser.
+    Write-Log "the update was not installed (exit code $($process.ExitCode))"
+    return
 } catch {
-    Write-Log "visible installer failed: $($_.Exception.Message)"
+    Write-Log "starting VSIXInstaller failed: $($_.Exception.Message)"
 }
 
 Write-Log 'the update could not be installed; opening the release page'
