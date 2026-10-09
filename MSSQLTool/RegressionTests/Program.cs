@@ -1,6 +1,7 @@
 using MSSQLTool.Completion;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using Microsoft.Win32;
@@ -17,13 +18,14 @@ namespace MSSQLTool.RegressionTests
         private static int Main()
         {
             if (HasCommandLineSwitch("--format-probe")) return FormatterProbe.Run(Environment.GetCommandLineArgs());
-            if (HasCommandLineSwitch("--storage")) return StorageProbe.Run();
+            if (HasCommandLineSwitch("--storage")) return StorageProbe.Run(Environment.GetCommandLineArgs());
 
             // The insert-text assertions expect square brackets, but Quote()
             // follows the machine's saved useSquareBrackets setting. Pin the
-            // setting for this run and restore the saved value afterwards so
-            // the tests never depend on local registry state.
+            // setting in this process only: saving it (as an earlier version did)
+            // rewrote the user's real setting on every test run.
             UseBracketedInsertTextForTests();
+            CaptureLiveSettings();
             try
             {
                 return MainCore();
@@ -31,6 +33,47 @@ namespace MSSQLTool.RegressionTests
             finally
             {
                 RestoreCompletionSettings();
+            }
+        }
+
+        private static string liveSettingsBefore;
+        private static IDictionary<string, string> liveRegistryBefore;
+
+        /// <summary>Remembers the live settings so the run can prove it did not rewrite them.</summary>
+        private static void CaptureLiveSettings()
+        {
+            try
+            {
+                string path = SettingsStore.FilePath;
+                liveSettingsBefore = path != null && File.Exists(path)
+                    ? Convert.ToBase64String(File.ReadAllBytes(path)) : null;
+                liveRegistryBefore = new RegistrySettingsStore().Snapshot();
+            }
+            catch
+            {
+                liveSettingsBefore = null;
+                liveRegistryBefore = null;
+            }
+        }
+
+        /// <summary>
+        /// Fails the run when it changed the settings of the machine it runs on.  A regression test
+        /// used to force useSquareBrackets on through the real store, so every test run silently
+        /// reset the user's completion options.
+        /// </summary>
+        private static void AssertLiveSettingsUnchanged()
+        {
+            string path = SettingsStore.FilePath;
+            string after = path != null && File.Exists(path) ? Convert.ToBase64String(File.ReadAllBytes(path)) : null;
+            True(string.Equals(liveSettingsBefore, after, StringComparison.Ordinal));
+
+            if (liveRegistryBefore == null) return;
+            IDictionary<string, string> registryAfter = new RegistrySettingsStore().Snapshot();
+            foreach (var pair in liveRegistryBefore)
+            {
+                string current;
+                True(registryAfter.TryGetValue(pair.Key, out current));
+                True(string.Equals(pair.Value, current, StringComparison.Ordinal));
             }
         }
 
@@ -196,7 +239,10 @@ namespace MSSQLTool.RegressionTests
             RunCompletionParameterInfoTests();
             RunStorageTests();
             RunFormattingTests();
+
             RunSqlServerIntegration();
+            // Must stay last: it compares the live settings with the snapshot taken before the run.
+            Run("Storage: the test run leaves the live settings alone", AssertLiveSettingsUnchanged);
 
             foreach (string failure in Failures) Console.Error.WriteLine(failure);
             string skipped = SkippedCount == 0 ? string.Empty : $" {SkippedCount} integration test(s) skipped.";
@@ -204,31 +250,23 @@ namespace MSSQLTool.RegressionTests
             return Failures.Count == 0 ? 0 : 1;
         }
 
-        private static string originalCompletionSettingsJson;
-
+        /// <summary>
+        /// Pins "insert square brackets" for the completion assertions.  The value is overridden in
+        /// this process only: the earlier version saved it through the store, which reset the user's
+        /// saved setting every time the suite ran.
+        /// </summary>
         private static void UseBracketedInsertTextForTests()
         {
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"MSSQLTool\Settings"))
-                originalCompletionSettingsJson = key?.GetValue("SqlCompletionSettings") as string;
-
             SettingsManager.SqlCompletionSettings settings = SettingsManager.GetSqlCompletionSettings();
             settings.useSquareBrackets = true;
-            SettingsManager.SaveSqlCompletionSettings(settings);
+            SettingsManager.OverrideCachedValue("SqlCompletionSettings",
+                Newtonsoft.Json.JsonConvert.SerializeObject(settings));
         }
 
+        /// <summary>Drops the process-local override so later reads use the real store again.</summary>
         private static void RestoreCompletionSettings()
         {
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"MSSQLTool\Settings"))
-            {
-                if (originalCompletionSettingsJson == null)
-                {
-                    try { key.DeleteValue("SqlCompletionSettings", false); } catch { }
-                }
-                else
-                {
-                    key.SetValue("SqlCompletionSettings", originalCompletionSettingsJson);
-                }
-            }
+            SettingsManager.OverrideCachedValue("SqlCompletionSettings", null);
         }
 
         private static void Run(string name, Action test) { TestCount++; try { test(); } catch (Exception ex) { Failures.Add(name + ": " + ex); } }

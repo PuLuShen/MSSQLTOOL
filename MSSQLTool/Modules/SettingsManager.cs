@@ -405,6 +405,18 @@ ORDER BY sd.[name];
             cachedFormatterOptions = null;
         }
 
+        /// <summary>
+        /// Overrides one setting for this process only, without touching any store; a null value
+        /// drops the override.  The regression tests use it to pin values they assert on, because a
+        /// test that saved such a value would rewrite the settings of the machine it runs on.
+        /// </summary>
+        internal static void OverrideCachedValue(string name, string value)
+        {
+            if (string.IsNullOrEmpty(name)) return;
+            if (value == null) RegisterValueCache.TryRemove(name, out string _);
+            else RegisterValueCache[name] = value;
+        }
+
         public class SqlCompletionSettings
         {
             public bool enabled = true;
