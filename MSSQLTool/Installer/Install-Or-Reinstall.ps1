@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$Admin
 )
@@ -45,6 +45,14 @@ Write-Host '正在卸载已安装的 MSSQL Tool（未安装时会直接继续）
 $uninstallExitCode = $LASTEXITCODE
 if ($uninstallExitCode -ne 0) {
     Write-Warning "卸载程序返回退出码 $uninstallExitCode。若此前未安装该扩展，这是正常现象；将继续安装新版本。"
+}
+
+# 扩展从 AxialSqlTools 改名为 MSSQLTool，两者会同时注册同一批命令（菜单重复）。
+# 旧版本按旧标识安装，卸载时必须一并清理。
+Write-Host '正在清理旧标识 AxialSqlTools（未安装时会直接继续）...'
+& $vsixInstaller @adminArgument /quiet /uninstall:AxialSqlTools $instanceArgument
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "旧标识卸载返回退出码 $LASTEXITCODE。若从未安装过旧版本，这是正常现象；将继续安装新版本。"
 }
 
 Write-Host '正在安装新的 MSSQL Tool...'
