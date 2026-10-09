@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
@@ -26,7 +27,22 @@ namespace MSSQLTool
         private const string StagedZipFilePattern = "MSSQLTool-*.zip";
         private const string ExpectedVsixName = "MSSQLTool.vsix";
         private const string Sha256DigestPrefix = "sha256:";
-        private static readonly TimeSpan DeferredUpdateStageWaitTimeout = TimeSpan.FromSeconds(10);
+
+        /// <summary>
+        /// Where a downloaded package waits for the install.  A folder of its own keeps it away from
+        /// the temp-file sweep, which used to be able to delete a package the deferred install still
+        /// needed.
+        /// </summary>
+        private const string StagingFolderName = "MSSQLToolUpdate";
+        private const string HelperScriptName = "install-update.ps1";
+        private const string HelperLogName = "install-update.log";
+        private const string ReadyMarkerSuffix = ".ready";
+
+        /// <summary>
+        /// How long the detached helper waits for SSMS to exit before it gives up.  The install never
+        /// waits inside SSMS: the helper outlives the process, so a slow download cannot cancel it.
+        /// </summary>
+        private const int HelperWaitMinutes = 5;
 #if DEBUG
         private const string ForceUpdateAvailableEnvironmentVariable = "MSSQLTOOL_FORCE_UPDATE_AVAILABLE";
 #endif
@@ -44,6 +60,43 @@ namespace MSSQLTool
         private static Task stageDownloadTask = Task.CompletedTask;
         private static Task cleanupDownloadedVsixFilesTask = Task.CompletedTask;
         private static UpdateInfoBar activeInfoBar;
+        private static string stageVersion;
+        private static string stageAssetUrl;
+        private static string stageSha256;
+        private static string helperScriptText;
+
+        /// <summary>
+        /// The install helper, embedded from Resources\install-update.ps1.  It is written next to the
+        /// downloaded package and started detached, so the install does not depend on this process.
+        /// </summary>
+        internal static string HelperScriptText
+        {
+            get
+            {
+                if (helperScriptText != null) return helperScriptText;
+
+                try
+                {
+                    using (Stream stream = typeof(UpdateChecker).Assembly
+                        .GetManifestResourceStream("MSSQLTool.Resources.install-update.ps1"))
+                    {
+                        if (stream != null)
+                        {
+                            using (var reader = new StreamReader(stream, Encoding.UTF8))
+                                return helperScriptText = reader.ReadToEnd();
+                        }
+                    }
+
+                    Log("Update helper script not found in the assembly.");
+                }
+                catch (Exception ex)
+                {
+                    Log($"Load update helper script failed: {ex.Message}");
+                }
+
+                return helperScriptText = string.Empty;
+            }
+        }
 
         internal static event Action LastUpdateResultChanged;
 
@@ -82,6 +135,7 @@ namespace MSSQLTool
             }
 
             Task cleanupTask = ScheduleCleanupDownloadedVsixFiles();
+            ReportLastInstallResult();
 
             if (!enableUpdateChecks)
             {
@@ -155,9 +209,21 @@ namespace MSSQLTool
             });
         }
 
+        /// <summary>
+        /// Hands the install to a detached helper so it survives this process.
+        ///
+        /// The previous version waited up to ten seconds for the background download and then gave up
+        /// (and it made SSMS's close hang for those ten seconds).  A slow download therefore meant the
+        /// update was never installed at all.  The helper waits for SSMS to exit, downloads the
+        /// package itself when the staged one is not ready, verifies it and runs VSIXInstaller.
+        /// </summary>
         internal static void LaunchDeferredUpdateOnClose()
         {
-            Task downloadTask;
+            string version;
+            string assetUrl;
+            string sha256;
+            bool downloadFailed;
+            GitHubRelease release;
             lock (updateStateLock)
             {
                 if (!pendingUpdateOnClose)
@@ -165,55 +231,226 @@ namespace MSSQLTool
                     return;
                 }
 
-                downloadTask = stageDownloadInProgress ? stageDownloadTask : null;
-            }
-
-            if (downloadTask != null && !downloadTask.IsCompleted)
-            {
-                Log($"Deferred update on close: waiting up to {DeferredUpdateStageWaitTimeout.TotalSeconds:0} seconds for staging to finish.");
-                try
-                {
-                    if (!downloadTask.Wait(DeferredUpdateStageWaitTimeout))
-                    {
-                        lock (updateStateLock)
-                        {
-                            pendingUpdateOnClose = false;
-                        }
-
-                        Log("Deferred update on close: staging did not finish before timeout. Skipping.");
-                        SetLastUpdateResult(LocalizationManager.T("Deferred update skipped because the VSIX download did not finish before SSMS closed."));
-                        return;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"Deferred update on close: staging wait failed: {ex.Message}");
-                }
-            }
-
-            string vsixPath;
-            GitHubRelease release;
-            lock (updateStateLock)
-            {
                 pendingUpdateOnClose = false;
-                vsixPath = stagedVsixPath;
+                version = stageVersion;
+                assetUrl = stageAssetUrl;
+                sha256 = stageSha256;
+                downloadFailed = stageDownloadFailed;
                 release = stagedRelease;
             }
 
-            if (string.IsNullOrWhiteSpace(vsixPath) || !File.Exists(vsixPath))
+            string installerPath = GetVsixInstallerPath();
+            if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath))
             {
-                Log("Deferred update on close: staged VSIX not found. Skipping.");
-                SetLastUpdateResult(LocalizationManager.T("Deferred update skipped because the staged VSIX was not ready."));
+                Log("Deferred update on close: VSIXInstaller.exe not found; opening the release page instead.");
+                SetLastUpdateResult(LocalizationManager.T("Could not launch VSIXInstaller automatically; opened release page instead."));
+                OpenUrl(release?.HtmlUrl ?? ReleasePageUrl);
                 return;
             }
 
-            Log("Deferred update on close: launching VSIXInstaller.");
-            if (!LaunchVsixInstaller(vsixPath))
+            string folder = StagingFolder;
+            string vsixPath = string.IsNullOrWhiteSpace(version)
+                ? Path.Combine(folder, "MSSQLTool-update.vsix")
+                : Path.Combine(folder, StagedVsixName(version));
+            string logPath = Path.Combine(folder, HelperLogName);
+
+            if (!TryStartUpdateHelper(folder, version, vsixPath, assetUrl, sha256, installerPath, logPath, out string failure))
             {
-                SetLastUpdateResult(LocalizationManager.T("Could not launch VSIXInstaller automatically; opened release page instead."));
+                Log($"Deferred update on close: could not start the installer helper ({failure}).");
+                SetLastUpdateResult(LocalizationManager.Format("Could not start the update installer ({0}); opened release page instead.", failure));
                 OpenUrl(release?.HtmlUrl ?? ReleasePageUrl);
+                return;
+            }
+
+            Log($"Deferred update on close: helper started for {version ?? "the latest release"}"
+                + (downloadFailed ? " (the in-session download had failed; the helper downloads it)" : string.Empty)
+                + "; it installs once SSMS has exited.");
+            SetLastUpdateResult(downloadFailed
+                ? LocalizationManager.T("The update is downloaded and installed automatically after SSMS closes.")
+                : LocalizationManager.T("The update installs automatically after SSMS closes."));
+        }
+
+        /// <summary>Writes the helper script and starts it detached from this process.</summary>
+        internal static bool TryStartUpdateHelper(string folder, string version, string vsixPath, string assetUrl,
+            string sha256, string installerPath, string logPath, out string failure)
+        {
+            failure = null;
+            try
+            {
+                Directory.CreateDirectory(folder);
+                string scriptPath = Path.Combine(folder, HelperScriptName);
+                File.WriteAllText(scriptPath, HelperScriptText, new UTF8Encoding(false));
+
+                string arguments = BuildHelperArguments(Process.GetCurrentProcess().Id, version, vsixPath, assetUrl,
+                    sha256, installerPath, ReleasePageUrl, logPath, HelperWaitMinutes);
+
+                var start = new ProcessStartInfo
+                {
+                    FileName = GetPowerShellPath(),
+                    Arguments = arguments,
+                    // Detached: the helper must outlive SSMS, and this call must not block the close.
+                    UseShellExecute = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+
+                Process.Start(start);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                failure = ex.Message;
+                Log($"Start update helper failed: {ex.Message}");
+                return false;
             }
         }
+
+        /// <summary>
+        /// Quotes a value for the helper's command line.  The arguments after <c>-File</c> are split by
+        /// the usual Windows rules, where single quotes are literal characters and an empty quoted
+        /// value is dropped, so values use double quotes and empty ones are left out entirely.
+        /// </summary>
+        internal static string QuoteForPowerShell(string value)
+            => "\"" + (value ?? string.Empty).Replace("\"", "\"\"") + "\"";
+
+        internal static string BuildHelperArguments(int processId, string version, string vsixPath, string assetUrl,
+            string sha256, string installerPath, string releasePage, string logPath, int waitMinutes)
+        {
+            var builder = new StringBuilder();
+            builder.Append("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ");
+            builder.Append(QuoteForPowerShell(Path.Combine(Path.GetDirectoryName(logPath) ?? string.Empty, HelperScriptName)));
+            builder.Append(" -TargetProcessId ").Append(processId.ToString(CultureInfo.InvariantCulture));
+            builder.Append(" -WaitMinutes ").Append(waitMinutes.ToString(CultureInfo.InvariantCulture));
+            // Empty values are omitted rather than passed as '': PowerShell's -File parser drops an
+            // empty quoted argument, which fails the whole call with "missing an argument".
+            AppendHelperArgument(builder, "Version", version);
+            AppendHelperArgument(builder, "VsixPath", vsixPath);
+            AppendHelperArgument(builder, "AssetUrl", assetUrl);
+            AppendHelperArgument(builder, "Sha256", sha256);
+            AppendHelperArgument(builder, "Installer", installerPath);
+            AppendHelperArgument(builder, "SsmsPath", GetSsmsDirectory());
+            AppendHelperArgument(builder, "InstanceId", GetSsmsInstanceId());
+            AppendHelperArgument(builder, "ReleasePage", releasePage);
+            AppendHelperArgument(builder, "LogPath", logPath);
+            return builder.ToString();
+        }
+
+        /// <summary>
+        /// The SSMS instance id taken from this extension's own folder, which SSMS lays out as
+        /// <c>%LOCALAPPDATA%\Microsoft\SSMS\&lt;version&gt;_&lt;instanceId&gt;\Extensions</c>.  Knowing the
+        /// running instance means VSIXInstaller patches that one instead of guessing.
+        /// </summary>
+        internal static string GetSsmsInstanceId()
+        {
+            try
+            {
+                return ExtractInstanceId(AppDomain.CurrentDomain.BaseDirectory);
+            }
+            catch (Exception ex)
+            {
+                Log($"Resolve the SSMS instance id failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>Pulls the instance id out of a path segment such as "22.0_6d5d8555".</summary>
+        internal static string ExtractInstanceId(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+
+            foreach (string segment in path.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int separator = segment.IndexOf('_');
+                if (separator <= 0 || separator == segment.Length - 1) continue;
+
+                string version = segment.Substring(0, separator);
+                string id = segment.Substring(separator + 1);
+                if (id.IndexOf('.') >= 0) continue;   // "22.0_6d5d8555" only; skip dotted file names
+                if (version.Length < 2 || id.Length < 6) continue;
+
+                bool looksLikeVersion = true;
+                foreach (char c in version)
+                {
+                    if (char.IsDigit(c) || c == '.') continue;
+                    looksLikeVersion = false;
+                    break;
+                }
+
+                if (!looksLikeVersion) continue;
+
+                bool looksLikeInstanceId = true;
+                foreach (char c in id)
+                {
+                    if (Uri.IsHexDigit(c)) continue;
+                    looksLikeInstanceId = false;
+                    break;
+                }
+
+                if (!looksLikeInstanceId) continue;
+
+                return id;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The folder that holds Ssms.exe, used by the helper to look up the instance id VSIXInstaller
+        /// needs for this isolated shell.
+        /// </summary>
+        internal static string GetSsmsDirectory()
+        {
+            try
+            {
+                string exePath = Process.GetCurrentProcess()?.MainModule?.FileName;
+                if (!string.IsNullOrWhiteSpace(exePath))
+                {
+                    string directory = Path.GetDirectoryName(exePath);
+                    if (!string.IsNullOrWhiteSpace(directory)) return directory;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Resolve the SSMS folder failed: {ex.Message}");
+            }
+
+            try
+            {
+                return AppDomain.CurrentDomain.BaseDirectory;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void AppendHelperArgument(StringBuilder builder, string name, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            builder.Append(" -").Append(name).Append(' ').Append(QuoteForPowerShell(value));
+        }
+
+        internal static string GetPowerShellPath()
+        {
+            try
+            {
+                string candidate = Path.Combine(Environment.SystemDirectory,
+                    "WindowsPowerShell", "v1.0", "powershell.exe");
+                if (File.Exists(candidate)) return candidate;
+            }
+            catch (Exception ex)
+            {
+                Log($"Resolve powershell.exe failed: {ex.Message}");
+            }
+
+            return "powershell.exe";
+        }
+
+        internal static string StagingFolder => Path.Combine(Path.GetTempPath(), StagingFolderName);
+
+        internal static string StagedVsixName(string version) => $"MSSQLTool-{version}.vsix";
+
+        internal static string ReadyMarkerPath(string vsixPath) => vsixPath + ReadyMarkerSuffix;
+
 
         private static async Task CheckForUpdatesAsync(AsyncPackage package, CancellationToken token, bool showUpToDate)
         {
@@ -426,15 +663,11 @@ namespace MSSQLTool
             activeInfoBar = null;
             string vsixPath;
             bool inProgress;
-            bool failed;
-            GitHubRelease release;
             lock (updateStateLock)
             {
                 pendingUpdateOnClose = true;
                 vsixPath = stagedVsixPath;
                 inProgress = stageDownloadInProgress;
-                failed = stageDownloadFailed;
-                release = stagedRelease;
             }
 
             Log("Deferred update on close enabled.");
@@ -447,19 +680,13 @@ namespace MSSQLTool
 
             if (inProgress)
             {
-                SetLastUpdateResult(LocalizationManager.T("Update will install when SSMS closes after the download finishes."));
+                SetLastUpdateResult(LocalizationManager.T("Update will install when SSMS closes; the download continues until then."));
                 return;
             }
 
-            if (failed)
-            {
-                SetLastUpdateResult(LocalizationManager.T("Update download failed; opened release page."));
-                OpenUrl(release?.HtmlUrl ?? ReleasePageUrl);
-                return;
-            }
-
-            SetLastUpdateResult(LocalizationManager.T("Update package is not ready; opened release page."));
-            OpenUrl(release?.HtmlUrl ?? ReleasePageUrl);
+            // The close-time helper downloads the package itself, so an unfinished download here is
+            // not a failure.
+            SetLastUpdateResult(LocalizationManager.T("The update installs automatically after SSMS closes."));
         }
 
         private static void ShowUpToDatePrompt(AsyncPackage package, Version currentVersion)
@@ -488,18 +715,50 @@ namespace MSSQLTool
                 return;
             }
 
+            GitHubAsset asset = GetInstallAsset(release);
+            if (asset == null || string.IsNullOrWhiteSpace(asset.DownloadUrl))
+            {
+                lock (updateStateLock)
+                {
+                    stagedRelease = release;
+                    stageDownloadFailed = true;
+                }
+
+                Log("Stage download skipped: no ZIP or VSIX asset found.");
+                MarkStageDownloadFailed(LocalizationManager.T("Update download failed: no ZIP or VSIX release asset was found."));
+                return;
+            }
+
+            bool hasDigest;
+            string expectedSha256 = GetAssetSha256(asset, out hasDigest);
+            if (hasDigest && string.IsNullOrWhiteSpace(expectedSha256))
+            {
+                lock (updateStateLock)
+                {
+                    stagedRelease = release;
+                    stageDownloadFailed = true;
+                }
+
+                Log("Stage download aborted: GitHub release digest is invalid.");
+                MarkStageDownloadFailed(LocalizationManager.T("Update download failed: invalid GitHub release digest."));
+                return;
+            }
+
+            if (!hasDigest)
+            {
+                Log("Stage download: GitHub release digest was not provided; download will not be checksum verified.");
+            }
+
+            // Record what the helper needs before the download starts: even when this download never
+            // finishes, the helper can still fetch the package after SSMS has closed.
+            Version releaseVersion = ParseVersion(release.TagName);
             lock (updateStateLock)
             {
                 stagedRelease = release;
                 stageDownloadFailed = false;
-            }
-
-            GitHubAsset asset = GetInstallAsset(release);
-            if (asset == null || string.IsNullOrWhiteSpace(asset.DownloadUrl))
-            {
-                Log("Stage download skipped: no ZIP or VSIX asset found.");
-                MarkStageDownloadFailed(LocalizationManager.T("Update download failed: no ZIP or VSIX release asset was found."));
-                return;
+                stageVersion = releaseVersion == null ? null : FormatVersion(releaseVersion);
+                stageAssetUrl = asset.DownloadUrl;
+                stageSha256 = expectedSha256;
             }
 
             Task cleanupTask = GetCleanupDownloadedVsixFilesTask();
@@ -512,7 +771,7 @@ namespace MSSQLTool
 
             _ = Task.Run(async () =>
             {
-                string downloadedPath = null;
+                string partialPath = null;
                 string extractedVsixPath = null;
                 bool staged = false;
                 bool verified = false;
@@ -523,28 +782,17 @@ namespace MSSQLTool
 
                     await cleanupTask;
 
-                    bool hasDigest;
-                    string expectedSha256 = GetAssetSha256(asset, out hasDigest);
-                    if (hasDigest && string.IsNullOrWhiteSpace(expectedSha256))
-                    {
-                        Log("Stage download aborted: GitHub release digest is invalid.");
-                        MarkStageDownloadFailed(LocalizationManager.T("Update download failed: invalid GitHub release digest."));
-                        return;
-                    }
-
-                    if (!hasDigest)
-                    {
-                        Log("Stage download: GitHub release digest was not provided; download will not be checksum verified.");
-                    }
+                    string folder = StagingFolder;
+                    Directory.CreateDirectory(folder);
 
                     bool isZip = asset.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
-                    string downloadExtension = isZip ? ".zip" : ".vsix";
-                    downloadedPath = Path.Combine(Path.GetTempPath(), $"MSSQLTool-{Guid.NewGuid():N}{downloadExtension}");
-                    await DownloadFileAsync(asset.DownloadUrl, downloadedPath, CancellationToken.None);
+                    string finalPath = Path.Combine(folder, StagedVsixName(stageVersion ?? "latest"));
+                    partialPath = finalPath + (isZip ? ".zip.part" : ".part");
+                    await DownloadFileAsync(asset.DownloadUrl, partialPath, CancellationToken.None);
 
                     if (!string.IsNullOrWhiteSpace(expectedSha256))
                     {
-                        string actualSha256 = ComputeSha256Hex(downloadedPath);
+                        string actualSha256 = ComputeSha256Hex(partialPath);
                         if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
                         {
                             Log($"Stage download aborted: checksum mismatch. Expected={expectedSha256}, Actual={actualSha256}");
@@ -555,15 +803,20 @@ namespace MSSQLTool
                         verified = true;
                     }
 
-                    extractedVsixPath = isZip
-                        ? ExtractVsixFromZip(downloadedPath)
-                        : downloadedPath;
+                    string preparedVsix = isZip ? ExtractVsixFromZip(partialPath) : partialPath;
+                    if (!string.Equals(preparedVsix, finalPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        TryDeleteFile(finalPath);
+                        File.Move(preparedVsix, finalPath);
+                    }
 
-                    downloadedPath = isZip ? downloadedPath : null;
-
-                    ReplaceStagedVsixPath(extractedVsixPath);
+                    partialPath = null;
+                    extractedVsixPath = finalPath;
+                    // The marker is what tells the helper (and the next start) that the file is complete.
+                    WriteReadyMarker(finalPath, stageVersion, expectedSha256, asset.DownloadUrl);
+                    ReplaceStagedVsixPath(finalPath);
                     staged = true;
-                    Log($"Update package staged at: {extractedVsixPath}");
+                    Log($"Update package staged at: {finalPath}");
 
                     bool installPending;
                     lock (updateStateLock)
@@ -596,14 +849,11 @@ namespace MSSQLTool
                         stageDownloadInProgress = false;
                     }
 
-                    if (!staged && !string.IsNullOrWhiteSpace(extractedVsixPath))
+                    // A failed or superseded download must not leave a half file behind.
+                    TryDeleteFile(partialPath);
+                    if (!staged)
                     {
                         TryDeleteFile(extractedVsixPath);
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(downloadedPath))
-                    {
-                        TryDeleteFile(downloadedPath);
                     }
 
                     completion.TrySetResult(true);
@@ -613,20 +863,28 @@ namespace MSSQLTool
 
         private static void MarkStageDownloadFailed(string message)
         {
-            bool shouldOpenReleasePage;
-            GitHubRelease release;
             lock (updateStateLock)
             {
                 stageDownloadFailed = true;
-                shouldOpenReleasePage = pendingUpdateOnClose;
-                release = stagedRelease;
             }
 
+            // No browser fallback here: the close-time helper retries the download by itself and opens
+            // the release page only when it cannot install either.
             SetLastUpdateResult(message);
+        }
 
-            if (shouldOpenReleasePage)
+        /// <summary>Marks a staged package as complete; the install helper trusts it only with this file.</summary>
+        private static void WriteReadyMarker(string vsixPath, string version, string sha256, string url)
+        {
+            try
             {
-                OpenUrl(release?.HtmlUrl ?? ReleasePageUrl);
+                File.WriteAllText(ReadyMarkerPath(vsixPath),
+                    $"version={version}\r\nsha256={sha256}\r\nurl={url}\r\ncompleted={DateTime.UtcNow:O}\r\n",
+                    new UTF8Encoding(false));
+            }
+            catch (Exception ex)
+            {
+                Log($"Write update ready marker failed: {ex.Message}");
             }
         }
 
@@ -667,7 +925,11 @@ namespace MSSQLTool
 
         private static string ExtractVsixFromZip(string zipPath)
         {
-            string tempVsixPath = Path.Combine(Path.GetTempPath(), $"MSSQLTool-{Guid.NewGuid():N}.vsix");
+            // Extracted inside the staging folder: the caller moves it into place, and the startup
+            // sweep there is the only thing allowed to clean it up.
+            string stagingFolder = StagingFolder;
+            Directory.CreateDirectory(stagingFolder);
+            string tempVsixPath = Path.Combine(stagingFolder, $"MSSQLTool-{Guid.NewGuid():N}.vsix.part");
 
             using (ZipArchive archive = ZipFile.OpenRead(zipPath))
             {
@@ -766,6 +1028,7 @@ namespace MSSQLTool
 
             try
             {
+                // Files from releases up to 4.62 lived directly in the temp folder.
                 string tempDirectory = Path.GetTempPath();
                 foreach (string filePath in Directory.GetFiles(tempDirectory, StagedVsixFilePattern))
                 {
@@ -777,6 +1040,32 @@ namespace MSSQLTool
                     TryDeleteFile(filePath);
                 }
 
+                // The staging folder is shared with the install helper, which may still be running
+                // right after SSMS closed: only packages older than the helper's wait window are
+                // stale enough to delete.
+                string folder = StagingFolder;
+                if (Directory.Exists(folder))
+                {
+                    DateTime cutoff = DateTime.UtcNow - TimeSpan.FromMinutes(HelperWaitMinutes + 5);
+                    foreach (string filePath in Directory.GetFiles(folder, "MSSQLTool-*"))
+                    {
+                        try
+                        {
+                            if (File.GetLastWriteTimeUtc(filePath) > cutoff)
+                            {
+                                Log($"Cleanup kept a recent staged file: {filePath}");
+                                continue;
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            continue;
+                        }
+
+                        TryDeleteFile(filePath);
+                    }
+                }
+
                 if (!string.IsNullOrWhiteSpace(activePath) && File.Exists(activePath))
                 {
                     TryDeleteFile(activePath);
@@ -785,6 +1074,30 @@ namespace MSSQLTool
             catch (Exception ex)
             {
                 Log($"Cleanup staged update files failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Reports what the detached install helper did after the previous SSMS session, so a failed
+        /// install is visible instead of silent.
+        /// </summary>
+        private static void ReportLastInstallResult()
+        {
+            try
+            {
+                string logPath = Path.Combine(StagingFolder, HelperLogName);
+                if (!File.Exists(logPath)) return;
+
+                string[] lines = File.ReadAllLines(logPath);
+                if (lines.Length == 0) return;
+
+                string lastLine = lines[lines.Length - 1];
+                SetLastUpdateResult(lastLine);
+                Log($"Previous update install: {lastLine}");
+            }
+            catch (Exception ex)
+            {
+                Log($"Read update install log failed: {ex.Message}");
             }
         }
 
@@ -859,35 +1172,6 @@ namespace MSSQLTool
                         await source.CopyToAsync(target);
                     }
                 }
-            }
-        }
-
-        private static bool LaunchVsixInstaller(string vsixPath)
-        {
-            try
-            {
-                string installerPath = GetVsixInstallerPath();
-                if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath))
-                {
-                    Log("VSIXInstaller.exe not found; falling back to browser.");
-                    return false;
-                }
-
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = installerPath,
-                    Arguments = $"\"{vsixPath}\"",
-                    UseShellExecute = true
-                });
-
-                Log($"Launched VSIXInstaller: {installerPath} \"{vsixPath}\"");
-                SetLastUpdateResult(LocalizationManager.T("VSIXInstaller launched."));
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Log($"Launch VSIXInstaller failed: {ex.Message}");
-                return false;
             }
         }
 

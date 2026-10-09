@@ -244,6 +244,7 @@ namespace MSSQLTool.RegressionTests
             Run("Completion popup constructs", TestCompletionPopupConstructs);
             RunCompletionSelectionTests();
             RunCompletionParameterInfoTests();
+            RunUpdateHelperTests();
             RunStorageTests();
             RunFormattingTests();
 

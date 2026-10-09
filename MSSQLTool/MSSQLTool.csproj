@@ -228,6 +228,7 @@
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
     <EmbeddedResource Include="QuickSearch\sql.xshd" />
+    <EmbeddedResource Include="Resources\install-update.ps1" />
     <None Include="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
     </None>
