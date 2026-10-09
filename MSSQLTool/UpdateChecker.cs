@@ -788,7 +788,8 @@ namespace MSSQLTool
                     bool isZip = asset.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
                     string finalPath = Path.Combine(folder, StagedVsixName(stageVersion ?? "latest"));
                     partialPath = finalPath + (isZip ? ".zip.part" : ".part");
-                    await DownloadFileAsync(asset.DownloadUrl, partialPath, CancellationToken.None);
+                    BeginDownloadProgress(stageVersion);
+                    await DownloadFileAsync(asset.DownloadUrl, partialPath, CancellationToken.None, ReportDownloadProgress);
 
                     if (!string.IsNullOrWhiteSpace(expectedSha256))
                     {
@@ -848,6 +849,8 @@ namespace MSSQLTool
                     {
                         stageDownloadInProgress = false;
                     }
+
+                    EndDownloadProgress();
 
                     // A failed or superseded download must not leave a half file behind.
                     TryDeleteFile(partialPath);
@@ -1158,7 +1161,8 @@ namespace MSSQLTool
             }
         }
 
-        private static async Task DownloadFileAsync(string url, string path, CancellationToken token)
+        private static async Task DownloadFileAsync(string url, string path, CancellationToken token,
+            Action<long, long> onProgress = null)
         {
             using (var client = new HttpClient())
             {
@@ -1166,13 +1170,118 @@ namespace MSSQLTool
                 using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token))
                 {
                     response.EnsureSuccessStatusCode();
+                    long totalBytes = response.Content.Headers.ContentLength ?? -1;
+                    long receivedBytes = 0;
+                    onProgress?.Invoke(0, totalBytes);
+
                     using (Stream source = await response.Content.ReadAsStreamAsync())
                     using (Stream target = File.Create(path))
                     {
-                        await source.CopyToAsync(target);
+                        // Read in chunks so the download can be reported while it runs; the previous
+                        // CopyToAsync gave no chance to show any progress at all.
+                        byte[] buffer = new byte[81920];
+                        int read;
+                        while ((read = await source.ReadAsync(buffer, 0, buffer.Length, token)) > 0)
+                        {
+                            await target.WriteAsync(buffer, 0, read, token);
+                            receivedBytes += read;
+                            onProgress?.Invoke(receivedBytes, totalBytes);
+                        }
                     }
                 }
             }
+        }
+
+        /// <summary>How far the background download got, as shown on the Updates page.</summary>
+        internal sealed class DownloadProgress
+        {
+            public string Version { get; set; }
+            public long BytesReceived { get; set; }
+            public long TotalBytes { get; set; }
+            public bool IsActive { get; set; }
+
+            /// <summary>0-100, or -1 while the server does not report a length.</summary>
+            public int Percent => TotalBytes <= 0
+                ? -1
+                : (int)Math.Min(100, Math.Max(0, BytesReceived * 100 / TotalBytes));
+        }
+
+        private static DownloadProgress downloadProgress;
+        private static DateTime lastProgressReportUtc = DateTime.MinValue;
+
+        /// <summary>The download in flight, or null when nothing is being downloaded.</summary>
+        internal static DownloadProgress CurrentDownloadProgress
+        {
+            get
+            {
+                lock (updateStateLock)
+                {
+                    return downloadProgress;
+                }
+            }
+        }
+
+        internal static void BeginDownloadProgress(string version)
+        {
+            lock (updateStateLock)
+            {
+                downloadProgress = new DownloadProgress { Version = version, IsActive = true };
+                lastProgressReportUtc = DateTime.MinValue;
+            }
+        }
+
+        internal static void EndDownloadProgress()
+        {
+            lock (updateStateLock)
+            {
+                downloadProgress = null;
+            }
+        }
+
+        /// <summary>Stores the byte counts and refreshes the status text a few times per second.</summary>
+        internal static void ReportDownloadProgress(long receivedBytes, long totalBytes)
+        {
+            bool report;
+            lock (updateStateLock)
+            {
+                if (downloadProgress == null || !downloadProgress.IsActive) return;
+
+                downloadProgress.BytesReceived = receivedBytes;
+                if (totalBytes > 0) downloadProgress.TotalBytes = totalBytes;
+
+                // The status text drives the UI, so a few updates per second are plenty.
+                report = (DateTime.UtcNow - lastProgressReportUtc).TotalMilliseconds >= 250;
+                if (report) lastProgressReportUtc = DateTime.UtcNow;
+            }
+
+            if (!report) return;
+            SetLastUpdateResult(DescribeDownloadProgress(CurrentDownloadProgress));
+        }
+
+        internal static string DescribeDownloadProgress(DownloadProgress progress)
+        {
+            if (progress == null) return string.Empty;
+            if (progress.Percent >= 0)
+                return LocalizationManager.Format("Downloading update package: {0}% ({1} of {2})",
+                    progress.Percent, FormatBytes(progress.BytesReceived), FormatBytes(progress.TotalBytes));
+
+            return LocalizationManager.Format("Downloading update package: {0}",
+                FormatBytes(progress.BytesReceived));
+        }
+
+        /// <summary>Byte counts in the units a person reads them in.</summary>
+        internal static string FormatBytes(long bytes)
+        {
+            if (bytes < 0) return "-";
+            if (bytes < 1024) return bytes.ToString(CultureInfo.InvariantCulture) + " B";
+
+            double kilobytes = bytes / 1024.0;
+            if (kilobytes < 1024) return kilobytes.ToString("0.0", CultureInfo.InvariantCulture) + " KB";
+
+            double megabytes = kilobytes / 1024.0;
+            if (megabytes < 1024) return megabytes.ToString("0.0", CultureInfo.InvariantCulture) + " MB";
+
+            return (megabytes / 1024.0).ToString("0.00", CultureInfo.InvariantCulture) + " GB";
         }
 
         private static string GetVsixInstallerPath()

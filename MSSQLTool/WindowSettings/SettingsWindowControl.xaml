@@ -581,9 +581,17 @@
                     </StackPanel>
 
                     <GroupBox Grid.Row="3" Header="Update status" Margin="5">
-                        <TextBlock x:Name="UpdateCheckStatus"
-                                   TextWrapping="Wrap"
-                                   Margin="5"/>
+                        <StackPanel>
+                            <TextBlock x:Name="UpdateCheckStatus"
+                                       TextWrapping="Wrap"
+                                       Margin="5"/>
+                            <ProgressBar x:Name="UpdateProgressBar"
+                                         Height="8"
+                                         Margin="5,2,5,7"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         Visibility="Collapsed"/>
+                        </StackPanel>
                     </GroupBox>
                 </Grid>
             </TabItem>

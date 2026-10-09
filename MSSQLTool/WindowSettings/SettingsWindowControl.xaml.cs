@@ -379,6 +379,29 @@ as select 1;
                 UpdateCheckStatus.Text = UpdateChecker.LastUpdateResult;
             }
 
+            // The download reports its own progress; a bar next to the status text shows how far it is.
+            if (UpdateProgressBar != null)
+            {
+                UpdateChecker.DownloadProgress progress = UpdateChecker.CurrentDownloadProgress;
+                bool active = progress != null && progress.IsActive;
+                UpdateProgressBar.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+                if (!active)
+                {
+                    UpdateProgressBar.IsIndeterminate = false;
+                    UpdateProgressBar.Value = 0;
+                }
+                else if (progress.Percent >= 0)
+                {
+                    UpdateProgressBar.IsIndeterminate = false;
+                    UpdateProgressBar.Value = progress.Percent;
+                }
+                else
+                {
+                    // No Content-Length: keep the bar moving instead of pretending to know.
+                    UpdateProgressBar.IsIndeterminate = true;
+                }
+            }
+
             // The page answers "which version am I on, and is there a newer one?" before any check.
             if (CurrentVersionText != null)
             {

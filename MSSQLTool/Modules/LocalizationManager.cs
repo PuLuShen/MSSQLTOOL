@@ -187,6 +187,8 @@ namespace MSSQLTool
             ["Update download failed; opened release page."] = "更新包下载失败，已打开发布页面。",
             ["Update package is not ready; opened release page."] = "更新包尚未就绪，已打开发布页面。",
             ["Downloading update package in background."] = "正在后台下载更新包。",
+            ["Downloading update package: {0}% ({1} of {2})"] = "正在下载更新包：{0}%（{1} / {2}）",
+            ["Downloading update package: {0}"] = "正在下载更新包：{0}",
             ["downloaded and verified"] = "下载并校验完成",
             ["downloaded without checksum verification"] = "下载完成（未校验）",
             ["Update package {0}. It will install when SSMS closes."] = "更新包已{0}，将在关闭 SSMS 后安装。",
