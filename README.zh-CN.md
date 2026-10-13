@@ -8,6 +8,8 @@
 也可以从 [Open SSMS VSIX Gallery](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/) 下载最新 VSIX。
 插件内置更新检查：设置 → 更新 里可一键排期「关闭 SSMS 时安装」。
 
+发布与上架流程（含图库令牌、CI 说明与注意事项）见 [PUBLISH.zh-CN.md](PUBLISH.zh-CN.md)。
+
 > MSSQL Tool 是 [Axial-SQL/AxialSqlTools](https://github.com/Axial-SQL/AxialSqlTools)（Apache-2.0）的 fork，在此基础上重构了 SQL 自动补全、格式化选项以及设置与多语言层。
 
 ## 界面截图

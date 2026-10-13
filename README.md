@@ -8,6 +8,8 @@
 or grab the latest VSIX from the [Open SSMS VSIX Gallery](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/).
 The extension also updates itself: Settings -> Updates can schedule "install when SSMS closes".
 
+The publishing and gallery workflow (token, CI, watch-outs) is documented in [PUBLISH.zh-CN.md](PUBLISH.zh-CN.md).
+
 > MSSQL Tool is a fork of [Axial-SQL/AxialSqlTools](https://github.com/Axial-SQL/AxialSqlTools) (Apache-2.0). The SQL completion engine, the formatter options, and the settings and localization layers were reworked on top of it.
 
 ## Screenshots
