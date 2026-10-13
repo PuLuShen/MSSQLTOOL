@@ -15,10 +15,20 @@ namespace MSSQLTool
         private sealed class Operation : IDisposable
         {
             private int disposed;
+            private string message;
 
-            public Operation(string message) { Message = message; }
-            public string Message { get; }
+            public Operation(string message) { this.message = message; }
+            public string Message => Volatile.Read(ref message);
             public bool IsDisposed => Volatile.Read(ref disposed) != 0;
+
+            /// <summary>Replaces the text of a running operation, so long loads can report progress.</summary>
+            public void Update(string text)
+            {
+                if (string.IsNullOrWhiteSpace(text) || IsDisposed) return;
+                if (string.Equals(Message, text, StringComparison.Ordinal)) return;
+                Volatile.Write(ref message, text);
+                Schedule(() => SetText(this, text));
+            }
 
             public void Dispose()
             {
@@ -100,6 +110,33 @@ namespace MSSQLTool
             }
             statusBar = null;
             previousText = null;
+        }
+
+        /// <summary>Shows a new text for the operation that is currently on screen.</summary>
+        private static void SetText(Operation operation, string text)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (operation.IsDisposed || Active.Count == 0) return;
+            // Only the newest operation owns the status bar; an older one must not overwrite it.
+            if (!ReferenceEquals(Active[Active.Count - 1], operation)) return;
+            statusBar?.SetText(text);
+        }
+
+        /// <summary>
+        /// Reports progress of the newest running operation.  Long loads call this as they move through
+        /// their steps so the status bar shows what is happening instead of one static sentence.
+        /// </summary>
+        public static void Update(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+            Operation operation;
+            lock (Active)
+            {
+                if (Active.Count == 0) return;
+                operation = Active[Active.Count - 1];
+            }
+
+            operation.Update(message);
         }
     }
 }

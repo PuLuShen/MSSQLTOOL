@@ -104,6 +104,8 @@ namespace MSSQLTool.RegressionTests
             Run("Same-line EXEC does not absorb snippet SELECT", TestSameLineExecuteBeforeSnippetSelect);
             Run("Multiline EXEC keeps argument completion", TestMultilineExecuteArguments);
             Run("EXEC with parameters releases incomplete next statement", TestExecuteParametersBeforeIncompleteStatement);
+            Run("EXEC parameters release on a new line after one letter", TestExecuteParametersReleaseOnNewLineWithOneLetter);
+            Run("Completion: keyword coverage includes table and query hints", TestCompletionKeywordCoverage);
             Run("EXEC without parameters releases incomplete next statement", TestExecuteBeforeIncompleteStatement);
             Run("EXEC positional value remains argument context", TestExecutePositionalValue);
             Run("Exact snippet prefix is context-independent", TestExactSnippetPrefix);
@@ -310,6 +312,51 @@ namespace MSSQLTool.RegressionTests
         {
             string sql = "EXEC dbo.usp_Test\n    @Id = 1,\n    @";
             Equal(CompletionContextKind.ExecuteArguments, SqlCompletionAnalyzer.Analyze(sql, sql.Length).Kind);
+        }
+
+        /// <summary>
+        /// The first character of a statement on a new line must leave the EXEC scope: a parameter list
+        /// has no closing bracket, so without this the popup stayed in "procedure arguments" and never
+        /// suggested SELECT (or anything else) after the user pressed Enter past the last parameter.
+        /// </summary>
+        private static void TestExecuteParametersReleaseOnNewLineWithOneLetter()
+        {
+            string sql = "EXEC dbo.usp_Test\n    @Id = 1,\n    @Name = 'x'\nS";
+            CompletionContext context = SqlCompletionAnalyzer.Analyze(sql, sql.Length);
+            Equal(CompletionContextKind.General, context.Kind);
+            Equal("S", context.Prefix);
+            True(SqlCompletionAnalyzer.BuildItems(context, Metadata()).Any(x => x.DisplayText == "SELECT"));
+
+            // A parameter being typed on a new line stays in EXEC scope.
+            string parameters = "EXEC dbo.usp_Test\n    @Id = 1,\n    @";
+            Equal(CompletionContextKind.ExecuteArguments, SqlCompletionAnalyzer.Analyze(parameters, parameters.Length).Kind);
+        }
+
+        /// <summary>
+        /// Constructs that are everywhere in real scripts must be in the keyword table; the popup can
+        /// only offer what the table contains.
+        /// </summary>
+        private static void TestCompletionKeywordCoverage()
+        {
+            var settings = new SettingsManager.SqlCompletionSettings();
+            List<string> keywords = SqlCompletionAnalyzer.AllKeywords(settings).ToList();
+
+            foreach (string required in new[]
+            {
+                "SELECT", "CREATE", "DROP", "WITH", "WITH (NOLOCK)", "WITH (UPDLOCK)", "OPTION (RECOMPILE)", "OVER", "PARTITION BY",
+                "ROWS BETWEEN", "PIVOT", "UNPIVOT", "MERGE INTO", "WHEN MATCHED", "OUTPUT", "OUTPUT INSERTED", "TRY_CONVERT", "STRING_AGG",
+                "ROW_NUMBER", "OFFSET", "FETCH NEXT", "FOR JSON PATH", "OPENJSON", "SET NOCOUNT ON", "BEGIN TRY", "THROW", "@@ROWCOUNT"
+            })
+                True(keywords.Contains(required));
+
+            // The list is what the user can extend, so a custom entry has to come through and duplicates
+            // (built-in spelled again by the user) must not appear twice.
+            var custom = new SettingsManager.SqlCompletionSettings { additionalKeywords = "WITH (NOLOCK);usp_MyHouseStyle\r\nWITH (READPAST)" };
+            List<string> extended = SqlCompletionAnalyzer.AllKeywords(custom).ToList();
+            True(extended.Contains("usp_MyHouseStyle"));
+            True(extended.Contains("WITH (READPAST)"));
+            Equal(1, extended.Count(k => string.Equals(k, "WITH (NOLOCK)", StringComparison.OrdinalIgnoreCase)));
+            Equal(extended.Count, extended.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         }
 
         private static void TestExecuteParametersBeforeIncompleteStatement()

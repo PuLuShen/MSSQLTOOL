@@ -429,6 +429,8 @@ ORDER BY sd.[name];
             public bool autoAddAliases = false;
             public string aliasPrefixToIgnore = "tbl_,vw_";
             public string customAliases = string.Empty;
+            /// <summary>Extra completion keywords, separated by ";" or new lines.  Lets a team add its own house style (for example "WITH (NOLOCK)" or internal prefixes) without a rebuild.</summary>
+            public string additionalKeywords = string.Empty;
             public string joinColumnRules = string.Empty;
             public int delayMilliseconds = 120;
             public int maximumItems = 200;

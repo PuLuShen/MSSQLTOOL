@@ -278,7 +278,10 @@ namespace MSSQLTool.Completion
             list.SelectedIndex = -1;
             parameterInfo.Visible = false;
             UpdateDetails();
-            footer.Text = LocalizationManager.T("Metadata loading — suggestions will appear when ready.");
+            string progress = SqlMetadataCache.LoadProgress.Current;
+            footer.Text = string.IsNullOrWhiteSpace(progress)
+                ? LocalizationManager.T("Metadata loading — suggestions will appear when ready.")
+                : progress;
             PositionAndShow(textView);
         }
 

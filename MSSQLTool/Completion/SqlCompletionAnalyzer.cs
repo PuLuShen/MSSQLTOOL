@@ -554,7 +554,10 @@ namespace MSSQLTool.Completion
             bool snippetPrefix = SettingsManager.GetSnippetSettings().useSnippets
                 && SnippetService.GetAllSnippets().Any(s => !string.IsNullOrWhiteSpace(s.Prefix)
                     && s.Prefix.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-            bool statementPrefix = prefix.Length >= 2 && DetachedStatementStarters.Any(s =>
+            // One letter is enough: the starters are a curated list, and requiring two made the popup
+            // stay in the EXEC scope while the user typed the first character of the next statement
+            // (typing "S" after a parameter list still offered parameters instead of SELECT).
+            bool statementPrefix = prefix.Length >= 1 && DetachedStatementStarters.Any(s =>
                 s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
             if (!snippetPrefix && !statementPrefix) return false;
 
@@ -1023,8 +1026,42 @@ namespace MSSQLTool.Completion
             AddScopedColumns(result, context, metadata, 60);
             result.AddRange(objects.Where(o => o.Kind == CompletionItemKind.Function).Select(o => ObjectItem(o, o.IsSystem ? 20 : 45, false)));
             result.AddRange(BuiltInFunctions.Select(name => new CompletionItem { DisplayText = name, InsertText = name, Kind = CompletionItemKind.Function, Description = BuiltInFunctionDescription(name), Score = 35 }));
-            result.AddRange(Keywords.Select(k => new CompletionItem { DisplayText = k, InsertText = k, Kind = CompletionItemKind.Keyword, Description = "keyword", Score = 20 }));
+            result.AddRange(AllKeywords(CompletionSettings()).Select(k => new CompletionItem { DisplayText = k, InsertText = k, Kind = CompletionItemKind.Keyword, Description = KeywordDescription(k), Score = 20 }));
             foreach (var s in SnippetService.GetAllSnippets()) result.Add(new CompletionItem { DisplayText = s.Prefix, InsertText = s.Body, Kind = CompletionItemKind.Snippet, Description = s.Description, Score = 30 });
+        }
+
+        /// <summary>
+        /// Built-in keywords plus the user's own list from the completion settings, de-duplicated.  The
+        /// extra list is what makes the keyword coverage a configuration rather than a fixed table.
+        /// </summary>
+        internal static IEnumerable<string> AllKeywords(SettingsManager.SqlCompletionSettings settings)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string keyword in Keywords)
+                if (!string.IsNullOrWhiteSpace(keyword) && seen.Add(keyword.Trim()))
+                    yield return keyword.Trim();
+
+            string extra = settings?.additionalKeywords;
+            if (string.IsNullOrWhiteSpace(extra)) yield break;
+
+            foreach (string keyword in extra.Split(new[] { ';', '\r', '\n', '|' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string trimmed = keyword.Trim();
+                // The list is compared as one whole keyword, so a trailing separator would look wrong.
+                trimmed = trimmed.TrimEnd(';', '|', ',').Trim();
+                if (trimmed.Length == 0 || trimmed.Length > 200) continue;
+                if (seen.Add(trimmed)) yield return trimmed;
+            }
+        }
+
+        private static string KeywordDescription(string keyword)
+        {
+            if (string.IsNullOrEmpty(keyword)) return "keyword";
+            if (keyword.StartsWith("WITH (", StringComparison.OrdinalIgnoreCase)
+                || keyword.StartsWith("WITH (NOLOCK", StringComparison.OrdinalIgnoreCase)) return "table hint";
+            if (keyword.StartsWith("OPTION (", StringComparison.OrdinalIgnoreCase)) return "query hint";
+            if (keyword.StartsWith("@@", StringComparison.Ordinal)) return "system function";
+            return "keyword";
         }
 
         private static string BuiltInFunctionDescription(string name)
@@ -1416,18 +1453,67 @@ namespace MSSQLTool.Completion
             while (used.Contains(result)) result = seed + n++;
             return result;
         }
-        private static readonly HashSet<string> ClauseKeywords = new HashSet<string>(new[] { "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ON", "GROUP", "ORDER", "HAVING", "UNION", "EXCEPT", "INTERSECT", "OPTION", "OFFSET", "FETCH", "FOR" }, StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> ClauseKeywords = new HashSet<string>(new[] { "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ON", "GROUP", "ORDER", "HAVING", "UNION", "EXCEPT", "INTERSECT", "OPTION", "OFFSET", "FETCH", "FOR", "WITH", "APPLY", "OUTER", "PIVOT", "UNPIVOT", "WHEN", "THEN", "ELSE", "OUTPUT", "INTO", "VALUES", "SET", "OVER", "PARTITION", "ROWS", "RANGE" }, StringComparer.OrdinalIgnoreCase);
         private static readonly string[] DetachedStatementStarters = {
-            "SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "DECLARE", "SET", "CREATE", "ALTER", "DROP", "TRUNCATE", "USE", "PRINT", "EXEC", "BEGIN", "COMMIT", "ROLLBACK", "GRANT", "DENY", "REVOKE"
+            "SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "DECLARE", "SET", "CREATE", "ALTER", "DROP", "TRUNCATE", "USE", "PRINT", "EXEC", "EXECUTE", "BEGIN", "COMMIT", "ROLLBACK", "GRANT", "DENY", "REVOKE",
+            "WITH", "THROW", "RETURN", "WAITFOR", "RAISERROR", "GOTO", "BREAK", "CONTINUE", "SAVE", "BULK", "DBCC", "IF", "WHILE", "OPEN", "CLOSE", "DEALLOCATE", "FETCH", "KILL", "CHECKPOINT", "RECONFIGURE"
         };
+
+        /// <summary>
+        /// Built-in completion keywords.  The list is deliberately exhaustive for common T-SQL: the popup
+        /// filters it by the typed prefix, so a construct that is not listed here can never be completed
+        /// (typing "with" used to offer nothing even though WITH (NOLOCK) is everywhere in real scripts).
+        /// Users can extend it further with the "additional keywords" completion setting.
+        /// </summary>
         private static readonly string[] Keywords = {
-            "SELECT", "FROM", "WHERE", "JOIN", "INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN", "CROSS APPLY", "OUTER APPLY", "ON", "AS",
-            "GROUP BY", "ORDER BY", "HAVING", "INSERT INTO", "VALUES", "UPDATE", "SET", "DELETE FROM", "MERGE", "AND", "OR", "NOT", "NULL",
-            "IS NULL", "IS NOT NULL", "CASE", "WHEN", "THEN", "ELSE", "END", "DISTINCT", "TOP", "UNION", "UNION ALL", "EXISTS", "IN", "LIKE",
-            "BETWEEN", "DECLARE", "EXEC", "CREATE", "ALTER", "DROP", "CREATE TABLE", "ALTER TABLE", "DROP TABLE", "CREATE VIEW", "ALTER VIEW",
-            "CREATE PROCEDURE", "ALTER PROCEDURE", "CREATE FUNCTION", "ALTER FUNCTION", "TRUNCATE TABLE", "BEGIN", "BEGIN TRANSACTION", "COMMIT",
-            "ROLLBACK", "BEGIN TRY", "END TRY", "BEGIN CATCH", "END CATCH", "THROW", "GRANT", "DENY", "REVOKE", "CREATE USER", "CREATE ROLE",
-            "CURRENT_TIMESTAMP", "CURRENT_USER", "SESSION_USER", "SYSTEM_USER", "XMLNAMESPACES"
+            // statement heads
+            "SELECT", "SELECT DISTINCT", "SELECT TOP", "SELECT INTO", "INSERT INTO", "INSERT", "UPDATE", "DELETE", "DELETE FROM", "MERGE", "TRUNCATE TABLE",
+            "DECLARE", "SET", "EXEC", "EXECUTE", "USE", "PRINT", "RAISERROR", "THROW", "RETURN", "WAITFOR", "WAITFOR DELAY", "WAITFOR TIME",
+            "CREATE", "ALTER", "DROP", "TRUNCATE",
+            "BEGIN", "BEGIN TRANSACTION", "BEGIN TRY", "BEGIN CATCH", "COMMIT", "COMMIT TRANSACTION", "ROLLBACK", "ROLLBACK TRANSACTION",
+            "SAVE TRANSACTION", "END TRY", "END CATCH", "GOTO", "BREAK", "CONTINUE", "GO",
+            "GRANT", "DENY", "REVOKE", "CREATE USER", "CREATE ROLE", "CREATE LOGIN", "CREATE SCHEMA", "CREATE SEQUENCE", "CREATE SYNONYM", "CREATE INDEX",
+            "ALTER INDEX", "DROP INDEX", "DBCC", "CHECKPOINT", "KILL", "RECONFIGURE", "SHUTDOWN", "BULK INSERT", "OPEN", "CLOSE", "DEALLOCATE", "FETCH NEXT",
+            // clauses
+            "FROM", "WHERE", "INTO", "VALUES", "SET", "OUTPUT", "AS", "ON", "AND", "OR", "NOT", "NULL", "IS NULL", "IS NOT NULL", "EXISTS", "IN", "LIKE", "BETWEEN",
+            "GROUP BY", "GROUPING SETS", "ROLLUP", "CUBE", "WITH ROLLUP", "WITH CUBE", "HAVING", "ORDER BY", "ASC", "DESC",
+            "OFFSET", "FETCH FIRST", "FETCH NEXT", "ROWS ONLY", "ROW ONLY", "NEXT", "FIRST",
+            "JOIN", "INNER JOIN", "LEFT JOIN", "LEFT OUTER JOIN", "RIGHT JOIN", "RIGHT OUTER JOIN", "FULL JOIN", "FULL OUTER JOIN", "CROSS JOIN",
+            "CROSS APPLY", "OUTER APPLY", "APPLY", "PIVOT", "UNPIVOT", "UNION", "UNION ALL", "EXCEPT", "INTERSECT",
+            "CASE", "WHEN", "THEN", "ELSE", "END", "DISTINCT", "TOP", "PERCENT", "WITH TIES",
+            // CTE and windowing
+            "WITH", "WITH (NOLOCK)", "WITH (ROWLOCK)", "WITH (UPDLOCK)", "WITH (XLOCK)", "WITH (HOLDLOCK)", "WITH (READPAST)", "WITH (READCOMMITTED)",
+            "WITH (READUNCOMMITTED)", "WITH (REPEATABLEREAD)", "WITH (SERIALIZABLE)", "WITH (SNAPSHOT)", "WITH (INDEX(index_name))", "WITH (FORCESEEK)",
+            "WITH (FORCESCAN)", "WITH (NOLOCK, INDEX(index_name))", "OPTION (RECOMPILE)", "OPTION (MAXDOP 1)", "OPTION (FAST 100)", "OPTION (HASH JOIN)",
+            "OPTION (MERGE JOIN)", "OPTION (LOOP JOIN)", "OPTION (FORCE ORDER)", "OPTION (KEEP PLAN)", "OPTION (OPTIMIZE FOR UNKNOWN)",
+            "OVER", "PARTITION BY", "ROWS BETWEEN", "RANGE BETWEEN", "UNBOUNDED PRECEDING", "CURRENT ROW", "UNBOUNDED FOLLOWING", "PRECEDING", "FOLLOWING",
+            // MERGE and set operations
+            "MERGE INTO", "WHEN MATCHED", "WHEN NOT MATCHED", "WHEN NOT MATCHED BY SOURCE", "USING", "MATCHED", "THEN INSERT", "THEN UPDATE", "THEN DELETE",
+            // built-in functions and system values
+            "COUNT", "COUNT(*)", "COUNT_BIG", "SUM", "AVG", "MIN", "MAX", "STDEV", "VAR", "STRING_AGG", "STRING_SPLIT", "CONCAT", "CONCAT_WS", "FORMAT",
+            "ISNULL", "COALESCE", "NULLIF", "CAST", "CONVERT", "TRY_CAST", "TRY_CONVERT", "TRY_PARSE", "PARSE", "IIF", "CHOOSE", "ABS", "CEILING", "FLOOR",
+            "ROUND", "POWER", "SQRT", "SIGN", "LEN", "DATALENGTH", "SUBSTRING", "LEFT", "RIGHT", "CHARINDEX", "PATINDEX", "REPLACE", "STUFF", "REPLICATE",
+            "REVERSE", "TRIM", "LTRIM", "RTRIM", "UPPER", "LOWER", "SPACE", "QUOTENAME", "STR", "TRANSLATE",
+            "GETDATE", "GETUTCDATE", "SYSDATETIME", "SYSUTCDATETIME", "CURRENT_TIMESTAMP", "DATEADD", "DATEDIFF", "DATEDIFF_BIG", "DATEFROMPARTS", "DATENAME",
+            "DATEPART", "DAY", "MONTH", "YEAR", "EOMONTH", "ISDATE", "SWITCHOFFSET", "TODATETIMEOFFSET",
+            "NEWID", "NEWSEQUENTIALID", "SCOPE_IDENTITY", "IDENT_CURRENT", "ROW_NUMBER", "RANK", "DENSE_RANK", "NTILE", "LAG", "LEAD", "FIRST_VALUE",
+            "LAST_VALUE", "PERCENT_RANK", "CUME_DIST", "GROUPING", "GROUPING_ID", "HASHBYTES", "CHECKSUM", "BINARY_CHECKSUM", "ISNUMERIC", "OBJECT_ID",
+            "OBJECT_NAME", "OBJECT_DEFINITION", "SCHEMA_NAME", "DB_NAME", "DB_ID", "COL_NAME", "COL_LENGTH", "TYPE_NAME", "ERROR_MESSAGE", "ERROR_NUMBER",
+            "ERROR_SEVERITY", "ERROR_STATE", "ERROR_LINE", "ERROR_PROCEDURE", "@@ROWCOUNT", "@@ERROR", "@@IDENTITY", "@@TRANCOUNT", "@@SPID", "@@SERVERNAME",
+            "@@VERSION", "@@FETCH_STATUS", "@@DATEFIRST", "@@LANGUAGE", "@@NESTLEVEL",
+            // JSON, XML and external data
+            "FOR JSON", "FOR JSON PATH", "FOR JSON AUTO", "FOR XML", "FOR XML PATH", "FOR XML RAW", "FOR XML AUTO", "OPENJSON", "OPENXML", "OPENROWSET",
+            "OPENQUERY", "OPENROWSET(BULK ...)", "XMLNAMESPACES", "WITH XMLNAMESPACES", "JSON_VALUE", "JSON_QUERY", "JSON_MODIFY", "ISJSON",
+            // DDL
+            "CREATE TABLE", "ALTER TABLE", "DROP TABLE", "CREATE VIEW", "ALTER VIEW", "DROP VIEW", "CREATE PROCEDURE", "ALTER PROCEDURE", "DROP PROCEDURE",
+            "CREATE FUNCTION", "ALTER FUNCTION", "DROP FUNCTION", "CREATE TRIGGER", "ALTER TRIGGER", "DROP TRIGGER", "CREATE DATABASE", "ALTER DATABASE",
+            "DROP DATABASE", "CREATE TYPE", "ALTER TYPE", "DROP TYPE", "CREATE OR ALTER", "ADD", "ADD COLUMN", "ALTER COLUMN", "DROP COLUMN", "ADD CONSTRAINT",
+            "DROP CONSTRAINT", "PRIMARY KEY", "FOREIGN KEY", "REFERENCES", "UNIQUE", "CHECK", "DEFAULT", "IDENTITY", "IDENTITY(1,1)", "NOT NULL", "WITH CHECK",
+            "WITH NOCHECK", "ON DELETE CASCADE", "ON UPDATE CASCADE", "INCLUDE", "CLUSTERED", "NONCLUSTERED", "ONLINE = ON", "FILLFACTOR", "NEXT VALUE FOR",
+            "SEQUENCE", "SCHEMABINDING", "RETURNS", "RETURNS TABLE", "RETURNING", "EXECUTE AS", "WITH RECOMPILE", "WITH ENCRYPTION", "OUTPUT INSERTED",
+            // session settings
+            "SET NOCOUNT ON", "SET NOCOUNT OFF", "SET XACT_ABORT ON", "SET XACT_ABORT OFF", "SET ANSI_NULLS ON", "SET QUOTED_IDENTIFIER ON", "SET STATISTICS IO ON",
+            "SET STATISTICS TIME ON", "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED", "CURRENT_USER", "SESSION_USER", "SYSTEM_USER", "USER_NAME", "SUSER_SNAME"
         };
     }
 }

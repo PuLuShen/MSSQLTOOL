@@ -167,6 +167,7 @@ as select 1;
                 CompletionAliasPrefixes.Text = completionSettings.aliasPrefixToIgnore;
                 CompletionCustomAliases.Text = completionSettings.customAliases;
                 CompletionJoinRules.Text = completionSettings.joinColumnRules;
+            CompletionAdditionalKeywords.Text = completionSettings.additionalKeywords;
                 CompletionDelay.Text = completionSettings.delayMilliseconds.ToString();
                 CompletionMaximumItems.Text = completionSettings.maximumItems.ToString();
 
@@ -218,6 +219,7 @@ as select 1;
             completionSettings.aliasPrefixToIgnore = CompletionAliasPrefixes.Text ?? string.Empty;
             completionSettings.customAliases = CompletionCustomAliases.Text ?? string.Empty;
             completionSettings.joinColumnRules = CompletionJoinRules.Text ?? string.Empty;
+            completionSettings.additionalKeywords = CompletionAdditionalKeywords.Text ?? string.Empty;
             completionSettings.delayMilliseconds = delay;
             completionSettings.maximumItems = maximumItems;
             if (!SettingsManager.SaveSqlCompletionSettings(completionSettings))

@@ -1,6 +1,7 @@
 using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -126,7 +127,57 @@ namespace MSSQLTool.Completion
                 return await Task.Run(loader, CancellationToken.None).ConfigureAwait(false);
 
             using (StatusFeedback.Begin(statusMessage))
+            {
+                LoadProgress.Reset(statusMessage);
                 return await Task.Run(loader, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Progress of the metadata load that is currently running: which step it is on, how much it has
+        /// read, and how long it has been going.  The status bar and the completion popup both read it,
+        /// so a slow server no longer looks like a frozen popup.
+        /// </summary>
+        internal static class LoadProgress
+        {
+            private static readonly Stopwatch Clock = new Stopwatch();
+            private static string message = string.Empty;
+            private static string step = string.Empty;
+            private static int items;
+
+            internal static string Current => Volatile.Read(ref message);
+
+            internal static void Reset(string statusMessage)
+            {
+                Clock.Restart();
+                Volatile.Write(ref step, statusMessage ?? string.Empty);
+                Volatile.Write(ref items, 0);
+                Volatile.Write(ref message, statusMessage ?? string.Empty);
+            }
+
+            internal static void Step(string stepName, int count = 0)
+            {
+                if (string.IsNullOrWhiteSpace(stepName)) return;
+                Volatile.Write(ref step, stepName);
+                Volatile.Write(ref items, count);
+                Publish();
+            }
+
+            /// <summary>Called while a reader is streaming, to keep the count (and the clock) moving.</summary>
+            internal static void Report(string stepName, int count)
+            {
+                Volatile.Write(ref step, stepName);
+                Volatile.Write(ref items, count);
+                Publish();
+            }
+
+            private static void Publish()
+            {
+                string text = LocalizationManager.Format("{0} ({1}: {2}, {3:0.0}s)", LocalizationManager.T("Loading SQL completion metadata"),
+                    Volatile.Read(ref step), Volatile.Read(ref items), Clock.Elapsed.TotalSeconds);
+                Volatile.Write(ref message, text);
+                StatusFeedback.Update(text);
+            }
         }
 
         private static bool IsFresh(Entry entry)
@@ -290,10 +341,15 @@ namespace MSSQLTool.Completion
                     using (var connection = CreateMetadataConnection(info, database))
                     {
                         connection.Open();
+                        LoadProgress.Step("databases");
                         TryLoadDatabases(connection, result, backgroundErrors);
+                        LoadProgress.Step("linked servers");
                         TryLoadLinkedServers(connection, result, backgroundErrors);
+                        LoadProgress.Step("parameters");
                         TryLoadParameters(connection, backgroundParameters, backgroundErrors);
+                        LoadProgress.Step("synonyms, sequences and types");
                         TryLoadSupplementalObjects(connection, backgroundSchemas, backgroundObjects, backgroundErrors);
+                        LoadProgress.Step("compatibility level");
                         TryLoadCompatibilityLevel(connection, result, backgroundErrors);
                     }
                 }
@@ -304,9 +360,12 @@ namespace MSSQLTool.Completion
                 using (var connection = CreateMetadataConnection(info, database))
                 {
                     connection.Open();
+                    LoadProgress.Step("objects");
                     TryLoadObjects(connection, result, errors);
+                    LoadProgress.Step("objects", result.Objects.Count);
                     // A separate command: if the column join is slow, the object list stays complete.
                     TryLoadColumns(connection, result, errors);
+                    LoadProgress.Step("columns", result.Objects.Count);
                 }
             }
             catch (Exception ex) { RecordFailure("connection", ex, errors); }
@@ -344,10 +403,15 @@ namespace MSSQLTool.Completion
                     // hash index keeps those lookups O(1) instead of scanning
                     // the whole object list for every single row.
                     var index = new SnapshotObjectIndex(result);
+                    LoadProgress.Step("definitions");
                     TryLoadDefinitions(connection, result, index);
+                    LoadProgress.Step("foreign keys");
                     TryLoadForeignKeys(connection, result, index);
+                    LoadProgress.Step("column details");
                     TryLoadColumnDetails(connection, result, index);
+                    LoadProgress.Step("indexes");
                     TryLoadIndexes(connection, result, index);
+                    LoadProgress.Step("check constraints");
                     TryLoadCheckConstraints(connection, result, index);
                     TryLoadRowCounts(connection, result, index);
                     // Tooltips rendered during the fast-tier window cached a
@@ -537,6 +601,7 @@ WHERE o.type IN ('U','V','P','PC','X','FN','IF','TF','FS','FT')
             if (result.Objects.Count == 0) return;
 
             string schema = string.Empty, name = string.Empty;
+            int columnsRead = 0;
             try
             {
                 var index = new SnapshotObjectIndex(result);
@@ -573,6 +638,8 @@ WHERE o.type IN ('U','V','FN','IF','TF','FS','FT')
                                 Ordinal = reader.IsDBNull(10) ? 0 : reader.GetInt32(10)
                             };
                             lock (item.Columns) item.Columns.Add(column);
+                            if (++columnsRead % 200 == 0) LoadProgress.Report("columns", columnsRead);
+                            if (++columnsRead % 200 == 0) LoadProgress.Report("columns", columnsRead);
                         }
                     }
                 }

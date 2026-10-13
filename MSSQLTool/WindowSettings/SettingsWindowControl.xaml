@@ -223,6 +223,12 @@
                         <TextBox x:Name="CompletionCustomAliases"/>
                         <TextBlock Text="JOIN rules (Source.Column=Target.Column; ...):" Margin="0,6,0,2"/>
                         <TextBox x:Name="CompletionJoinRules"/>
+                        <TextBlock Text="Additional completion keywords (one per line or separated by ;):" Margin="0,6,0,2"/>
+                        <TextBox x:Name="CompletionAdditionalKeywords"
+                                 AcceptsReturn="True"
+                                 Height="52"
+                                 VerticalScrollBarVisibility="Auto"
+                                 ToolTip="Added to the built-in keyword list, so constructs such as WITH (NOLOCK) or your own house-style statements can be completed too."/>
                         <StackPanel Orientation="Horizontal" Margin="0,4">
                             <TextBlock Text="Popup delay (ms):" VerticalAlignment="Center"/>
                             <TextBox x:Name="CompletionDelay" Width="60" Margin="8,0,0,0"/>
