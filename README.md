@@ -2,6 +2,12 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+[![Install from VSIX Gallery](https://ssmsgallery.azurewebsites.net/badge/MSSQLTool.svg)](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/)
+
+**Install**: download the ZIP from the [releases page](https://github.com/PuLuShen/MSSQLTOOL/releases/latest) and run `安装或重装.cmd` (recommended),
+or grab the latest VSIX from the [Open SSMS VSIX Gallery](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/).
+The extension also updates itself: Settings -> Updates can schedule "install when SSMS closes".
+
 > MSSQL Tool is a fork of [Axial-SQL/AxialSqlTools](https://github.com/Axial-SQL/AxialSqlTools) (Apache-2.0). The SQL completion engine, the formatter options, and the settings and localization layers were reworked on top of it.
 
 ## Screenshots

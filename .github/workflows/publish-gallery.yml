@@ -1,0 +1,95 @@
+# Publishes the released VSIX to the Open SSMS VSIX Gallery.
+#
+# The extension is built locally (or anywhere with SSMS installed): the project references about twenty
+# assemblies that only exist inside an SSMS installation, so a GitHub-hosted runner cannot compile it.
+# What CI can do - and what this workflow does - is publish the package that a release already carries.
+#
+# Manual runs: Actions -> Publish to Open SSMS VSIX Gallery -> Run workflow (optionally with a tag).
+name: Publish to Open SSMS VSIX Gallery
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (leave empty for the latest release)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to the gallery
+    runs-on: ubuntu-latest
+    env:
+      GALLERY: https://ssmsgallery.azurewebsites.net/api/upload
+    steps:
+      - name: Resolve the release tag
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name }}"
+          if [ -z "$tag" ]; then tag="${{ inputs.tag }}"; fi
+          if [ -z "$tag" ]; then
+            tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Publishing $tag" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download the VSIX from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "${{ steps.release.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir dist
+          ls -l dist
+
+      - name: Verify the downloaded package is a real VSIX
+        run: |
+          set -euo pipefail
+          vsix="$(ls dist/*.vsix | head -n1)"
+          # A VSIX is a zip: the first four bytes must be PK\x03\x04.  This is the check that would have
+          # caught the release assets that were uploaded as multipart envelopes.
+          magic="$(head -c 4 "$vsix" | od -An -tx1 | tr -d ' \n')"
+          echo "magic: $magic"
+          test "$magic" = "504b0304"
+          unzip -l "$vsix" | tail -n 3
+
+      - name: Publish to the Open SSMS VSIX Gallery
+        env:
+          # Optional: repository secret holding the manage token.  When it is absent the gallery keeps the
+          # token it already has for this extension.
+          MANAGE_TOKEN: ${{ secrets.VSIX_GALLERY_TOKEN }}
+        run: |
+          set -euo pipefail
+          vsix="$(ls dist/*.vsix | head -n1)"
+          repo_url="https://github.com/$GITHUB_REPOSITORY"
+          url="$GALLERY?repo=$repo_url&readmeUrl=main/README.zh-CN.md&issuetracker=$repo_url/issues"
+
+          args=(-sS --fail-with-body -X POST "$url" -F "file=@$vsix")
+          if [ -n "${MANAGE_TOKEN:-}" ]; then
+            args+=(-H "X-Manage-Token: $MANAGE_TOKEN")
+          fi
+
+          response="$(curl "${args[@]}")"
+          echo "$response" > gallery-response.json
+          jq -r '"published: \(.name) \(.version)\ndetails  : \(.detailsLink)\nfeed     : \(.feedLink)\nmanage   : \(.managePageLink)"' gallery-response.json | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$(jq -r '.hasValidatorErrors' gallery-response.json)" != "false" ]; then
+            echo "::error::the gallery reported validation errors"
+            exit 1
+          fi
+
+      - name: Upload the gallery response
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gallery-response
+          path: gallery-response.json
+          if-no-files-found: ignore
