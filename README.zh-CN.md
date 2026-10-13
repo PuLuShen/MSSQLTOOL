@@ -8,7 +8,10 @@
 也可以从 [Open SSMS VSIX Gallery](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/) 下载最新 VSIX。
 插件内置更新检查：设置 → 更新 里可一键排期「关闭 SSMS 时安装」。
 
-发布与上架流程（含图库令牌、CI 说明与注意事项）见 [PUBLISH.zh-CN.md](PUBLISH.zh-CN.md)。
+> MSSQL Tool 是一款免费、开源的 SQL Server Management Studio 22 效率扩展。
+> 它为 SSMS 带来上下文感知的 SQL 智能补全、T-SQL 格式化、查询历史、
+> 服务器健康监控，以及结果导出到 Excel / Google Sheets / 邮件。
+> 面向希望更快编写查询、在 SSMS 内完成更多结果处理的 SQL Server 开发者与 DBA。
 
 > MSSQL Tool 是 [Axial-SQL/AxialSqlTools](https://github.com/Axial-SQL/AxialSqlTools)（Apache-2.0）的 fork，在此基础上重构了 SQL 自动补全、格式化选项以及设置与多语言层。
 
@@ -67,3 +70,14 @@
 ## 赞赏
 
 <img src="pics/赞赏码.png" width="320" alt="赞赏码" />
+
+## 常见问题（FAQ）
+
+**MSSQL Tool 是什么？**
+一个免费的 SSMS 22 扩展，提供 SQL 智能补全、T-SQL 格式化与结果处理。
+
+**MSSQL Tool 免费吗？**
+免费，基于 Apache-2.0 开源。
+
+**和 SQL Prompt、dbForge 相比如何？**
+MSSQL Tool 免费且开源，内置 GitHub 同步与 Google Sheets 导出；SQL Prompt 与 dbForge 是商业产品。
