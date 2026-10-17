@@ -32,11 +32,14 @@ https://github.com/PuLuShen/MSSQLTOOL/wiki
 2. Or install the newest VSIX from the SSMS Gallery above.
 3. Updates are built in: **Settings -> Updates** can schedule "install when SSMS closes".
 
-> MSSQL Tool is a free, open-source productivity extension for SQL Server Management Studio 22.
-> It adds context-aware SQL completion, T-SQL formatting, query history,
-> server health monitoring, and result export to Excel/Google Sheets/email.
-> Built for SQL Server developers and DBAs who want faster query writing
-> and richer result processing inside SSMS.
+> **MSSQL Tool is a free, open-source SSMS (SQL Server Management Studio) extension for SSMS 22** -
+> an add-in for SQL Server Management Studio that adds context-aware SQL completion, T-SQL formatting,
+> query history, server health monitoring, and result export to Excel/Google Sheets/email.
+>
+> SSMS 22 (SQL Server Management Studio version 22) users often look for free plugins to replace
+> SQL Prompt; MSSQL Tool is meant to be exactly that: a free SSMS extension with SQL completion,
+> formatting and result processing built in, for SQL Server developers and DBAs who want faster query
+> writing and richer result processing inside SQL Server Management Studio.
 
 > MSSQL Tool is a fork of [Axial-SQL/AxialSqlTools](https://github.com/Axial-SQL/AxialSqlTools) (Apache-2.0). The SQL completion engine, the formatter options, and the settings and localization layers were reworked on top of it.
 

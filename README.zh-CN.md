@@ -32,10 +32,13 @@ https://github.com/PuLuShen/MSSQLTOOL/wiki
 2. 或从上面的「SSMS 图库」下载最新 VSIX。
 3. 插件内置更新检查：**设置 → 更新** 里可一键排期「关闭 SSMS 时安装」。
 
-> MSSQL Tool 是一款免费、开源的 SQL Server Management Studio 22 效率扩展。
-> 它为 SSMS 带来上下文感知的 SQL 智能补全、T-SQL 格式化、查询历史、
-> 服务器健康监控，以及结果导出到 Excel / Google Sheets / 邮件。
-> 面向希望更快编写查询、在 SSMS 内完成更多结果处理的 SQL Server 开发者与 DBA。
+> **MSSQL Tool 是一款免费、开源的 SSMS（SQL Server Management Studio）扩展，适用于 SSMS 22** ——
+> 作为 SQL Server Management Studio 的插件，它为 SSMS 带来上下文感知的 SQL 智能补全、T-SQL 格式化、
+> 查询历史、服务器健康监控，以及结果导出到 Excel / Google Sheets / 邮件。
+>
+> SSMS 22（SQL Server Management Studio 22 版）的用户常常在找可以替代 SQL Prompt 的免费插件；
+> MSSQL Tool 正是为此而生：一个内置 SQL 补全、格式化与结果处理的免费 SSMS 扩展，
+> 面向希望更快编写查询、在 SQL Server Management Studio 内完成更多结果处理的 SQL Server 开发者与 DBA。
 
 > MSSQL Tool 是 [Axial-SQL/AxialSqlTools](https://github.com/Axial-SQL/AxialSqlTools)（Apache-2.0）的 fork，在此基础上重构了 SQL 自动补全、格式化选项以及设置与多语言层。
 
