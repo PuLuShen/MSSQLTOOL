@@ -144,15 +144,29 @@ function Send-ReleaseAsset {
 
 function Assert-ReleaseAssetMatches {
     param(
+        $Asset,
         [string]$DownloadUrl,
         [string]$AuthToken,
         [string]$FilePath
     )
 
     # Verifies what GitHub actually stored: an upload that mangles the bytes must fail here rather
-    # than inside VSIXInstaller on a user's machine.
+    # than inside VSIXInstaller on a user's machine.  The API reports the size and digest GitHub
+    # computed for the stored bytes, which is cheaper and far more reliable than downloading the
+    # package again; the download is only used when no digest is available.
     $expectedSize = (Get-Item -LiteralPath $FilePath).Length
     $expectedHash = (Get-FileHash -LiteralPath $FilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    if ($Asset -and $Asset.digest -and $Asset.size) {
+        $digestHash = ($Asset.digest -replace '^sha256:', '').ToLowerInvariant()
+        if ([int64]$Asset.size -ne $expectedSize -or $digestHash -ne $expectedHash) {
+            throw ("The stored release asset does not match the file: expected {0} bytes / {1}, stored {2} bytes / {3}" -f
+                $expectedSize, $expectedHash, $Asset.size, $digestHash)
+        }
+
+        Write-Host "verified: GitHub stores $($Asset.size) bytes, sha256 $($digestHash.Substring(0, 12))... (from the API digest)"
+        return
+    }
 
     $temp = Join-Path $env:TEMP ("mssqltool-verify-" + [Guid]::NewGuid().ToString('N') + ".vsix")
     try {
@@ -244,5 +258,5 @@ foreach ($asset in @($release.assets)) {
 
 $uploaded = Send-ReleaseAsset -UploadUrlTemplate $release.upload_url -AuthToken $token -FilePath $VsixPath
 Write-Host "uploaded: $($uploaded.name) ($([Math]::Round($uploaded.size / 1MB, 2)) MB)"
-Assert-ReleaseAssetMatches -DownloadUrl $uploaded.browser_download_url -AuthToken $token -FilePath $VsixPath
+Assert-ReleaseAssetMatches -Asset $uploaded -DownloadUrl $uploaded.browser_download_url -AuthToken $token -FilePath $VsixPath
 Write-Host "latest  : https://github.com/$Repo/releases/latest"
