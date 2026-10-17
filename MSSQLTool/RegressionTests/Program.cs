@@ -108,6 +108,7 @@ namespace MSSQLTool.RegressionTests
             Run("Completion: alias member inserts just the column", TestAliasMemberInsertsBareColumn);
             Run("Completion: UPDATE SET offers the target columns", TestUpdateSetOffersColumns);
             Run("Completion: data types are suggested", TestDataTypesAreOffered);
+            Run("Completion: UPDATE SET resolves aliases declared after the SET", TestUpdateSetResolvesAliasesDeclaredAfterTheSet);
             Run("Completion: keyword coverage includes table and query hints", TestCompletionKeywordCoverage);
             Run("EXEC without parameters releases incomplete next statement", TestExecuteBeforeIncompleteStatement);
             Run("EXEC positional value remains argument context", TestExecutePositionalValue);
@@ -402,6 +403,51 @@ namespace MSSQLTool.RegressionTests
             True(items.Any(i => i.DisplayText == "INT" && i.Kind == CompletionItemKind.Type));
             True(items.Any(i => i.DisplayText == "NVARCHAR(50)" && i.Kind == CompletionItemKind.Type));
             True(items.Any(i => i.DisplayText == "DATETIME2" && i.Kind == CompletionItemKind.Type));
+        }
+        private static MetadataSnapshot UpdateJoinMetadata()
+        {
+            var snapshot = new MetadataSnapshot();
+            var header = new DatabaseObjectMetadata { Database = "db", Schema = "dbo", Name = "ygxxh", Kind = CompletionItemKind.Table };
+            header.Columns.Add(new ColumnMetadata { Name = "djlsh", DataType = "int" });
+            header.Columns.Add(new ColumnMetadata { Name = "HeaderName", DataType = "nvarchar" });
+            var detail = new DatabaseObjectMetadata { Database = "db", Schema = "dbo", Name = "ygdab", Kind = CompletionItemKind.Table };
+            detail.Columns.Add(new ColumnMetadata { Name = "djlsh", DataType = "int" });
+            detail.Columns.Add(new ColumnMetadata { Name = "Memo", DataType = "nvarchar" });
+            snapshot.Objects.Add(header);
+            snapshot.Objects.Add(detail);
+            return snapshot;
+        }
+
+        /// <summary>
+        /// "UPDATE a SET | FROM ygxxh a INNER JOIN ygdab b ON ..." declares its aliases after the caret, so a
+        /// scan limited to the text before the caret saw none of them and offered nothing.
+        /// </summary>
+        private static void TestUpdateSetResolvesAliasesDeclaredAfterTheSet()
+        {
+            MetadataSnapshot snapshot = UpdateJoinMetadata();
+            const string tail = " FROM ygxxh a INNER JOIN ygdab b ON a.djlsh = b.djlsh";
+
+            string set = "UPDATE a SET " + tail;
+            CompletionContext setContext = SqlCompletionAnalyzer.Analyze(set.Substring(0, "UPDATE a SET ".Length), "UPDATE a SET ".Length, set.Substring("UPDATE a SET ".Length));
+            Equal(CompletionContextKind.UpdateSet, setContext.Kind);
+            Equal("ygxxh", setContext.TargetObject);
+            List<CompletionItem> setItems = SqlCompletionAnalyzer.BuildItems(setContext, snapshot);
+            True(setItems.Any(i => i.DisplayText == "HeaderName"));
+            True(setItems.Any(i => i.DisplayText == "(all column assignments)"));
+
+            // The alias of the update target only.
+            string headerMember = "UPDATE a SET a." + tail;
+            CompletionContext headerContext = SqlCompletionAnalyzer.Analyze(headerMember.Substring(0, "UPDATE a SET a.".Length), "UPDATE a SET a.".Length, headerMember.Substring("UPDATE a SET a.".Length));
+            Equal(CompletionContextKind.Member, headerContext.Kind);
+            List<CompletionItem> headerItems = SqlCompletionAnalyzer.BuildItems(headerContext, snapshot);
+            True(headerItems.Any(i => i.DisplayText == "HeaderName" && i.InsertText == "[HeaderName]"));
+            True(!headerItems.Any(i => i.DisplayText == "Memo"));
+
+            // The alias of the joined table.
+            string detailMember = "UPDATE a SET b." + tail;
+            CompletionContext detailContext = SqlCompletionAnalyzer.Analyze(detailMember.Substring(0, "UPDATE a SET b.".Length), "UPDATE a SET b.".Length, detailMember.Substring("UPDATE a SET b.".Length));
+            List<CompletionItem> detailItems = SqlCompletionAnalyzer.BuildItems(detailContext, snapshot);
+            True(detailItems.Any(i => i.DisplayText == "Memo" && i.InsertText == "[Memo]"));
         }
         private static void TestExecuteParametersBeforeIncompleteStatement()
         {

@@ -106,6 +106,10 @@ namespace MSSQLTool.Completion
             context.Diagnostics.AddRange(semanticModel.Diagnostics);
             context.HasParseErrors = semanticModel.HasParseErrors;
             if (context.Aliases.Count == 0) AddAliases(masked, context);
+            // UPDATE a SET | FROM ygxxh a JOIN ygdab b ... declares its aliases *after* the caret, so the
+            // statement-scoped scan above cannot see them.  Fall back to the whole session text (before the
+            // caret plus the suffix the editor passes in) which is what resolves "a" and "a." there.
+            if (context.Aliases.Count == 0) AddAliases(maskedSession, context);
             Match word = PrefixPattern.Match(statement);
             context.Prefix = Clean(word.Groups["prefix"].Value);
             context.ReplacementStartColumn = Math.Max(0, caretColumn - word.Groups["prefix"].Length);
