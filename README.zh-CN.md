@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![从 VSIX Gallery 安装](https://ssmsgallery.azurewebsites.net/badge/MSSQLTool.svg)](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/)
+[![从 VSIX Gallery 安装](https://ssmsgallery.azurewebsites.net/badge/MSSQLTool.svg)](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/) [![Open VSIX Gallery](https://www.vsixgallery.com/badge/MSSQLTool.svg)](https://www.vsixgallery.com/extension/MSSQLTool)
 
 ## 链接
 
@@ -14,9 +14,13 @@ https://github.com/PuLuShen/MSSQLTOOL
 
 https://github.com/PuLuShen/MSSQLTOOL/releases/latest
 
-SSMS 图库（在线安装页）
+SSMS 图库（面向 SQL Server Management Studio）
 
 https://ssmsgallery.azurewebsites.net/extension/MSSQLTool
+
+VSIX Gallery（面向 Visual Studio）
+
+https://www.vsixgallery.com/extension/MSSQLTool
 
 使用文档（Wiki）
 

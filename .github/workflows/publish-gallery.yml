@@ -1,11 +1,12 @@
-# Publishes the released VSIX to the Open SSMS VSIX Gallery.
+# Publishes the released VSIX to both public galleries: the Open SSMS VSIX Gallery (SSMS users) and the
+# Open VSIX Gallery (Visual Studio users seeing the same package).
 #
 # The extension is built locally (or anywhere with SSMS installed): the project references about twenty
 # assemblies that only exist inside an SSMS installation, so a GitHub-hosted runner cannot compile it.
 # What CI can do - and what this workflow does - is publish the package that a release already carries.
 #
 # Manual runs: Actions -> Publish to Open SSMS VSIX Gallery -> Run workflow (optionally with a tag).
-name: Publish to Open SSMS VSIX Gallery
+name: Publish to VSIX Galleries
 
 on:
   release:
@@ -25,7 +26,8 @@ jobs:
     name: Publish to the gallery
     runs-on: ubuntu-latest
     env:
-      GALLERY: https://ssmsgallery.azurewebsites.net/api/upload
+      SSMS_GALLERY: https://ssmsgallery.azurewebsites.net/api/upload
+      VS_GALLERY: https://www.vsixgallery.com/api/upload
     steps:
       - name: Resolve the release tag
         id: release
@@ -87,7 +89,7 @@ jobs:
           set -euo pipefail
           vsix="$(ls dist/*.vsix | head -n1)"
           repo_url="https://github.com/$GITHUB_REPOSITORY"
-          url="$GALLERY?repo=$repo_url&readmeUrl=main/README.zh-CN.md&issuetracker=$repo_url/issues"
+          url="$SSMS_GALLERY?repo=$repo_url&readmeUrl=main/README.zh-CN.md&issuetracker=$repo_url/issues"
 
           args=(-sS --fail-with-body -X POST "$url" -F "file=@$vsix")
           if [ -n "${MANAGE_TOKEN:-}" ]; then
@@ -95,10 +97,33 @@ jobs:
           fi
 
           response="$(curl "${args[@]}")"
-          echo "$response" > gallery-response.json
-          jq -r '"published: \(.name) \(.version)\ndetails  : \(.detailsLink)\nfeed     : \(.feedLink)\nmanage   : \(.managePageLink)"' gallery-response.json | tee -a "$GITHUB_STEP_SUMMARY"
-          if [ "$(jq -r '.hasValidatorErrors' gallery-response.json)" != "false" ]; then
-            echo "::error::the gallery reported validation errors"
+          echo "$response" > gallery-response-ssms.json
+          jq -r '"SSMS gallery: \(.name) \(.version)\ndetails     : \(.detailsLink)\nfeed        : \(.feedLink)\nmanage      : \(.managePageLink)"' gallery-response-ssms.json | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$(jq -r '.hasValidatorErrors' gallery-response-ssms.json)" != "false" ]; then
+            echo "::error::the SSMS gallery reported validation errors"
+            exit 1
+          fi
+
+      - name: Publish to the Open VSIX Gallery
+        env:
+          MANAGE_TOKEN: ${{ secrets.VSIX_GALLERY_TOKEN }}
+        run: |
+          set -euo pipefail
+          vsix="$(ls dist/*.vsix | head -n1)"
+          repo_url="https://github.com/$GITHUB_REPOSITORY"
+          # This gallery only accepts multipart/form-data; the raw body form is rejected with 400.
+          url="$VS_GALLERY?repo=$repo_url&readmeUrl=main/README.md&issuetracker=$repo_url/issues"
+
+          args=(-sS --fail-with-body -X POST "$url" -F "file=@$vsix")
+          if [ -n "${MANAGE_TOKEN:-}" ]; then
+            args+=(-H "X-Manage-Token: $MANAGE_TOKEN")
+          fi
+
+          response="$(curl "${args[@]}")"
+          echo "$response" > gallery-response-vs.json
+          jq -r '"VS gallery  : \(.name) \(.version)\nmanage      : \(.manageUrl)\nwarnings    : \([.validation[]?.code] | join(", "))"' gallery-response-vs.json | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$(jq -r '[.validation[]? | select(.severity == "error")] | length' gallery-response-vs.json)" != "0" ]; then
+            echo "::error::the VS gallery rejected the package"
             exit 1
           fi
 
@@ -107,5 +132,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gallery-response
-          path: gallery-response.json
+          path: gallery-response-*.json
           if-no-files-found: ignore

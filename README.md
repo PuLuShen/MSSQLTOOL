@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Install from VSIX Gallery](https://ssmsgallery.azurewebsites.net/badge/MSSQLTool.svg)](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/)
+[![Install from VSIX Gallery](https://ssmsgallery.azurewebsites.net/badge/MSSQLTool.svg)](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/) [![Open VSIX Gallery](https://www.vsixgallery.com/badge/MSSQLTool.svg)](https://www.vsixgallery.com/extension/MSSQLTool)
 
 ## Links
 
@@ -14,9 +14,13 @@ Latest release (ZIP + VSIX)
 
 https://github.com/PuLuShen/MSSQLTOOL/releases/latest
 
-SSMS Gallery (install from Visual Studio Installer style feed)
+SSMS Gallery (for SQL Server Management Studio)
 
 https://ssmsgallery.azurewebsites.net/extension/MSSQLTool
+
+VSIX Gallery (for Visual Studio)
+
+https://www.vsixgallery.com/extension/MSSQLTool
 
 Documentation (Wiki)
 
