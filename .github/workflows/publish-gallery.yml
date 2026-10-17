@@ -34,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ github.event.release.tag_name }}"
-          if [ -z "$tag" ]; then tag="${{ inputs.tag }}"; fi
+          if [ -z "$tag" ]; then tag="${{ github.event.inputs.tag }}"; fi
           if [ -z "$tag" ]; then
             tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
           fi
@@ -47,8 +47,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          gh release download "${{ steps.release.outputs.tag }}" \
-            --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir dist
+          tag="${{ steps.release.outputs.tag }}"
+          # "release: published" fires when the release is created, which is before the VSIX asset has
+          # finished uploading, so wait for the asset instead of failing on the first attempt.
+          for attempt in $(seq 1 20); do
+            rm -rf dist && mkdir -p dist
+            if gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir dist 2>/dev/null \
+               && ls dist/*.vsix >/dev/null 2>&1; then
+              echo "asset ready after $attempt attempt(s)"
+              break
+            fi
+            if [ "$attempt" -eq 20 ]; then
+              echo "::error::no VSIX asset appeared on $tag"
+              gh release view "$tag" --repo "$GITHUB_REPOSITORY" || true
+              exit 1
+            fi
+            echo "attempt $attempt: $tag has no VSIX yet, waiting 15s"
+            sleep 15
+          done
           ls -l dist
 
       - name: Verify the downloaded package is a real VSIX
