@@ -105,6 +105,9 @@ namespace MSSQLTool.RegressionTests
             Run("Multiline EXEC keeps argument completion", TestMultilineExecuteArguments);
             Run("EXEC with parameters releases incomplete next statement", TestExecuteParametersBeforeIncompleteStatement);
             Run("EXEC parameters release on a new line after one letter", TestExecuteParametersReleaseOnNewLineWithOneLetter);
+            Run("Completion: alias member inserts just the column", TestAliasMemberInsertsBareColumn);
+            Run("Completion: UPDATE SET offers the target columns", TestUpdateSetOffersColumns);
+            Run("Completion: data types are suggested", TestDataTypesAreOffered);
             Run("Completion: keyword coverage includes table and query hints", TestCompletionKeywordCoverage);
             Run("EXEC without parameters releases incomplete next statement", TestExecuteBeforeIncompleteStatement);
             Run("EXEC positional value remains argument context", TestExecutePositionalValue);
@@ -359,6 +362,47 @@ namespace MSSQLTool.RegressionTests
             Equal(extended.Count, extended.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         }
 
+        /// <summary>
+        /// With an alias in play, picking a column must insert just the column: the alias the user typed
+        /// stays in front of it, instead of the engine putting the real table name there.
+        /// </summary>
+        private static void TestAliasMemberInsertsBareColumn()
+        {
+            string sql = "SELECT c. FROM dbo.Customer c";
+            CompletionContext context = SqlCompletionAnalyzer.Analyze(sql, "SELECT c.".Length);
+            Equal(CompletionContextKind.Member, context.Kind);
+            Equal("c", context.Qualifier);
+
+            List<CompletionItem> items = SqlCompletionAnalyzer.BuildItems(context, Metadata());
+            CompletionItem id = items.FirstOrDefault(i => i.DisplayText == "Id");
+            True(id != null);
+            Equal("[Id]", id.InsertText);
+            True(!items.Any(i => (i.InsertText ?? string.Empty).StartsWith("[Customer]", StringComparison.OrdinalIgnoreCase)));
+        }
+
+        /// <summary>UPDATE ... SET must suggest the writable columns of the target.</summary>
+        private static void TestUpdateSetOffersColumns()
+        {
+            string sql = "UPDATE dbo.Customer SET ";
+            CompletionContext context = SqlCompletionAnalyzer.Analyze(sql, sql.Length);
+            Equal(CompletionContextKind.UpdateSet, context.Kind);
+            True(SqlCompletionAnalyzer.BuildItems(context, Metadata()).Any(i => i.DisplayText == "Name" && i.Kind == CompletionItemKind.Column));
+
+            // Through an alias, and with the caret on a new line under the SET.
+            string alias = "UPDATE c SET c. FROM dbo.Customer c";
+            Equal(CompletionContextKind.Member, SqlCompletionAnalyzer.Analyze(alias, "UPDATE c SET c.".Length).Kind);
+        }
+
+        /// <summary>Data types have to be suggested where a type belongs.</summary>
+        private static void TestDataTypesAreOffered()
+        {
+            // The popup filters by the typed prefix, so the test uses a position with an empty prefix.
+            CompletionContext context = SqlCompletionAnalyzer.Analyze("SELECT CAST(x AS ", "SELECT CAST(x AS ".Length);
+            List<CompletionItem> items = SqlCompletionAnalyzer.BuildItems(context, Metadata());
+            True(items.Any(i => i.DisplayText == "INT" && i.Kind == CompletionItemKind.Type));
+            True(items.Any(i => i.DisplayText == "NVARCHAR(50)" && i.Kind == CompletionItemKind.Type));
+            True(items.Any(i => i.DisplayText == "DATETIME2" && i.Kind == CompletionItemKind.Type));
+        }
         private static void TestExecuteParametersBeforeIncompleteStatement()
         {
             string sql = "EXEC dbo.usp_Test @Id = NULL  CREA";

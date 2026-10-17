@@ -180,6 +180,27 @@ namespace MSSQLTool.Completion
                 return context;
             }
 
+            // ScriptDom drops a trailing dot, so "SELECT c." arrives here as "SELECT c" and the member
+            // branch above never fires.  When the text before the caret ends in a dot whose qualifier is
+            // an alias of the statement, that is a member access: inserting the bare column then keeps
+            // the alias the user typed instead of prefixing the real table name.
+            string beforeCaret = masked.Substring(0, Math.Min(Math.Max(0, caretColumn), masked.Length));
+            Match rawMember = MemberPattern.Match(beforeCaret);
+            if (rawMember.Success)
+            {
+                string rawQualifier = CleanQualified(rawMember.Groups["qual"].Value);
+                if (context.Aliases.ContainsKey(rawQualifier) || rawQualifier.IndexOf('.') >= 0)
+                {
+                    context.Kind = CompletionContextKind.Member;
+                    context.IsJoinSource = JoinSourcePattern.IsMatch(masked);
+                    context.IsDataSourceMember = context.IsJoinSource || IsDataSourceMemberContext(masked, rawMember.Index, ref clauseScan);
+                    context.Qualifier = rawQualifier;
+                    context.Prefix = Clean(rawMember.Groups["prefix"].Value);
+                    context.ReplacementStartColumn = Math.Max(0, caretColumn - rawMember.Groups["prefix"].Length);
+                    return context;
+                }
+            }
+
             string withoutPrefix = statement.Substring(0, Math.Max(0, statement.Length - word.Groups["prefix"].Length));
             Match insertBody = InsertBodyPattern.Match(masked);
             Match update = UpdateSetPattern.Match(masked);
@@ -630,6 +651,12 @@ namespace MSSQLTool.Completion
                     case CompletionContextKind.OrderBy: AddScopedColumns(result, context, metadata, 90); AddSelectAliases(result, context); break;
                     default: AddGeneral(result, context, metadata, objects); break;
                 }
+
+                // Data types belong wherever an expression or a declaration can appear: DECLARE, CAST and
+                // CONVERT targets, column definitions.  Added once here so no context-specific branch can
+                // forget them, and skipped for member and data-source lists where a type makes no sense.
+                if (context.Kind != CompletionContextKind.Member && context.Kind != CompletionContextKind.DataSource)
+                    result.AddRange(DataTypes.Select(t => new CompletionItem { DisplayText = t, InsertText = t, Kind = CompletionItemKind.Type, Description = "data type", Score = 18 }));
             }
             finally { threadCompletionSettings = null; }
             foreach (CompletionItem item in result) item.ScopeKey = context.MetadataScope;
@@ -989,7 +1016,14 @@ namespace MSSQLTool.Completion
         private static void AddWritableColumns(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
         {
             var target = FindObject(context, metadata, context.TargetObject);
-            if (target == null) return;
+            if (target == null)
+            {
+                // The target may be a temp table, a name the metadata has not seen, or an alias the
+                // parser could not resolve; offering the columns of the tables in scope beats offering
+                // nothing at all.
+                AddScopedColumns(result, context, metadata, 90);
+                return;
+            }
             var writable = target.Columns.Where(c => !c.IsIdentity && !c.IsComputed && !string.Equals(c.DataType, "timestamp", StringComparison.OrdinalIgnoreCase) && !string.Equals(c.DataType, "rowversion", StringComparison.OrdinalIgnoreCase)).ToList();
             result.AddRange(writable.Select(c => ColumnItem(c, 90, target)));
             if (writable.Count > 1)
@@ -1004,7 +1038,14 @@ namespace MSSQLTool.Completion
         private static void AddInsertTemplate(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
         {
             var target = FindObject(context, metadata, context.TargetObject);
-            if (target == null) return;
+            if (target == null)
+            {
+                // The target may be a temp table, a name the metadata has not seen, or an alias the
+                // parser could not resolve; offering the columns of the tables in scope beats offering
+                // nothing at all.
+                AddScopedColumns(result, context, metadata, 90);
+                return;
+            }
             var columns = target.Columns.Where(c => !c.IsIdentity && !c.IsComputed && !string.Equals(c.DataType, "timestamp", StringComparison.OrdinalIgnoreCase) && !string.Equals(c.DataType, "rowversion", StringComparison.OrdinalIgnoreCase)).ToList();
             if (columns.Count == 0) return;
             string names = string.Join("," + Environment.NewLine + "    ", columns.Select(c => Quote(c.Name)));
@@ -1034,6 +1075,18 @@ namespace MSSQLTool.Completion
         /// Built-in keywords plus the user's own list from the completion settings, de-duplicated.  The
         /// extra list is what makes the keyword coverage a configuration rather than a fixed table.
         /// </summary>
+        /// <summary>
+        /// Data types offered as completions (kind Type).  They belong in type positions: a declaration,
+        /// a CAST/CONVERT target or a CREATE/ALTER TABLE column.
+        /// </summary>
+        internal static readonly string[] DataTypes = {
+            "INT", "BIGINT", "SMALLINT", "TINYINT", "BIT", "DECIMAL(18, 2)", "NUMERIC(18, 2)", "MONEY", "SMALLMONEY", "FLOAT", "REAL",
+            "DATE", "TIME", "DATETIME", "DATETIME2", "SMALLDATETIME", "DATETIMEOFFSET",
+            "CHAR(10)", "VARCHAR(50)", "VARCHAR(MAX)", "NCHAR(10)", "NVARCHAR(50)", "NVARCHAR(MAX)", "TEXT", "NTEXT",
+            "BINARY(16)", "VARBINARY(50)", "VARBINARY(MAX)", "IMAGE", "UNIQUEIDENTIFIER", "XML", "SQL_VARIANT", "ROWVERSION",
+            "HIERARCHYID", "GEOGRAPHY", "GEOMETRY", "TABLE"
+        };
+
         internal static IEnumerable<string> AllKeywords(SettingsManager.SqlCompletionSettings settings)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

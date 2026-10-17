@@ -41,6 +41,10 @@
         <Parent guid="guidMSSQLToolPackageCmdSet" id="Toolbar" />
       </Group>
 
+      <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Format" priority="0x0001">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
+      </Group>
+
       <Group guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Copy" priority="0x0100">
         <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenu" />
       </Group>
@@ -110,8 +114,10 @@
 
 
       <!-- Toolbar ROOT -->
+      <!-- Formatting now lives in the Tools menu: SSMS 22 formats on its own, so this stays as a
+           compatibility entry point and is no longer advertised on the toolbar. -->
       <Button guid="guidMSSQLToolPackageCmdSet" id="FormatQueryButton" priority="0x0000" type="Button">
-        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolbarGroup" />
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Format" />
         <Icon guid="guidImagesMagicWand" id="bmpMagicWand" />
         <CommandFlag>IconAndText</CommandFlag>
         <Strings>
@@ -363,6 +369,7 @@
       <IDSymbol name="ToolsSubMenuGroup_Timelines" value="0x1205" />
       <IDSymbol name="ToolsSubMenuGroup_AI" value="0x1206" />
       <IDSymbol name="ToolsSubMenuGroup_Settings" value="0x120B" />
+      <IDSymbol name="ToolsSubMenuGroup_Format" value="0x120C" />
       <IDSymbol name="ToolsSubMenuGroup_Copy" value="0x1207" />
       <IDSymbol name="SqlEditorContextMenuGroup" value="0x1208" />
 

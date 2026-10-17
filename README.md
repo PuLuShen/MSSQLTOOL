@@ -68,6 +68,11 @@ The extension also updates itself: Settings -> Updates can schedule "install whe
 - **Configurable data and settings folder** (another drive, a synced folder or a portable device)
 - **Simplified Chinese and English interfaces**
 
+## Formatting
+
+SSMS 22 ships its own T-SQL formatter, so **the formatting feature of this extension is no longer
+developed**. The command still works and is kept for existing habits - it now lives in the
+**Tools** menu (Ctrl+Shift+Alt+F) - but new formatting options will not be added.
 ## Support
 
 <img src="pics/赞赏码.png" width="320" alt="Appreciation QR code" />
