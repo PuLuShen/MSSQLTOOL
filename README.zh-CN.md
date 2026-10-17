@@ -4,9 +4,29 @@
 
 [![从 VSIX Gallery 安装](https://ssmsgallery.azurewebsites.net/badge/MSSQLTool.svg)](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/)
 
-**安装**：[Release 页面](https://github.com/PuLuShen/MSSQLTOOL/releases/latest)下载 ZIP 后运行 `安装或重装.cmd`（推荐）；
-也可以从 [Open SSMS VSIX Gallery](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/) 下载最新 VSIX。
-插件内置更新检查：设置 → 更新 里可一键排期「关闭 SSMS 时安装」。
+## 链接
+
+GitHub 仓库
+
+https://github.com/PuLuShen/MSSQLTOOL
+
+最新发布（ZIP + VSIX）
+
+https://github.com/PuLuShen/MSSQLTOOL/releases/latest
+
+SSMS 图库（在线安装页）
+
+https://ssmsgallery.azurewebsites.net/extension/MSSQLTool
+
+使用文档（Wiki）
+
+https://github.com/PuLuShen/MSSQLTOOL/wiki
+
+## 安装
+
+1. 从上面的「最新发布」下载 ZIP，运行 `安装或重装.cmd`（推荐）。
+2. 或从上面的「SSMS 图库」下载最新 VSIX。
+3. 插件内置更新检查：**设置 → 更新** 里可一键排期「关闭 SSMS 时安装」。
 
 > MSSQL Tool 是一款免费、开源的 SQL Server Management Studio 22 效率扩展。
 > 它为 SSMS 带来上下文感知的 SQL 智能补全、T-SQL 格式化、查询历史、

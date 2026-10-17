@@ -4,9 +4,29 @@
 
 [![Install from VSIX Gallery](https://ssmsgallery.azurewebsites.net/badge/MSSQLTool.svg)](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/)
 
-**Install**: download the ZIP from the [releases page](https://github.com/PuLuShen/MSSQLTOOL/releases/latest) and run `安装或重装.cmd` (recommended),
-or grab the latest VSIX from the [Open SSMS VSIX Gallery](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/).
-The extension also updates itself: Settings -> Updates can schedule "install when SSMS closes".
+## Links
+
+GitHub repository
+
+https://github.com/PuLuShen/MSSQLTOOL
+
+Latest release (ZIP + VSIX)
+
+https://github.com/PuLuShen/MSSQLTOOL/releases/latest
+
+SSMS Gallery (install from Visual Studio Installer style feed)
+
+https://ssmsgallery.azurewebsites.net/extension/MSSQLTool
+
+Documentation (Wiki)
+
+https://github.com/PuLuShen/MSSQLTOOL/wiki
+
+## Install
+
+1. Download the ZIP from the latest release above and run `安装或重装.cmd` (recommended).
+2. Or install the newest VSIX from the SSMS Gallery above.
+3. Updates are built in: **Settings -> Updates** can schedule "install when SSMS closes".
 
 > MSSQL Tool is a free, open-source productivity extension for SQL Server Management Studio 22.
 > It adds context-aware SQL completion, T-SQL formatting, query history,
