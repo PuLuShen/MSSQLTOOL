@@ -864,11 +864,26 @@ namespace MSSQLTool.Completion
 
         private static void AddScopedColumns(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata, int score, bool excludeReferenced = false)
         {
+            // The alias map holds both "A" and "YGDAH" for the same table (the bare name is registered so
+            // that "YGDAH." works without an alias).  Iterating it directly made every column appear twice
+            // and, because the map then looked like "more than one table", prefixed the insert with the
+            // table name.  Collapse to one entry per object and prefer the short user alias.
+            var scopes = new List<KeyValuePair<string, string>>();
             foreach (var source in context.Aliases)
+            {
+                int existing = scopes.FindIndex(s => string.Equals(s.Value, source.Value, StringComparison.OrdinalIgnoreCase));
+                if (existing < 0) { scopes.Add(source); continue; }
+
+                bool existingIsTableName = string.Equals(LastPart(scopes[existing].Value), scopes[existing].Key, StringComparison.OrdinalIgnoreCase);
+                bool candidateIsAlias = !string.Equals(LastPart(source.Value), source.Key, StringComparison.OrdinalIgnoreCase);
+                if (existingIsTableName && candidateIsAlias) scopes[existing] = source;
+            }
+
+            bool qualify = scopes.Count > 1;
+            foreach (var source in scopes)
             {
                 DatabaseObjectMetadata obj = FindObject(context, metadata, source.Value);
                 if (obj == null) continue;
-                bool qualify = context.Aliases.Count > 1;
                 foreach (ColumnMetadata column in obj.Columns)
                 {
                     if (excludeReferenced && IsGroupedColumn(context, source.Key, source.Value, column.Name)) continue;

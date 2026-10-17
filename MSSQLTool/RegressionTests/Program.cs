@@ -443,6 +443,18 @@ namespace MSSQLTool.RegressionTests
             True(headerItems.Any(i => i.DisplayText == "HeaderName" && i.InsertText == "[HeaderName]"));
             True(!headerItems.Any(i => i.DisplayText == "Memo"));
 
+            // The shape from the report: one table, one alias, FROM on a later line.  The column must be
+            // inserted bare - the alias map knows both "a" and "ygxxh" for this table and used to prefix
+            // the insert with the table name.
+            string single = "UPDATE a\nSET \nFROM ygxxh a";
+            int singleCaret = single.IndexOf("SET ", StringComparison.Ordinal) + 4;
+            CompletionContext singleContext = SqlCompletionAnalyzer.Analyze(single.Substring(0, singleCaret), singleCaret, single.Substring(singleCaret));
+            List<CompletionItem> singleItems = SqlCompletionAnalyzer.BuildItems(singleContext, snapshot);
+            CompletionItem headerOne = singleItems.FirstOrDefault(i => i.DisplayText == "HeaderName");
+            True(headerOne != null);
+            Equal("[HeaderName]", headerOne.InsertText);
+            Equal(1, singleItems.Count(i => i.DisplayText == "HeaderName"));
+
             // The alias of the joined table.
             string detailMember = "UPDATE a SET b." + tail;
             CompletionContext detailContext = SqlCompletionAnalyzer.Analyze(detailMember.Substring(0, "UPDATE a SET b.".Length), "UPDATE a SET b.".Length, detailMember.Substring("UPDATE a SET b.".Length));
