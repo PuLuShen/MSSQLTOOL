@@ -830,6 +830,7 @@ namespace MSSQLTool
             EventInfo eventInfo = sqlResultsControl.GetType().GetEvent("ScriptExecutionCompleted");
             if (eventInfo == null)
             {
+                EnsureResultsGridMenu();
                 return;
             }
 
@@ -903,6 +904,14 @@ namespace MSSQLTool
 
 
         // This method aligns all numeric values to the right
+        /// <summary>Adds the jump-to-column menu to the results grid of the active results tab.</summary>
+        private static void EnsureResultsGridMenu()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try { Results.ResultsGridMenu.AttachTo(GridAccess.GetSQLResultsControl()); }
+            catch (Exception ex) { _logger?.Debug(ex, "Could not attach the results grid menu."); }
+        }
+
         public static void SQLResultsControl_ScriptExecutionCompleted(object QEOLESQLExec, object b)
         {
 
