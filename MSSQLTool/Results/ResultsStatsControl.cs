@@ -203,14 +203,28 @@ namespace MSSQLTool.Results
                 int columnTo = Math.Min(current.Columns.Count - 1, Math.Max(startColumn, endColumn));
 
                 var numbers = new List<decimal>();
+                var dates = new List<DateTime>();
                 int textCells = 0;
                 for (int row = rowFrom; row <= rowTo; row++)
                     for (int column = columnFrom; column <= columnTo; column++)
                     {
-                        string text = Convert.ToString(current.Rows[row][column], CultureInfo.CurrentCulture) ?? string.Empty;
+                        object raw = current.Rows[row][column];
+                        if (raw == null || raw == DBNull.Value) continue;
+
+                        string text = Convert.ToString(raw, CultureInfo.CurrentCulture) ?? string.Empty;
                         List<decimal> parsed = ResultSetStatistics.ParseNumbers(text);
-                        if (parsed.Count > 0) numbers.AddRange(parsed);
-                        else if (text.Trim().Length > 0) textCells++;
+                        if (parsed.Count > 0) { numbers.AddRange(parsed); continue; }
+
+                        // Dates count too: they get a count, an earliest and a latest.
+                        if (raw is DateTime dateValue) { dates.Add(dateValue); continue; }
+                        DateTime parsedDate;
+                        if (DateTime.TryParse(text, CultureInfo.CurrentCulture, System.Globalization.DateTimeStyles.None, out parsedDate))
+                        {
+                            dates.Add(parsedDate);
+                            continue;
+                        }
+
+                        if (text.Trim().Length > 0) textCells++;
                     }
 
                 ResultSetStatistics.NumericSummary summary = ResultSetStatistics.SummarizeNumbers(numbers);
@@ -226,6 +240,20 @@ namespace MSSQLTool.Results
                 columnText.Text = LocalizationManager.Format("Column(s): {0}", string.Join(", ",
                     Enumerable.Range(columnFrom, columnTo - columnFrom + 1).Select(i =>
                         i < headers.Count && !string.IsNullOrWhiteSpace(headers[i]) ? headers[i] : current.Columns[i].ColumnName)));
+
+                if (summary.Count == 0 && dates.Count > 0)
+                {
+                    DateTime earliest = dates.Min(), latest = dates.Max();
+                    values["Count"].Text = dates.Count.ToString(CultureInfo.CurrentCulture);
+                    values["Sum"].Text = "-";
+                    values["Average"].Text = "-";
+                    values["Min"].Text = earliest.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
+                    values["Max"].Text = latest.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
+                    values["Distinct"].Text = dates.Distinct().Count().ToString(CultureInfo.CurrentCulture);
+                    status.Text = LocalizationManager.Format("Date/time selection: {0} value(s), earliest {1}, latest {2}.",
+                        dates.Count, earliest.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture), latest.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture));
+                    return;
+                }
 
                 values["Count"].Text = summary.Count.ToString(CultureInfo.CurrentCulture);
                 values["Sum"].Text = Dec(summary.Sum, summary.Count);
@@ -382,7 +410,7 @@ namespace MSSQLTool.Results
                 int current = CurrentColumn(grid);
                 if (current < 0)
                 {
-                    WinForms.SendKeys.SendWait("^{HOME}");
+                    SendKey(WinForms.Keys.Home);
                     System.Windows.Forms.Application.DoEvents();
                     System.Threading.Thread.Sleep(40);
                     current = CurrentColumn(grid);
@@ -396,7 +424,7 @@ namespace MSSQLTool.Results
 
                 for (int step = 0; step < 80 && current != target; step++)
                 {
-                    WinForms.SendKeys.SendWait(current < target ? "{RIGHT}" : "{LEFT}");
+                    SendKey(current < target ? WinForms.Keys.Right : WinForms.Keys.Left);
                     System.Windows.Forms.Application.DoEvents();
                     System.Threading.Thread.Sleep(20);
                     int next = CurrentColumn(grid);
@@ -410,7 +438,7 @@ namespace MSSQLTool.Results
                     System.Windows.Forms.Application.DoEvents();
                     int settled = CurrentColumn(grid);
                     if (settled < 0 || settled == target) break;
-                    WinForms.SendKeys.SendWait(settled < target ? "{RIGHT}" : "{LEFT}");
+                    SendKey(settled < target ? WinForms.Keys.Right : WinForms.Keys.Left);
                     current = settled;
                 }
 
@@ -591,6 +619,24 @@ namespace MSSQLTool.Results
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+
+        /// <summary>
+        /// Injects a real key press.  SendKeys is swallowed by the SSMS host in some builds, while these
+        /// OS level events always reach the focused control.
+        /// </summary>
+        private static void SendKey(WinForms.Keys key)
+        {
+            const uint KeyUp = 0x0002;
+            byte virtualKey = (byte)key;
+            keybd_event(virtualKey, 0, 0, UIntPtr.Zero);
+            System.Threading.Thread.Sleep(25);
+            keybd_event(virtualKey, 0, KeyUp, UIntPtr.Zero);
+            System.Windows.Forms.Application.DoEvents();
+            System.Threading.Thread.Sleep(25);
+        }
 
         public void Dispose() => StopTimer();
     }
