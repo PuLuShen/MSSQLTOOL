@@ -108,6 +108,7 @@ namespace MSSQLTool.RegressionTests
             Run("Completion: alias member inserts just the column", TestAliasMemberInsertsBareColumn);
             Run("Completion: UPDATE SET offers the target columns", TestUpdateSetOffersColumns);
             Run("Completion: data types are suggested", TestDataTypesAreOffered);
+            Run("Completion: function entries explain their usage", TestFunctionEntriesCarryDocumentation);
             Run("Completion: UPDATE SET resolves aliases declared after the SET", TestUpdateSetResolvesAliasesDeclaredAfterTheSet);
             Run("Completion: keyword coverage includes table and query hints", TestCompletionKeywordCoverage);
             Run("EXEC without parameters releases incomplete next statement", TestExecuteBeforeIncompleteStatement);
@@ -461,6 +462,26 @@ namespace MSSQLTool.RegressionTests
             List<CompletionItem> detailItems = SqlCompletionAnalyzer.BuildItems(detailContext, snapshot);
             True(detailItems.Any(i => i.DisplayText == "Memo" && i.InsertText == "[Memo]"));
         }
+        /// <summary>Function entries in the popup must explain how the function is used.</summary>
+        private static void TestFunctionEntriesCarryDocumentation()
+        {
+            // The helpers are what the popup uses for both the list line and the details panel.
+            Equal("DATEADD(datepart, number, date)", SqlCompletionAnalyzer.FunctionSignature("DATEADD"));
+
+            string doc = SqlCompletionAnalyzer.FunctionDocumentation("DATEADD");
+            True(doc.Contains("DATEADD(datepart, number, date)"));
+            True(doc.Contains("SELECT DATEADD(day, -7, GETDATE());"));
+
+            string stringAgg = SqlCompletionAnalyzer.FunctionDocumentation("STRING_AGG");
+            True(stringAgg.Contains("STRING_AGG(expression, separator)"));
+            // The "Example" label is localized, so assert on the example body instead.
+            True(stringAgg.Contains("WITHIN GROUP"));
+
+            // A function without a hand-written entry still answers with a usable explanation.
+            // The fallback text is localized, so only the function name is a stable assertion.
+            True(SqlCompletionAnalyzer.FunctionDocumentation("SUSER_SNAME").Contains("SUSER_SNAME"));
+        }
+
         private static void TestExecuteParametersBeforeIncompleteStatement()
         {
             string sql = "EXEC dbo.usp_Test @Id = NULL  CREA";

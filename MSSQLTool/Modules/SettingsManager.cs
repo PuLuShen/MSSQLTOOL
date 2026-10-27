@@ -432,6 +432,8 @@ ORDER BY sd.[name];
             /// <summary>Extra completion keywords, separated by ";" or new lines.  Lets a team add its own house style (for example "WITH (NOLOCK)" or internal prefixes) without a rebuild.</summary>
             public string additionalKeywords = string.Empty;
             public string joinColumnRules = string.Empty;
+            /// <summary>Servers this extension has connected to, so the quick-search picker can offer them again while they are offline.</summary>
+            public string knownServers = string.Empty;
             public int delayMilliseconds = 120;
             public int maximumItems = 200;
         }
@@ -1024,6 +1026,43 @@ ORDER BY sd.[name];
             return SaveRegisterValue("CompletionDetailsWidth", Math.Max(220, Math.Min(900, width)).ToString());
         }
 
+        /// <summary>Servers remembered from earlier sessions (see <see cref="RememberCompletionServer"/>).</summary>
+        public static IEnumerable<string> GetKnownCompletionServers()
+        {
+            var settings = GetSqlCompletionSettings();
+            if (settings == null || string.IsNullOrWhiteSpace(settings.knownServers)) yield break;
+
+            foreach (string name in settings.knownServers.Split(new[] { ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string trimmed = name.Trim();
+                if (trimmed.Length > 0) yield return trimmed;
+            }
+        }
+
+        /// <summary>Remembers a server so the picker can list it even when it is not connected.</summary>
+        public static void RememberCompletionServer(string serverName)
+        {
+            if (string.IsNullOrWhiteSpace(serverName)) return;
+            try
+            {
+                var settings = GetSqlCompletionSettings() ?? new SqlCompletionSettings();
+                var names = (settings.knownServers ?? string.Empty)
+                    .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(n => n.Trim()).Where(n => n.Length > 0).ToList();
+
+                if (names.Any(n => string.Equals(n, serverName.Trim(), StringComparison.OrdinalIgnoreCase))) return;
+                names.Add(serverName.Trim());
+                // Keep the list bounded; the oldest entries fall out first.
+                if (names.Count > 32) names.RemoveRange(0, names.Count - 32);
+
+                settings.knownServers = string.Join(";", names);
+                SaveSqlCompletionSettings(settings);
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not remember the completion server.");
+            }
+        }
         public static SqlCompletionSettings GetSqlCompletionSettings()
         {
             try

@@ -1085,7 +1085,11 @@ namespace MSSQLTool.Completion
         {
             AddScopedColumns(result, context, metadata, 60);
             result.AddRange(objects.Where(o => o.Kind == CompletionItemKind.Function).Select(o => ObjectItem(o, o.IsSystem ? 20 : 45, false)));
-            result.AddRange(BuiltInFunctions.Select(name => new CompletionItem { DisplayText = name, InsertText = name, Kind = CompletionItemKind.Function, Description = BuiltInFunctionDescription(name), Score = 35 }));
+            result.AddRange(BuiltInFunctions.Select(name => new CompletionItem
+            {
+                DisplayText = name, InsertText = name, Kind = CompletionItemKind.Function,
+                Description = FunctionSignature(name), DetailTextProvider = () => FunctionDocumentation(name), Score = 35
+            }));
             result.AddRange(AllKeywords(CompletionSettings()).Select(k => new CompletionItem { DisplayText = k, InsertText = k, Kind = CompletionItemKind.Keyword, Description = KeywordDescription(k), Score = 20 }));
             foreach (var s in SnippetService.GetAllSnippets()) result.Add(new CompletionItem { DisplayText = s.Prefix, InsertText = s.Body, Kind = CompletionItemKind.Snippet, Description = s.Description, Score = 30 });
         }
@@ -1136,20 +1140,69 @@ namespace MSSQLTool.Completion
             return "keyword";
         }
 
-        private static string BuiltInFunctionDescription(string name)
+        /// <summary>
+        /// Signature, a short note and a copy-ready example for the built-in functions offered by the
+        /// popup.  The signature stays in the list; the whole entry is shown in the details panel so the
+        /// user can see how a function is called before inserting it.
+        /// </summary>
+        private static readonly Dictionary<string, string[]> FunctionDocs = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
-            switch ((name ?? string.Empty).ToUpperInvariant())
-            {
-                case "ISNULL": return "ISNULL(check_expression, replacement_value)";
-                case "COALESCE": return "COALESCE(expression, ...)";
-                case "DATEADD": return "DATEADD(datepart, number, date)";
-                case "DATEDIFF": return "DATEDIFF(datepart, startdate, enddate)";
-                case "SUBSTRING": return "SUBSTRING(expression, start, length)";
-                case "REPLACE": return "REPLACE(expression, pattern, replacement)";
-                case "CAST": return "CAST(expression AS data_type)";
-                case "CONVERT": return "CONVERT(data_type, expression [, style])";
-                default: return "SQL Server built-in function";
-            }
+            ["ABS"] = new[] { "ABS(numeric_expression)", "absolute value", "SELECT ABS(-12.5);  -- 12.5" },
+            ["AVG"] = new[] { "AVG([ALL|DISTINCT] expression)", "average of a group, ignores NULL", "SELECT AVG(UnitPrice) FROM dbo.SalesOrderLine;" },
+            ["CAST"] = new[] { "CAST(expression AS data_type[(length)])", "converts to another type; error when the value does not fit", "SELECT CAST('2026-01-31' AS date);" },
+            ["CEILING"] = new[] { "CEILING(numeric_expression)", "smallest integer >= the value", "SELECT CEILING(4.2);  -- 5" },
+            ["CHARINDEX"] = new[] { "CHARINDEX(substring, string [, start_location])", "1-based position, 0 when not found", "SELECT CHARINDEX('bb', 'aabbcc');  -- 3" },
+            ["COALESCE"] = new[] { "COALESCE(expression, expression [, ...])", "first non-NULL argument", "SELECT COALESCE(NULL, NULL, 'fallback');" },
+            ["CONCAT"] = new[] { "CONCAT(value [, value ...])", "joins values, NULL becomes an empty string", "SELECT CONCAT('Order ', OrderId, ' / ', Status) FROM dbo.SalesOrderHeader;" },
+            ["CONVERT"] = new[] { "CONVERT(data_type[(length)], expression [, style])", "like CAST, plus style codes for dates and money", "SELECT CONVERT(varchar(10), GETDATE(), 120);  -- yyyy-mm-dd" },
+            ["COUNT"] = new[] { "COUNT([ALL|DISTINCT] expression) | COUNT(*)", "number of rows, COUNT(*) includes NULLs", "SELECT COUNT(*) FROM dbo.SalesOrderHeader WHERE Status = 'Open';" },
+            ["DATEADD"] = new[] { "DATEADD(datepart, number, date)", "adds an interval; datepart is year/month/day/hour/minute/second", "SELECT DATEADD(day, -7, GETDATE());" },
+            ["DATEDIFF"] = new[] { "DATEDIFF(datepart, startdate, enddate)", "difference in whole dateparts", "SELECT DATEDIFF(day, OrderDate, ShipDate) FROM dbo.SalesOrderHeader;" },
+            ["DATENAME"] = new[] { "DATENAME(datepart, date)", "name of the datepart as text", "SELECT DATENAME(month, GETDATE());  -- January" },
+            ["DATEPART"] = new[] { "DATEPART(datepart, date)", "datepart as an integer", "SELECT DATEPART(quarter, OrderDate) FROM dbo.SalesOrderHeader;" },
+            ["EOMONTH"] = new[] { "EOMONTH(start_date [, month_to_add])", "last day of the month", "SELECT EOMONTH(GETDATE());" },
+            ["FLOOR"] = new[] { "FLOOR(numeric_expression)", "largest integer <= the value", "SELECT FLOOR(4.8);  -- 4" },
+            ["FORMAT"] = new[] { "FORMAT(value, format [, culture])", "formats using .NET format strings (slower than CONVERT)", "SELECT FORMAT(GETDATE(), 'yyyy-MM-dd HH:mm');" },
+            ["GETDATE"] = new[] { "GETDATE()", "current date and time of the server", "SELECT GETDATE();" },
+            ["GETUTCDATE"] = new[] { "GETUTCDATE()", "current UTC date and time", "SELECT GETUTCDATE();" },
+            ["IIF"] = new[] { "IIF(condition, true_value, false_value)", "inline if/else", "SELECT IIF(Status = 'Open', 1, 0) FROM dbo.SalesOrderHeader;" },
+            ["ISNULL"] = new[] { "ISNULL(check_expression, replacement_value)", "replaces NULL (two arguments only)", "SELECT ISNULL(Comment, '') FROM dbo.SalesOrderHeader;" },
+            ["LAG"] = new[] { "LAG(expression [, offset [, default]]) OVER (ORDER BY ...)", "previous row in the window", "SELECT OrderId, LAG(OrderId) OVER (ORDER BY OrderId) AS PreviousId FROM dbo.SalesOrderHeader;" },
+            ["LEAD"] = new[] { "LEAD(expression [, offset [, default]]) OVER (ORDER BY ...)", "next row in the window", "SELECT OrderId, LEAD(OrderId) OVER (ORDER BY OrderId) AS NextId FROM dbo.SalesOrderHeader;" },
+            ["LEFT"] = new[] { "LEFT(string, number_of_characters)", "first n characters", "SELECT LEFT('MSSQLTOOL', 4);  -- MSSQ" },
+            ["LEN"] = new[] { "LEN(string)", "length without trailing spaces", "SELECT LEN('abc  ');  -- 3" },
+            ["LOWER"] = new[] { "LOWER(string)", "lower case", "SELECT LOWER('MSSQLTool');  -- mssqltool" },
+            ["NEWID"] = new[] { "NEWID()", "new uniqueidentifier", "SELECT NEWID();" },
+            ["NULLIF"] = new[] { "NULLIF(expression, expression)", "NULL when both are equal", "SELECT NULLIF(Quantity, 0) FROM dbo.SalesOrderLine;" },
+            ["PATINDEX"] = new[] { "PATINDEX('%pattern%', string)", "1-based position of a LIKE pattern, 0 when absent", "SELECT PATINDEX('%bb%', 'aabbcc');  -- 3" },
+            ["REPLACE"] = new[] { "REPLACE(string, old, new)", "replaces every occurrence", "SELECT REPLACE('a-b-c', '-', '/');  -- a/b/c" },
+            ["ROUND"] = new[] { "ROUND(numeric, length [, function])", "rounds to length digits", "SELECT ROUND(12.3456, 2);  -- 12.3500" },
+            ["ROW_NUMBER"] = new[] { "ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)", "1-based row number inside the window", "SELECT ROW_NUMBER() OVER (ORDER BY OrderDate DESC) AS RowNo, OrderId FROM dbo.SalesOrderHeader;" },
+            ["RTRIM"] = new[] { "RTRIM(string)", "removes trailing spaces", "SELECT RTRIM('abc   ');" },
+            ["SCOPE_IDENTITY"] = new[] { "SCOPE_IDENTITY()", "last identity value inserted in the current scope", "INSERT INTO dbo.Customer(Name) VALUES ('A'); SELECT SCOPE_IDENTITY();" },
+            ["STRING_AGG"] = new[] { "STRING_AGG(expression, separator) WITHIN GROUP (ORDER BY ...)", "concatenates rows into one string (SQL Server 2017+)", "SELECT STRING_AGG(Name, ', ') WITHIN GROUP (ORDER BY Name) FROM dbo.Customer;" },
+            ["SUBSTRING"] = new[] { "SUBSTRING(string, start, length)", "1-based start", "SELECT SUBSTRING('MSSQLTOOL', 1, 5);  -- MSSQL" },
+            ["SUM"] = new[] { "SUM([ALL|DISTINCT] expression)", "sum of a group, ignores NULL", "SELECT SUM(LineTotal) FROM dbo.SalesOrderLine;" },
+            ["SYSDATETIME"] = new[] { "SYSDATETIME()", "current datetime2 with higher precision", "SELECT SYSDATETIME();" },
+            ["TRY_CAST"] = new[] { "TRY_CAST(expression AS data_type[(length)])", "like CAST but returns NULL instead of failing", "SELECT TRY_CAST('not a date' AS date);  -- NULL" },
+            ["TRY_CONVERT"] = new[] { "TRY_CONVERT(data_type[(length)], expression [, style])", "like CONVERT but returns NULL instead of failing", "SELECT TRY_CONVERT(int, '12x');  -- NULL" },
+            ["UPPER"] = new[] { "UPPER(string)", "upper case", "SELECT UPPER('mssqltool');  -- MSSQLTOOL" }
+        };
+
+        internal static string FunctionSignature(string name)
+        {
+            string[] doc;
+            return FunctionDocs.TryGetValue(name ?? string.Empty, out doc) ? doc[0] : "SQL Server built-in function";
+        }
+
+        internal static string FunctionDocumentation(string name)
+        {
+            string[] doc;
+            if (!FunctionDocs.TryGetValue(name ?? string.Empty, out doc))
+                return LocalizationManager.Format("{0}: SQL Server built-in function.", name) + Environment.NewLine
+                    + LocalizationManager.T("No usage notes are available for this function yet.");
+
+            return doc[0] + Environment.NewLine + doc[1] + Environment.NewLine + LocalizationManager.T("Example:") + " " + doc[2];
         }
 
         private static IEnumerable<CompletionItem> BuildJoinItems(CompletionContext context, MetadataSnapshot metadata)
