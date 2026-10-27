@@ -18,6 +18,8 @@ namespace MSSQLTool
         public string Category { get; set; }
         public DateTime LastWriteTime { get; set; }
         public bool IsFavorite { get; set; }
+        /// <summary>Comma separated tags read from the "tags:" header line of the template file.</summary>
+        public string Tags { get; set; } = string.Empty;
         public DateTime? LastUsedUtc { get; set; }
 
         public string FavoriteGlyph => IsFavorite ? "★" : "☆";
@@ -255,6 +257,7 @@ namespace MSSQLTool
             {
                 item.IsFavorite = favorites.Contains(item.RelativePath);
                 if (recent.TryGetValue(item.RelativePath, out DateTime usedUtc)) item.LastUsedUtc = usedUtc;
+                item.Tags = ReadTags(item.FullPath);
             }
 
             discovered.Sort((left, right) => pathComparer.Compare(left.RelativePath, right.RelativePath));
@@ -415,6 +418,63 @@ namespace MSSQLTool
                 return true;
             }
             catch (Exception ex) { error = ex.Message; return false; }
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex TagsHeader = new System.Text.RegularExpressions.Regex(
+            @"^\s*(?:--|//)?\s*tags?\s*[:=]\s*(?<tags>.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>
+        /// Tags live in a "tags: a, b" comment on the first lines of the template file, so they move with
+        /// the folder (a shared or synced template library keeps its labels).
+        /// </summary>
+        internal static string ReadTags(string fullPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(fullPath) || !File.Exists(fullPath)) return string.Empty;
+                int line = 0;
+                foreach (string text in File.ReadLines(fullPath))
+                {
+                    if (++line > 6) break;
+                    Match match = TagsHeader.Match(text);
+                    if (match.Success) return NormalizeTags(match.Groups["tags"].Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not read the template tags.");
+            }
+
+            return string.Empty;
+        }
+
+        internal static string NormalizeTags(string tags)
+            => string.Join(", ", (tags ?? string.Empty)
+                .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(t => t.Trim()).Where(t => t.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase));
+
+        /// <summary>Rewrites (or inserts) the tags header line and returns the normalized value.</summary>
+        internal static string WriteTags(string fullPath, string tags)
+        {
+            string normalized = NormalizeTags(tags);
+            string[] lines = File.Exists(fullPath) ? File.ReadAllLines(fullPath) : new string[0];
+            var output = new List<string>();
+            bool written = false;
+
+            foreach (string text in lines)
+            {
+                if (!written && TagsHeader.IsMatch(text))
+                {
+                    if (normalized.Length > 0) output.Add("-- tags: " + normalized);
+                    written = true;
+                    continue;
+                }
+                output.Add(text);
+            }
+
+            if (!written && normalized.Length > 0) output.Insert(0, "-- tags: " + normalized);
+            File.WriteAllLines(fullPath, output.ToArray(), new UTF8Encoding(false));
+            return normalized;
         }
 
         public bool TryRenameCategory(string relativePath, string newName, out string error)

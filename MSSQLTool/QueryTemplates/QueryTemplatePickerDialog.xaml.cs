@@ -140,6 +140,8 @@ namespace MSSQLTool
         private ObservableCollection<QueryTemplateTreeNode> BuildTree(string search)
         {
             string upper = (search ?? string.Empty).Trim().ToUpperInvariant();
+            // "#tag" is the documented way to search by tag; the hash is not part of the stored value.
+            if (upper.StartsWith("#", StringComparison.Ordinal)) upper = upper.Substring(1).Trim();
             var folderNodes = new Dictionary<string, QueryTemplateTreeNode>(StringComparer.OrdinalIgnoreCase);
             var rootNodes = new ObservableCollection<QueryTemplateTreeNode>();
 
@@ -158,6 +160,38 @@ namespace MSSQLTool
                 InsertSorted(string.IsNullOrEmpty(parentPath) ? rootNodes : folderNodes[parentPath].Children, node);
             };
 
+            // The last ten templates, always at the top: the picker opens on this list, which is what
+            // "recent" means for a template menu.  Only when the user is not searching.
+            if (upper.Length == 0)
+            {
+                List<QueryTemplateItem> recentItems = QueryTemplateLibrary.Instance.Snapshot()
+                    .Where(i => i.LastUsedUtc.HasValue)
+                    .OrderByDescending(i => i.LastUsedUtc.Value)
+                    .Take(10).ToList();
+                if (recentItems.Count > 0)
+                {
+                    var recentNode = new QueryTemplateTreeNode
+                    {
+                        Name = LocalizationManager.T("Recent (10)"),
+                        RelativePath = string.Empty,
+                        IsFolder = true,
+                        IsExpanded = true
+                    };
+                    foreach (QueryTemplateItem item in recentItems)
+                    {
+                        recentNode.Children.Add(new QueryTemplateTreeNode
+                        {
+                            Name = item.Name,
+                            RelativePath = item.RelativePath,
+                            FullPath = item.FullPath,
+                            IsFavorite = item.IsFavorite,
+                            Tags = item.Tags
+                        });
+                    }
+                    rootNodes.Insert(0, recentNode);
+                }
+            }
+
             foreach (string folder in QueryTemplateLibrary.Instance.SnapshotFolderPaths())
                 ensureFolder(folder);
 
@@ -170,7 +204,8 @@ namespace MSSQLTool
                     RelativePath = item.RelativePath,
                     FullPath = item.FullPath,
                     IsFolder = false,
-                    IsFavorite = item.IsFavorite
+                    IsFavorite = item.IsFavorite,
+                    Tags = item.Tags
                 };
                 InsertSorted(string.IsNullOrEmpty(item.Category) ? rootNodes : folderNodes[item.Category].Children, node);
             }
@@ -528,6 +563,32 @@ namespace MSSQLTool
             }
         }
 
+        /// <summary>Edits the "tags:" header of the selected template and refreshes the tree.</summary>
+        private void TagsButton_Click(object sender, RoutedEventArgs e)
+        {
+            QueryTemplateTreeNode node = TemplateTree.SelectedItem as QueryTemplateTreeNode;
+            QueryTemplateItem item = node == null || node.IsFolder ? null : FindTemplateItem(node.RelativePath);
+            if (item == null)
+            {
+                ShowError(LocalizationManager.T("Select a template first."));
+                return;
+            }
+
+            string value = PromptForName(LocalizationManager.T("Template tags"), LocalizationManager.T("Tags (comma separated):"), item.Tags);
+            if (value == null) return;
+
+            try
+            {
+                QueryTemplateLibrary.WriteTags(item.FullPath, value);
+                QueryTemplateLibrary.Instance.Refresh();
+                RefreshTree();
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex.Message);
+            }
+        }
+
         private void DeleteButton_Click(object sender, RoutedEventArgs e)
         {
             if (selectedNode == null) return;
@@ -734,13 +795,15 @@ namespace MSSQLTool
         public string FullPath { get; set; }
         public bool IsFolder { get; set; }
         public bool IsFavorite { get; set; }
+        /// <summary>Tags shown next to the name and used by the search box.</summary>
+        public string Tags { get; set; } = string.Empty;
         public bool IsExpanded { get; set; } = true;
         public bool IsSelected { get; set; }
         public ObservableCollection<QueryTemplateTreeNode> Children { get; } = new ObservableCollection<QueryTemplateTreeNode>();
 
         public string Glyph => IsFolder ? "\uD83D\uDCC1" : "\uD83D\uDCC4";
-        public string Display => Name + (IsFavorite ? " \u2605" : "");
-        public string SearchText => (Name + " " + RelativePath).ToUpperInvariant();
+        public string Display => Name + (IsFavorite ? " \u2605" : string.Empty) + (string.IsNullOrEmpty(Tags) ? string.Empty : "  [" + Tags + "]");
+        public string SearchText => (Name + " " + RelativePath + " " + Tags).ToUpperInvariant();
     }
 
     /// <summary>Small single-value prompt used for category/statement names.</summary>
