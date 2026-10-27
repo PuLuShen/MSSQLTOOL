@@ -139,7 +139,7 @@ namespace MSSQLTool.Results
         private static void StartTimer()
         {
             if (timer != null) return;
-            timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+            timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(220) };
             timer.Tick += (_, __) =>
             {
                 try
@@ -291,37 +291,99 @@ namespace MSSQLTool.Results
                     if (column < 0 || column >= table.Columns.Count) column = 0;
                     if (row < 0 || row >= table.Rows.Count) row = 0;
 
+                    // The panel follows the selected rectangle: SSMS exposes the selection differently
+                    // between builds, so every known shape is tried and a single cell is the fallback.
+                    int startRow = row, startColumn = column, endRow = row, endColumn = column;
+                    ReadSelection(grid, ref startRow, ref startColumn, ref endRow, ref endColumn);
+                    if (SelectionCount > 1) { /* keep the range */ }
+
+                    DataTable slice = ResultSetStatistics.Slice(table, startRow, startColumn, endRow, endColumn);
+                    if (slice == null) slice = table;
+
                     string columnName = table.Columns[column].ColumnName;
                     string value = row < table.Rows.Count
                         ? Convert.ToString(table.Rows[row][column] ?? string.Empty) ?? string.Empty
                         : string.Empty;
-                    header.Text = LocalizationManager.Format("Column '{0}'   (row {1} of {2})", columnName, row + 1, table.Rows.Count);
+
+                    bool single = slice.Rows.Count <= 1 && slice.Columns.Count <= 1;
+                    header.Text = single
+                        ? LocalizationManager.Format("Column '{0}'   (row {1} of {2})", columnName, row + 1, table.Rows.Count)
+                        : LocalizationManager.Format("Selection rows {0}-{1}, columns {2}-{3}   ({4} x {5} cells)",
+                            Math.Min(startRow, endRow) + 1, Math.Max(startRow, endRow) + 1,
+                            Math.Min(startColumn, endColumn) + 1, Math.Max(startColumn, endColumn) + 1,
+                            slice.Rows.Count, slice.Columns.Count);
                     cellInfo.Text = value.Length > 300 ? value.Substring(0, 297) + "..." : value;
                     columns.SelectedItem = columnName;
 
-                    List<ResultColumnStatistics> all = ResultSetStatistics.Summarize(table);
-                    stats.ItemsSource = all.Where(s => string.Equals(s.Name, columnName, StringComparison.OrdinalIgnoreCase))
-                        .Select(s => new
-                        {
-                            Column = s.Name,
-                            Type = s.DataType,
-                            NonNull = s.NonNullCount,
-                            Null = s.NullCount,
-                            Distinct = s.DistinctCount,
-                            Min = s.Minimum,
-                            Max = s.Maximum,
-                            Average = s.Average,
-                            Sum = s.Sum,
-                            MaxLength = s.MaximumLength
-                        }).ToList();
+                    List<ResultColumnStatistics> all = ResultSetStatistics.Summarize(slice);
+                    stats.ItemsSource = all.Select(s => new
+                    {
+                        Column = s.Name,
+                        Type = s.DataType,
+                        NonNull = s.NonNullCount,
+                        Null = s.NullCount,
+                        Distinct = s.DistinctCount,
+                        Min = s.Minimum,
+                        Max = s.Maximum,
+                        Average = s.Average,
+                        Sum = s.Sum,
+                        MaxLength = s.MaximumLength
+                    }).ToList();
 
-                    return table.Rows.Count + "|" + row + "|" + column;
+                    // The key includes the range so a new selection is always picked up.
+                    return table.Rows.Count + "|" + startRow + "|" + startColumn + "|" + endRow + "|" + endColumn;
                 }
                 catch (Exception ex)
                 {
                     MSSQLToolPackage._logger?.Error(ex, "Results statistics panel could not read the result set.");
                     return string.Empty;
                 }
+            }
+
+            private int selectionCount = 1;
+            private int SelectionCount => selectionCount;
+
+            /// <summary>
+            /// Reads the selected rectangle.  Known shapes: a selection object with Start/End (row,column),
+            /// a Selection with Row/Column/RowCount/ColumnCount, or SelectedCells-style cell objects.
+            /// </summary>
+            private void ReadSelection(object grid, ref int startRow, ref int startColumn, ref int endRow, ref int endColumn)
+            {
+                selectionCount = 1;
+                if (grid == null) return;
+
+                object selection = GridAccess.GetProperty(grid, "Selection")
+                    ?? GridAccess.GetNonPublicField(grid, "m_selection");
+                if (selection == null) return;
+
+                int firstRow = Pick(selection, "StartRow", "TopRow", "Row", "RowIndex");
+                int firstColumn = Pick(selection, "StartColumn", "LeftColumn", "Column", "ColumnIndex");
+                int lastRow = Pick(selection, "EndRow", "BottomRow");
+                int lastColumn = Pick(selection, "EndColumn", "RightColumn");
+                int rowCount = Pick(selection, "RowCount", "Rows", "Height");
+                int columnCount = Pick(selection, "ColumnCount", "Columns", "Width");
+
+                if (firstRow < 0 || firstColumn < 0) return;
+                if (lastRow < 0) lastRow = rowCount > 0 ? firstRow + rowCount - 1 : firstRow;
+                if (lastColumn < 0) lastColumn = columnCount > 0 ? firstColumn + columnCount - 1 : firstColumn;
+
+                startRow = firstRow;
+                startColumn = firstColumn;
+                endRow = lastRow;
+                endColumn = lastColumn;
+                selectionCount = Math.Max(1, (Math.Abs(endRow - startRow) + 1) * (Math.Abs(endColumn - startColumn) + 1));
+            }
+
+            private static int Pick(object source, params string[] names)
+            {
+                foreach (string name in names)
+                {
+                    object value = GridAccess.GetProperty(source, name) ?? GridAccess.GetNonPublicField(source, name);
+                    if (value == null) continue;
+                    if (int.TryParse(value.ToString(), out int number)) return number;
+                }
+
+                return -1;
             }
 
             private void FindNext()

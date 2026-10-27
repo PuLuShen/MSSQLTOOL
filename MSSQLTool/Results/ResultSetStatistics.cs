@@ -100,6 +100,39 @@ namespace MSSQLTool.Results
             return result;
         }
 
+        /// <summary>
+        /// Copies the selected rectangle of a result set into a new table, so the panel can summarise what
+        /// the user actually selected instead of the whole column.
+        /// </summary>
+        public static DataTable Slice(DataTable table, int startRow, int startColumn, int endRow, int endColumn)
+        {
+            if (table == null) return null;
+
+            int lastRow = table.Rows.Count - 1, lastColumn = table.Columns.Count - 1;
+            if (lastRow < 0 || lastColumn < 0) return null;
+
+            int fromRow = Math.Max(0, Math.Min(startRow, endRow));
+            int toRow = Math.Min(lastRow, Math.Max(startRow, endRow));
+            int fromColumn = Math.Max(0, Math.Min(startColumn, endColumn));
+            int toColumn = Math.Min(lastColumn, Math.Max(startColumn, endColumn));
+
+            var slice = new DataTable();
+            for (int column = fromColumn; column <= toColumn; column++)
+            {
+                DataColumn source = table.Columns[column];
+                slice.Columns.Add(source.ColumnName, source.DataType);
+            }
+
+            for (int row = fromRow; row <= toRow; row++)
+            {
+                var values = new object[toColumn - fromColumn + 1];
+                for (int column = fromColumn; column <= toColumn; column++) values[column - fromColumn] = table.Rows[row][column];
+                slice.Rows.Add(values);
+            }
+
+            return slice;
+        }
+
         /// <summary>Plain-text summary, used by "copy" and by the log.</summary>
         public static string ToText(DataTable table, IEnumerable<ResultColumnStatistics> statistics)
         {

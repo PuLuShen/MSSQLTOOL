@@ -245,6 +245,7 @@ namespace MSSQLTool
             ["Please select a server or database node in Object Explorer first."] = "请先在对象资源管理器中选择服务器或数据库节点。",
             ["Every server currently connected in Object Explorer. Pick one to search it."] = "这里列出对象资源管理器中已连接的所有服务器，挑一个即可搜索。",
             ["Recent searches"] = "最近的搜索",
+            ["Selection rows {0}-{1}, columns {2}-{3}   ({4} x {5} cells)"] = "选区：第 {0}-{1} 行，第 {2}-{3} 列（{4} × {5} 个单元格）",
             ["Result statistics panel"] = "结果集统计面板",
             ["Jump to column:"] = "跳转到列：",
             ["Column '{0}'   (row {1} of {2})"] = "列「{0}」   （第 {1} 行 / 共 {2} 行）",
