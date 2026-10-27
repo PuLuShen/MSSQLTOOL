@@ -65,6 +65,7 @@ namespace MSSQLTool
     [ProvideToolWindow(typeof(DataImportWindow))]
     [ProvideToolWindow(typeof(QuickSearchWindow))]
     [ProvideToolWindow(typeof(SnippetManagerWindow))]
+    [ProvideToolWindow(typeof(Results.ResultsStatsWindow))]
     [ProvideToolWindow(typeof(QueryTemplateWindow))]
     public sealed class MSSQLToolPackage : AsyncPackage
     {
@@ -847,7 +848,6 @@ namespace MSSQLTool
                 AttachStatisticsExecutionCompletedHandler(sqlResultsControl);
                 // Puts "结果集统计面板" in the grid's own context menu; harmless when the menu is not
                 // created yet, the next call retries.
-                Results.ResultsHoverPopup.AttachTo(sqlResultsControl);
             }
             catch (Exception ex)
             {
@@ -927,7 +927,6 @@ namespace MSSQLTool
             try
             {
                 // The results grid exists now: install the statistics toggle into its context menu.
-                Results.ResultsHoverPopup.AttachTo(GridAccess.GetSQLResultsControl());
 
                 //1. Align numeric types to the right
                 CollectionBase gridContainers = GridAccess.GetGridContainers();

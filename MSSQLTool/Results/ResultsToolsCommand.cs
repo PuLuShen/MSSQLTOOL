@@ -37,7 +37,14 @@ namespace MSSQLTool.Results
             package.JoinableTaskFactory.RunAsync(async delegate
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(package.DisposalToken);
-                ResultsHoverPopup.ShowFromCommand();
+                // Toggle the docked statistics window: show it without stealing the focus when it is
+                // closed, bring it forward (and refresh) when it is already open.
+                var window = package.FindToolWindow(typeof(ResultsStatsWindow), 0, true) as ResultsStatsWindow;
+                if (window == null || window.Frame == null) return;
+
+                var frame = (Microsoft.VisualStudio.Shell.Interop.IVsWindowFrame)window.Frame;
+                window.RefreshContent();
+                frame.ShowNoActivate();
             });
         }
 

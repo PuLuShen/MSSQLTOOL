@@ -102,7 +102,8 @@
     <Compile Include="Results\ResultSetStatistics.cs" />
     <Compile Include="Results\ResultsToolsWindow.cs" />
     <Compile Include="Results\ResultsToolsCommand.cs" />
-    <Compile Include="Results\ResultsHoverPopup.cs" />
+    <Compile Include="Results\ResultsStatsWindow.cs" />
+    <Compile Include="Results\ResultsStatsControl.cs" />
     <Compile Include="QueryTemplates\QueryTemplateInsertionService.cs" />
     <Compile Include="QueryTemplates\CreateQueryTemplateDialog.xaml.cs">
       <DependentUpon>CreateQueryTemplateDialog.xaml</DependentUpon>
