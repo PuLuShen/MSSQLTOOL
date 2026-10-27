@@ -21,6 +21,8 @@ namespace MSSQLTool.Results
     internal static class ResultsGridMenu
     {
         private static readonly HashSet<object> hooked = new HashSet<object>();
+        [ThreadStatic] private static object currentGrid;
+        private static object CurrentGrid => currentGrid;
 
         internal static void AttachTo(object sqlResultsControl)
         {
@@ -68,6 +70,7 @@ namespace MSSQLTool.Results
             try
             {
                 if (grid == null || !hooked.Add(grid)) return;
+                currentGrid = grid;
                 var control = grid as Control;
                 if (control == null) return;
 
@@ -120,35 +123,63 @@ namespace MSSQLTool.Results
             // Never create or replace the strip: SSMS builds its own menu (Copy, Select All, Print, ...) and
             // assigning a new one hid every native item.  When SSMS has not created its menu yet the native
             // menu is still shown on right click, so this is retried on the next click.
-            var menu = control.ContextMenuStrip;
-            if (menu == null)
+            // Display-time injection: the item is added when the menu is about to open, which is the
+            // pattern Microsoft documents for extending a ToolStrip without owning it.  Nothing is
+            // created or replaced here, so every native entry (Copy, Select All, Save as, Print, ...)
+            // stays exactly where SSMS put it.
+            ContextMenuStrip strip = control.ContextMenuStrip;
+            if (strip != null)
             {
-                // The grid does not own a strip until SSMS builds one, and the menu it shows then is not the
-                // one we can extend. Owning the strip is the only way to get our item in, so the two most
-                // used native commands are re-created here (they run the same grid operations).
-                menu = new ContextMenuStrip();
-                menu.Items.Add(new ToolStripMenuItem(LocalizationManager.T("Copy"), null,
-                    (_, __) => { try { PressKey(Keys.Control | Keys.C); } catch (Exception ex) { Log(ex); } })
-                { ShortcutKeyDisplayString = "Ctrl+C" });
-                menu.Items.Add(new ToolStripMenuItem(LocalizationManager.T("Select all"), null,
-                    (_, __) => { try { PressKey(Keys.Control | Keys.A); } catch (Exception ex) { Log(ex); } })
-                { ShortcutKeyDisplayString = "Ctrl+A" });
-                menu.Items.Add(new ToolStripSeparator());
-                control.ContextMenuStrip = menu;
+                strip.Opening -= OnStripOpening;
+                strip.Opening += OnStripOpening;
+                return;
             }
 
-            foreach (ToolStripItem existing in menu.Items)
-                if (existing is ToolStripMenuItem item && item.Name == "MSSQLToolJumpToColumn")
-                    menu.Items.Remove(existing);
+            ContextMenu legacyMenu = control.ContextMenu;
+            if (legacyMenu != null)
+            {
+                legacyMenu.Popup -= OnLegacyPopup;
+                legacyMenu.Popup += OnLegacyPopup;
+            }
+        }
+
+        private static void OnStripOpening(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            try
+            {
+                var strip = sender as ContextMenuStrip;
+                if (strip != null) Fill(strip.Items, CurrentGrid);
+            }
+            catch (Exception ex)
+            {
+                Log(ex);
+            }
+        }
+
+        private static void OnLegacyPopup(object sender, EventArgs e)
+        {
+            try
+            {
+                var legacy = sender as ContextMenu;
+                if (legacy != null) Fill(legacy.MenuItems, CurrentGrid);
+            }
+            catch (Exception ex)
+            {
+                Log(ex);
+            }
+        }
+
+        private static void Fill(ToolStripItemCollection items, object grid)
+        {
+            if (grid == null) return;
+
+            for (int i = items.Count - 1; i >= 0; i--)
+                if (items[i] != null && items[i].Name == "MSSQLToolJumpToColumn") items.RemoveAt(i);
 
             List<string> columns = ReadColumnNames(grid);
             if (columns.Count == 0) return;
 
-            var root = new ToolStripMenuItem(LocalizationManager.T("Jump to column"))
-            {
-                Name = "MSSQLToolJumpToColumn"
-            };
-
+            var root = new ToolStripMenuItem(LocalizationManager.T("Jump to column")) { Name = "MSSQLToolJumpToColumn" };
             for (int i = 0; i < columns.Count; i++)
             {
                 string name = columns[i];
@@ -159,10 +190,33 @@ namespace MSSQLTool.Results
                 root.DropDownItems.Add(entry);
             }
 
-            menu.Items.Insert(0, root);
-            if (menu.Items.Count > 1) menu.Items.Insert(1, new ToolStripSeparator());
+            items.Insert(0, root);
+            items.Insert(1, new ToolStripSeparator());
         }
 
+        private static void Fill(Menu.MenuItemCollection items, object grid)
+        {
+            if (grid == null) return;
+
+            for (int i = items.Count - 1; i >= 0; i--)
+                if (items[i] is MenuItem item && item.Text == LocalizationManager.T("Jump to column")) items.RemoveAt(i);
+
+            List<string> columns = ReadColumnNames(grid);
+            if (columns.Count == 0) return;
+
+            var root = new MenuItem(LocalizationManager.T("Jump to column"));
+            for (int i = 0; i < columns.Count; i++)
+            {
+                string name = columns[i];
+                if (string.IsNullOrWhiteSpace(name)) name = "(column " + (i + 1) + ")";
+                int index = i;
+                var entry = new MenuItem(name);
+                entry.Click += (_, __) => Jump(grid, index);
+                root.MenuItems.Add(entry);
+            }
+
+            items.Add(0, root);
+        }
         /// <summary>Runs after the menu closes, when the grid has the focus again.</summary>
         private static void Jump(object grid, int columnIndex)
         {
