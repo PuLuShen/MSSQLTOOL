@@ -127,7 +127,6 @@ namespace MSSQLTool.Results
             window.RefreshFromSelection();
             window.PlaceNextToResults();
             window.Show();
-            if (!window.IsMouseOver) window.Activate();
             StartTimer();
         }
 
@@ -151,8 +150,9 @@ namespace MSSQLTool.Results
                     object grid = GridAccess.GetFocusGridControl();
                     if (grid == null)
                     {
-                        // Clicking anywhere outside the results closes the panel.
-                        if (!window.IsMouseOver) window.Hide();
+                        // Clicking anywhere outside the results closes the panel; using the panel itself
+                        // (typing a column name) must not count as "outside".
+                        if (!window.IsMouseOver && !window.IsKeyboardFocusWithin) window.Hide();
                         return;
                     }
 
@@ -219,6 +219,10 @@ namespace MSSQLTool.Results
                 ResizeMode = ResizeMode.NoResize;
                 Topmost = true;
                 ShowInTaskbar = false;
+                // Showing the panel must not take the focus: SSMS paints the grid selection grey while the
+                // grid is inactive, and the panel would then hide itself because the grid lost the focus.
+                ShowActivated = false;
+                Focusable = false;
                 WindowStyle = WindowStyle.ToolWindow;
                 WindowStartupLocation = WindowStartupLocation.CenterScreen;
                 Background = (Brush)Application.Current?.TryFindResource("ToolThemeBackgroundBrush") ?? Brushes.White;
