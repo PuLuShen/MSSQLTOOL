@@ -321,6 +321,8 @@ namespace MSSQLTool.Results
             private List<string> cachedNames;
             private int lastColumnNameCount = -1;
             private string lastColumnSearchSignature = string.Empty;
+            private List<string> allColumnNames = new List<string>();
+            private bool filteringColumnSearch;
             private DateTime cachedTableUtc = DateTime.MinValue;
 
             internal HoverWindow()
@@ -371,10 +373,10 @@ namespace MSSQLTool.Results
                 // A window shown without activation does not take the keyboard focus on click; ask for it
                 // explicitly, otherwise Delete and the arrow keys go to the SQL editor behind the panel.
                 PreviewMouseDown += (_, __) => { try { Activate(); } catch (Exception) { } };
-                columnSearch.PreviewMouseDown += (_, __) =>
-                {
-                    try { Activate(); columnSearch.Focus(); } catch (Exception) { }
-                };
+                PreviewMouseDown += (_, __) => ForceForeground();
+                columnSearch.PreviewMouseDown += (_, __) => ForceForeground();
+                columnSearch.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,
+                    new System.Windows.Controls.TextChangedEventHandler((_, __) => ApplyColumnFilter()));
                 searchRow.Children.Add(columnSearch);
                 var jump = new Button { Content = LocalizationManager.T("Go"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
                 jump.Click += (_, __) => JumpToColumn();
@@ -575,6 +577,8 @@ namespace MSSQLTool.Results
                     System.Windows.Controls.ComboBox box = columnSearch;
                     string current = box.Text;
                     box.ItemsSource = names;
+                    allColumnNames = names;
+                    ApplyColumnFilter();
                     box.Text = current;
                 }
                 catch (Exception ex)
@@ -582,6 +586,56 @@ namespace MSSQLTool.Results
                     MSSQLToolPackage._logger?.Debug(ex, "Could not fill the column search list.");
                 }
             }
+
+            /// <summary>Narrows the dropdown to the columns that contain what has been typed.</summary>
+            private void ApplyColumnFilter()
+            {
+                if (filteringColumnSearch || allColumnNames == null || allColumnNames.Count == 0) return;
+                try
+                {
+                    filteringColumnSearch = true;
+                    string text = (columnSearch.Text ?? string.Empty).Trim();
+                    List<string> filtered = string.IsNullOrEmpty(text)
+                        ? allColumnNames
+                        : allColumnNames.Where(c => c.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                    if (filtered.Count == 0) filtered = allColumnNames;
+
+                    string keep = columnSearch.Text;
+                    columnSearch.ItemsSource = filtered;
+                    columnSearch.Text = keep;
+                    // caret handling is not available on ComboBox; the text is preserved as typed.
+
+                    if (!columnSearch.IsDropDownOpen) columnSearch.IsDropDownOpen = true;
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not filter the column list.");
+                }
+                finally
+                {
+                    filteringColumnSearch = false;
+                }
+            }
+
+            /// <summary>Forces the panel to the foreground so the keyboard really belongs to it.</summary>
+            private void ForceForeground()
+            {
+                try
+                {
+                    Activate();
+                    IntPtr handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                    if (handle != IntPtr.Zero) SetForegroundWindow(handle);
+                    columnSearch.Focus();
+                    System.Windows.Input.Keyboard.Focus(columnSearch);
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not activate the results statistics panel.");
+                }
+            }
+
+            [System.Runtime.InteropServices.DllImport("user32.dll")]
+            private static extern bool SetForegroundWindow(IntPtr hWnd);
 
             private void LoadColumnSearchHistory()
             {
