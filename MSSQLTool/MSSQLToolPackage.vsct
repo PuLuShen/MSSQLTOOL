@@ -127,6 +127,15 @@
         </Strings>
       </Button>
       
+      <Button guid="guidMSSQLToolPackageCmdSet" id="ResultsPanelButton" priority="0x0311" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Health" />
+        <Strings>
+          <ButtonText>结果集统计面板（开关）</ButtonText>
+          <LocCanonicalName>MSSQLTool.ResultsPanel</LocCanonicalName>
+          <ToolTipText>开启后，在结果集中选中单元格会自动弹出该列的统计小窗；点到结果集以外区域自动关闭。也可在结果网格右键菜单中切换。</ToolTipText>
+        </Strings>
+      </Button>
+
       <!-- Visible by default: DefaultInvisible would hide the entry until code made it visible, which
            left the command unreachable in the Tools menu. -->
       <Button guid="guidMSSQLToolPackageCmdSet" id="ResultsToolsButton" priority="0x0310" type="Button">
@@ -369,6 +378,7 @@
 
       <IDSymbol name="QueryTemplatePickerCommand" value="4156" />
       <IDSymbol name="ResultsToolsButton" value="4158" />
+      <IDSymbol name="ResultsPanelButton" value="4159" />
       <IDSymbol name="SchemaCompareCommand" value="4157" />
 
       <IDSymbol name="ToolsSubMenu" value="0x1200" />

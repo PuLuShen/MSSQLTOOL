@@ -22,15 +22,20 @@ namespace MSSQLTool.Results
         private static DispatcherTimer timer;
         private static bool enabled;
         private static bool attached;
+        private static readonly System.Collections.Generic.HashSet<System.Windows.Forms.Control> hooked =
+            new System.Collections.Generic.HashSet<System.Windows.Forms.Control>();
         private static string lastCellKey = string.Empty;
 
         internal static bool IsEnabled => enabled;
 
-        /// <summary>Adds the toggle to the results grid context menu; safe to call repeatedly.</summary>
+        /// <summary>
+        /// Adds the toggle to the results grid context menu.  SSMS creates that menu lazily, so this is
+        /// called again from every right click; it is idempotent.
+        /// </summary>
         internal static void AttachContextMenu(object sqlResultsControl)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            if (attached || sqlResultsControl == null) return;
+            if (sqlResultsControl == null) return;
 
             try
             {
@@ -66,6 +71,31 @@ namespace MSSQLTool.Results
             catch (Exception ex)
             {
                 MSSQLToolPackage._logger?.Debug(ex, "Could not add the results statistics toggle to the grid menu.");
+            }
+        }
+
+        /// <summary>
+        /// Right clicks are the only moment SSMS has the grid menu at hand, so the toggle is installed
+        /// just before the menu opens instead of once after the query.
+        /// </summary>
+        internal static void HookGrid(object grid)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            var control = grid as System.Windows.Forms.Control;
+            if (control == null || hooked.Contains(control)) return;
+
+            try
+            {
+                control.MouseUp += (sender, e) =>
+                {
+                    if (e.Button != System.Windows.Forms.MouseButtons.Right) return;
+                    try { AttachContextMenu(GridAccess.GetSQLResultsControl()); } catch (Exception) { }
+                };
+                hooked.Add(control);
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not hook the results grid right click.");
             }
         }
 
@@ -121,16 +151,12 @@ namespace MSSQLTool.Results
                     }
 
                     object grid = GridAccess.GetFocusGridControl();
-                    if (grid == null || window.IsKeyboardFocusWithin)
+                    if (grid == null)
                     {
                         // Focus left the results (clicking anywhere else closes the panel), except inside
-                        // the panel itself where the find box lives.
-                        if (!window.IsMouseOver)
-                        {
-                            window.Hide();
-                            enabled = false;
-                            StopTimer();
-                        }
+                        // the panel itself where the find box lives.  The feature stays enabled: the next
+                        // cell selection brings the panel back.
+                        if (!window.IsMouseOver) window.Hide();
                         return;
                     }
 
