@@ -577,15 +577,29 @@ namespace MSSQLTool.Results
                     MethodInfo add = collectionType.GetMethod("Add", new[] { blockType });
                     add?.Invoke(collection, new[] { block });
                     GridAccess.SetPropertyValue(grid, "SelectedCells", collection);
+                    // EnsureCellIsVisible is the grid's own scrolling call; assigning the selection or the
+                    // current cell is ignored, which is why jumping appeared to do nothing.
+                    var focus = grid as WinForms.Control;
+                    if (focus != null) focus.Focus();
 
-                    // SelectedCells does not scroll on its own; the current cell is what the grid brings into view.
-                    object currentCell = GridAccess.GetProperty(grid, "CurrentCell");
-                    if (currentCell != null)
+                    MethodInfo ensure = grid.GetType().GetMethod("EnsureCellIsVisible");
+                    MethodInfo isVisible = grid.GetType().GetMethod("IsCellVisible");
+                    if (ensure != null)
                     {
-                        object cell = Activator.CreateInstance(currentCell.GetType(), 0L, columnIndex);
-                        GridAccess.SetPropertyValue(grid, "CurrentCell", cell);
+                        foreach (int candidate in new[] { columnIndex + 1, columnIndex })
+                        {
+                            try
+                            {
+                                ensure.Invoke(grid, new object[] { 0L, candidate });
+                                bool visible = isVisible == null || (bool)isVisible.Invoke(grid, new object[] { candidate, 0L });
+                                if (visible) break;
+                            }
+                            catch (Exception ex)
+                            {
+                                MSSQLToolPackage._logger?.Debug(ex, "EnsureCellIsVisible failed for column " + candidate + ".");
+                            }
+                        }
                     }
-                    (grid as WinForms.Control)?.Focus();
                 }
                 catch (Exception ex)
                 {
