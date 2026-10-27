@@ -31,6 +31,7 @@ namespace MSSQLTool.Results
         private static string lastSelectionKey = string.Empty;
         private static DateTime shownUtc = DateTime.MinValue;
         private static int missedResultsTicks;
+        private static DateTime hiddenUtc = DateTime.MinValue;
 
         internal static bool IsEnabled => enabled;
 
@@ -215,6 +216,18 @@ namespace MSSQLTool.Results
                     {
                         MSSQLToolPackage._logger?.Info("Results statistics panel kept: a results tab is active again after " + missedResultsTicks + " tick(s).");
                         missedResultsTicks = 0;
+                    }
+
+                    // A results tab is active: bring the panel back even when the selection did not change
+                    // (for example clicking the same cell again), unless the user just closed it.
+                    bool recentlyClosed = (DateTime.UtcNow - hiddenUtc) < TimeSpan.FromSeconds(2);
+                    if (!window.IsVisible && !recentlyClosed)
+                    {
+                        window.PlaceNextToResults();
+                        window.Show();
+                        shownUtc = DateTime.UtcNow;
+                        missedResultsTicks = 0;
+                        MSSQLToolPackage._logger?.Info("Results statistics panel shown because a results tab is active.");
                     }
 
                     string key = window.RefreshFromSelection();
