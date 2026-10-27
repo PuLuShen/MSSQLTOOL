@@ -363,6 +363,22 @@ namespace MSSQLTool.Results
                 close.Click += (_, __) => Hide();
                 searchRow.Children.Add(close);
                 root.Children.Add(searchRow);
+
+                var freezeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+                freezeRow.Children.Add(new TextBlock
+                {
+                    Text = LocalizationManager.T("Freeze first N columns:"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 6, 0)
+                });
+                freezeRow.Children.Add(freezeCount);
+                var freezeButton = new Button { Content = LocalizationManager.T("Freeze"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+                freezeButton.Click += (_, __) => FreezeColumns();
+                freezeRow.Children.Add(freezeButton);
+                var unfreezeButton = new Button { Content = LocalizationManager.T("Unfreeze"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+                unfreezeButton.Click += (_, __) => { freezeCount.Text = "0"; FreezeColumns(); };
+                freezeRow.Children.Add(unfreezeButton);
+                root.Children.Add(freezeRow);
                 root.Children.Add(columnStatus);
 
                 Content = root;
@@ -580,6 +596,7 @@ namespace MSSQLTool.Results
                     // EnsureCellIsVisible is the grid's own scrolling call; assigning the selection or the
                     // current cell is ignored, which is why jumping appeared to do nothing.
                     var focus = grid as WinForms.Control;
+                    try { grid.GetType().GetMethod("Select")?.Invoke(grid, null); } catch (Exception) { }
                     if (focus != null) focus.Focus();
 
                     MethodInfo ensure = grid.GetType().GetMethod("EnsureCellIsVisible");
