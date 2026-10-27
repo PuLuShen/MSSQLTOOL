@@ -30,6 +30,7 @@ namespace MSSQLTool.Results
         private static readonly HashSet<WinForms.Control> hooked = new HashSet<WinForms.Control>();
         private static string lastSelectionKey = string.Empty;
         private static DateTime shownUtc = DateTime.MinValue;
+        private static int missedResultsTicks;
 
         internal static bool IsEnabled => enabled;
 
@@ -129,6 +130,8 @@ namespace MSSQLTool.Results
             window.PlaceNextToResults();
             window.Show();
             shownUtc = DateTime.UtcNow;
+            missedResultsTicks = 0;
+            MSSQLToolPackage._logger?.Info("Results statistics panel shown (position " + Math.Round(window.Left) + "," + Math.Round(window.Top) + ").");
             StartTimer();
         }
 
@@ -158,11 +161,23 @@ namespace MSSQLTool.Results
                     if (results == null && grid == null)
                     {
                         // A results tab is not the active document any more: the user clicked outside the
-                        // results.  The grace period keeps the panel from vanishing on the tick that showed
-                        // it, and the panel itself never counts as outside.
+                        // results.  Three consecutive ticks are required because the shell reports no
+                        // results control for a moment while a tab is switching, which used to hide the
+                        // panel right after showing it.
                         bool graceOver = (DateTime.UtcNow - shownUtc) > TimeSpan.FromMilliseconds(1200);
-                        if (graceOver && !window.IsMouseOver && !window.IsKeyboardFocusWithin) window.Hide();
+                        missedResultsTicks++;
+                        if (graceOver && missedResultsTicks >= 3 && !window.IsMouseOver && !window.IsKeyboardFocusWithin)
+                        {
+                            MSSQLToolPackage._logger?.Info("Results statistics panel hidden: no active results tab for 3 ticks, pointer outside the panel.");
+                            window.Hide();
+                        }
                         return;
+                    }
+
+                    if (missedResultsTicks > 0)
+                    {
+                        MSSQLToolPackage._logger?.Info("Results statistics panel kept: a results tab is active again after " + missedResultsTicks + " tick(s).");
+                        missedResultsTicks = 0;
                     }
 
                     string key = window.RefreshFromSelection();
@@ -219,6 +234,8 @@ namespace MSSQLTool.Results
 
             private readonly Dictionary<string, TextBlock> values = new Dictionary<string, TextBlock>(StringComparer.Ordinal);
             private DataTable table;
+            private DataTable cachedTable;
+            private DateTime cachedTableUtc = DateTime.MinValue;
 
             internal HoverWindow()
             {
@@ -310,8 +327,16 @@ namespace MSSQLTool.Results
                 ThreadHelper.ThrowIfNotOnUIThread();
                 try
                 {
-                    List<DataTable> tables = GridAccess.GetDataTables();
-                    DataTable current = tables?.FirstOrDefault(t => t != null && t.Columns.Count > 0);
+                    // Reading every result set as a DataTable costs milliseconds and used to run four times a
+                    // second; a short cache keeps the panel responsive without freezing the grid.
+                    if (cachedTable == null || (DateTime.UtcNow - cachedTableUtc) > TimeSpan.FromSeconds(1.5))
+                    {
+                        List<DataTable> tables = GridAccess.GetDataTables();
+                        cachedTable = tables?.FirstOrDefault(t => t != null && t.Columns.Count > 0);
+                        cachedTableUtc = DateTime.UtcNow;
+                    }
+
+                    DataTable current = cachedTable;
                     if (current == null)
                     {
                         selectionText.Text = LocalizationManager.T("No result set is available. Run a query first.");
