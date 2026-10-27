@@ -189,8 +189,9 @@ namespace MSSQLTool.Results
 
                 table = current;
 
-                object grid = GridAccess.GetFocusGridControl();
+                object grid = cachedGrid;
                 if (grid == null) grid = FindGrid(SafeResultsControl());
+                if (grid == null) grid = TryGetFocusGrid();
                 if (grid == null) grid = cachedGrid;
                 if (grid != null) cachedGrid = grid;
 
@@ -268,7 +269,7 @@ namespace MSSQLTool.Results
             }
             catch (Exception ex)
             {
-                MSSQLToolPackage._logger?.Error(ex, "The results statistics window could not read the result set.");
+                MSSQLToolPackage._logger?.Debug(ex, "The results statistics window could not read the result set.");
             }
         }
 
@@ -381,7 +382,7 @@ namespace MSSQLTool.Results
                     return;
                 }
 
-                object grid = GridAccess.GetFocusGridControl() ?? FindGrid(SafeResultsControl()) ?? cachedGrid;
+                object grid = cachedGrid ?? FindGrid(SafeResultsControl()) ?? TryGetFocusGrid();
                 List<string> names = ReadColumnNames(grid);
                 int target = MatchColumn(names.Count > 0 ? names : allColumns, needle);
                 if (target < 0 || grid == null)
@@ -517,7 +518,7 @@ namespace MSSQLTool.Results
             ThreadHelper.ThrowIfNotOnUIThread();
             try
             {
-                object grid = GridAccess.GetFocusGridControl() ?? FindGrid(SafeResultsControl()) ?? cachedGrid;
+                object grid = cachedGrid ?? FindGrid(SafeResultsControl()) ?? TryGetFocusGrid();
                 if (grid == null) return;
 
                 int count = 0;
@@ -531,6 +532,24 @@ namespace MSSQLTool.Results
             catch (Exception ex)
             {
                 MSSQLToolPackage._logger?.Error(ex, "Could not freeze the result columns.");
+            }
+        }
+
+        /// <summary>
+        /// Focused grid, or null.  GridAccess.GetFocusGridControl() throws InvalidCastException whenever the
+        /// focused window is not a grid (our own tool window, for instance), and that exception used to abort
+        /// the whole refresh.
+        /// </summary>
+        private static object TryGetFocusGrid()
+        {
+            try
+            {
+                object grid = GridAccess.GetFocusGridControl();
+                return grid is WinForms.Control ? grid : null;
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 
@@ -550,7 +569,7 @@ namespace MSSQLTool.Results
                         if (grid is WinForms.Control) return grid;
                     }
 
-                object focused = GridAccess.GetFocusGridControl();
+                object focused = TryGetFocusGrid();
                 return focused is WinForms.Control ? focused : null;
             }
             catch (Exception)
