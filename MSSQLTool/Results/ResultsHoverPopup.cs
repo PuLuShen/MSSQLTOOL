@@ -361,9 +361,13 @@ namespace MSSQLTool.Results
                 var jump = new Button { Content = LocalizationManager.T("Go"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
                 jump.Click += (_, __) => JumpToColumn();
                 searchRow.Children.Add(jump);
-                var close = new Button { Content = LocalizationManager.T("Close"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
-                close.Click += (_, __) => Hide();
-                searchRow.Children.Add(close);
+                root.Children.Add(new Border
+                {
+                    Height = 1,
+                    Margin = new Thickness(0, 10, 0, 2),
+                    Background = (Brush)Application.Current?.TryFindResource("ToolThemeSubtleBorderBrush") ?? Brushes.LightGray
+                });
+
                 root.Children.Add(searchRow);
 
                 var freezeRow = new WrapPanel { Margin = new Thickness(0, 8, 0, 0), Orientation = Orientation.Horizontal };
@@ -631,6 +635,17 @@ namespace MSSQLTool.Results
                     }
 
                     if (current != columnIndex)
+                    // A key can arrive after the last read; settle and converge once more.
+                    for (int settle = 0; settle < 5; settle++)
+                    {
+                        System.Threading.Thread.Sleep(30);
+                        WinForms.Application.DoEvents();
+                        int settled = CurrentColumn(grid);
+                        if (settled < 0 || settled == columnIndex) { current = settled < 0 ? current : settled; break; }
+                        WinForms.SendKeys.SendWait(settled < columnIndex ? "{RIGHT}" : "{LEFT}");
+                        current = settled;
+                    }
+
                         MSSQLToolPackage._logger?.Info("Column jump ended on " + current + " instead of " + columnIndex + ".");
                 }
                 catch (Exception ex)
