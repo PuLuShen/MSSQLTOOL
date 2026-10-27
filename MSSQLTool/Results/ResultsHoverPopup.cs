@@ -664,11 +664,10 @@ namespace MSSQLTool.Results
 
             private static long ToLong(object value, long fallback)
                 => value != null && long.TryParse(value.ToString(), out long number) ? number : fallback;
-
             /// <summary>
-            /// Column headers of the grid.  GridColumnInfo carries no text at all; the grid renders the
-            /// headers from its own table and exposes them through GetGridHeaderAccessibleName(index),
-            /// which is also what a screen reader uses, so it is the reliable source here.
+            /// Column names of the result set.  The grid's rendered header strings are not always available,
+            /// but its GridStorage keeps the schema table of the result set - the same table the scripting
+            /// code already reads - and that one carries the real column names.
             /// </summary>
             private static List<string> ReadGridColumnNames(object grid)
             {
@@ -677,33 +676,31 @@ namespace MSSQLTool.Results
 
                 try
                 {
-                    MethodInfo header = grid.GetType().GetMethod("GetGridHeaderAccessibleName");
-                    int count = 0;
-                    object columnsNumber = GridAccess.GetProperty(grid, "ColumnsNumber");
-                    if (columnsNumber != null) int.TryParse(columnsNumber.ToString(), out count);
-                    if (count <= 0) count = 64;
-
-                    for (int i = 0; i < count; i++)
+                    object storage = GridAccess.GetProperty(grid, "GridStorage")
+                        ?? GridAccess.GetNonPublicField(grid, "m_gridStorage");
+                    var schema = storage == null ? null : GridAccess.GetNonPublicField(storage, "m_schemaTable") as DataTable;
+                    if (schema != null)
                     {
-                        string text = null;
-                        if (header != null)
+                        int nameIndex = schema.Columns.Contains("ColumnName") ? schema.Columns["ColumnName"].Ordinal
+                            : schema.Columns.Contains("Column") ? schema.Columns["Column"].Ordinal : -1;
+                        if (nameIndex >= 0)
                         {
-                            object value = header.Invoke(grid, new object[] { i });
-                            text = value == null ? null : value.ToString();
+                            foreach (DataRow row in schema.Rows)
+                            {
+                                object value = row[nameIndex];
+                                names.Add(value == null || value == DBNull.Value ? string.Empty : value.ToString());
+                            }
                         }
-
-                        if (string.IsNullOrWhiteSpace(text)) break;
-                        names.Add(text);
                     }
                 }
                 catch (Exception ex)
                 {
-                    MSSQLToolPackage._logger?.Debug(ex, "Could not read the grid column headers.");
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not read the result set schema table.");
                 }
 
+                MSSQLToolPackage._logger?.Info("Results statistics panel: " + names.Count + " column name(s) from the result schema.");
                 return names;
             }
-
             /// <summary>
             /// Puts the panel to the right of the results grid (or restores the last position), so it never
             /// covers the rows the user is reading.
