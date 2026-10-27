@@ -392,6 +392,43 @@ namespace MSSQLTool.Results
 
                 // The keystrokes must reach the results grid, not this tool window: give the focus
                 // back to the grid (and its host window) before sending anything.
+                // The grid keeps its own ScrollManager; EnsureColumnIsVisible is the routine its UI uses,
+                // so this scrolls for real instead of pretending to press arrow keys.
+                bool scrolled = false;
+                try
+                {
+                    object scrollManager = GridAccess.GetNonPublicField(grid, "m_scrollMgr");
+                    MethodInfo ensureColumn = scrollManager?.GetType().GetMethod("EnsureColumnIsVisible");
+                    if (ensureColumn != null)
+                    {
+                        foreach (int candidate in new[] { target + 1, target })
+                        {
+                            try
+                            {
+                                ensureColumn.Invoke(scrollManager, new object[] { candidate, true, true });
+                                scrolled = true;
+                                break;
+                            }
+                            catch (Exception ex)
+                            {
+                                MSSQLToolPackage._logger?.Debug(ex, "EnsureColumnIsVisible failed for " + candidate + ".");
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not reach the grid scroll manager.");
+                }
+
+                if (scrolled)
+                {
+                    RememberSearch(needle);
+                    status.Text = LocalizationManager.Format("Selected column '{0}'.", names.Count > 0 && target < names.Count ? names[target] : needle);
+                    Refresh();
+                    return;
+                }
+
                 var focus = grid as WinForms.Control;
                 if (focus == null)
                 {
