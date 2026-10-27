@@ -121,10 +121,11 @@ namespace MSSQLTool.Results
             if (window == null)
             {
                 window = new HoverWindow();
-                window.Closed += (_, __) => window = null;
+                window.Closed += (_, __) => { window.RememberPosition(); window = null; };
             }
 
             window.RefreshFromSelection();
+            window.PlaceNextToResults();
             window.Show();
             if (!window.IsMouseOver) window.Activate();
             StartTimer();
@@ -379,26 +380,53 @@ namespace MSSQLTool.Results
                         return;
                     }
 
-                    int index = -1;
+                    object grid = GridAccess.GetFocusGridControl();
+                    int storedIndex = -1;
                     string matched = null;
-                    for (int i = 0; i < table.Columns.Count; i++)
+
+                    // The grid knows its columns even when the DataTable we fetched belongs to another
+                    // result set, so the authoritative list comes from GridColumnsInfo.
+                    List<string> names = ReadGridColumnNames(grid);
+                    for (int i = 0; i < names.Count; i++)
                     {
-                        string name = table.Columns[i].ColumnName;
-                        if (name.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                        index = i;
-                        matched = name;
+                        if (names[i] == null || names[i].IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        storedIndex = i;
+                        matched = names[i];
                         break;
                     }
 
-                    object grid = GridAccess.GetFocusGridControl();
-                    if (index < 0 || grid == null)
+                    if (storedIndex < 0 && table != null)
+                    {
+                        for (int i = 0; i < table.Columns.Count; i++)
+                        {
+                            if (table.Columns[i].ColumnName.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                            storedIndex = i;
+                            matched = table.Columns[i].ColumnName;
+                            break;
+                        }
+                    }
+
+                    if (storedIndex < 0 || grid == null)
                     {
                         columnStatus.Text = LocalizationManager.Format("No column matches '{0}'.", needle);
                         return;
                     }
 
-                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", index);
-                    columnStatus.Text = LocalizationManager.Format("Scrolled to column '{0}' (position {1}).", matched, index + 1);
+                    // FirstScrollableColumn is a UI index; convert from the storage index when possible.
+                    int uiIndex = storedIndex;
+                    try
+                    {
+                        MethodInfo map = grid.GetType().GetMethod("GetUIColumnIndexByStorageIndex");
+                        object mapped = map?.Invoke(grid, new object[] { storedIndex });
+                        if (mapped != null && int.TryParse(mapped.ToString(), out int converted) && converted >= 0) uiIndex = converted;
+                    }
+                    catch (Exception ex)
+                    {
+                        MSSQLToolPackage._logger?.Debug(ex, "Could not map the column index.");
+                    }
+
+                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", uiIndex);
+                    columnStatus.Text = LocalizationManager.Format("Scrolled to column '{0}'.", matched);
                 }
                 catch (Exception ex)
                 {
@@ -480,6 +508,108 @@ namespace MSSQLTool.Results
 
             private static long ToLong(object value, long fallback)
                 => value != null && long.TryParse(value.ToString(), out long number) ? number : fallback;
+
+            /// <summary>Column headers straight from the grid (authoritative, whatever the DataTable says).</summary>
+            private static List<string> ReadGridColumnNames(object grid)
+            {
+                var names = new List<string>();
+                if (grid == null) return names;
+
+                try
+                {
+                    object infos = GridAccess.GetProperty(grid, "GridColumnsInfo");
+                    var enumerable = infos as IEnumerable;
+                    if (enumerable == null) return names;
+
+                    foreach (object info in enumerable)
+                    {
+                        if (info == null) continue;
+                        object header = GridAccess.GetProperty(info, "HeaderText") ?? GridAccess.GetProperty(info, "Text")
+                            ?? GridAccess.GetProperty(info, "ColumnName");
+                        names.Add(header == null ? string.Empty : header.ToString());
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not read the grid column headers.");
+                }
+
+                return names;
+            }
+
+            /// <summary>
+            /// Puts the panel to the right of the results grid (or restores the last position), so it never
+            /// covers the rows the user is reading.
+            /// </summary>
+            internal void PlaceNextToResults()
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                try
+                {
+                    string saved = SettingsManager.GetSqlCompletionSettings()?.resultsPanelPosition;
+                    double left, top;
+                    if (TryParse(saved, out left, out top) && IsOnScreen(left, top))
+                    {
+                        Left = left;
+                        Top = top;
+                        return;
+                    }
+
+                    var control = GridAccess.GetFocusGridControl() as WinForms.Control;
+                    if (control == null) return;
+
+                    var screen = WinForms.Screen.FromControl(control);
+                    System.Drawing.Point origin = control.PointToScreen(System.Drawing.Point.Empty);
+                    double candidateLeft = origin.X + control.Width + 12;
+                    double candidateTop = origin.Y + 60;
+                    if (candidateLeft + ActualWidth > screen.WorkingArea.Right)
+                        candidateLeft = Math.Max(screen.WorkingArea.Left, origin.X - Width - 12);
+
+                    Left = candidateLeft;
+                    Top = Math.Min(candidateTop, screen.WorkingArea.Bottom - Height - 12);
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not place the results statistics panel.");
+                }
+            }
+
+            /// <summary>Remembers the position when the user moves or closes the panel.</summary>
+            internal void RememberPosition()
+            {
+                try
+                {
+                    var settings = SettingsManager.GetSqlCompletionSettings();
+                    if (settings == null) return;
+                    settings.resultsPanelPosition = Math.Round(Left) + "," + Math.Round(Top);
+                    SettingsManager.SaveSqlCompletionSettings(settings);
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not remember the results statistics panel position.");
+                }
+            }
+
+            private static bool TryParse(string text, out double left, out double top)
+            {
+                left = top = 0;
+                if (string.IsNullOrWhiteSpace(text)) return false;
+                string[] parts = text.Split(',');
+                return parts.Length == 2
+                    && double.TryParse(parts[0], NumberStyles.Any, CultureInfo.InvariantCulture, out left)
+                    && double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out top);
+            }
+
+            private static bool IsOnScreen(double left, double top)
+            {
+                foreach (WinForms.Screen screen in WinForms.Screen.AllScreens)
+                {
+                    if (left >= screen.WorkingArea.Left - 50 && left <= screen.WorkingArea.Right - 50
+                        && top >= screen.WorkingArea.Top - 50 && top <= screen.WorkingArea.Bottom - 50) return true;
+                }
+
+                return false;
+            }
 
             private static string Format(decimal value, int count)
                 => count == 0 ? "-" : value.ToString("#,0.####", CultureInfo.CurrentCulture);

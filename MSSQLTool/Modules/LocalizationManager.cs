@@ -249,7 +249,7 @@ namespace MSSQLTool
             ["Go"] = "跳转",
             ["Type part of a column name."] = "请输入列名的一部分。",
             ["No column matches '{0}'."] = "没有匹配「{0}」的列。",
-            ["Scrolled to column '{0}' (position {1})."] = "已跳转到列「{0}」（第 {1} 列）。",
+            ["Scrolled to column '{0}'."] = "已跳转到列「{0}」。",
             ["Count:"] = "数量：",
             ["Sum:"] = "合计：",
             ["Average:"] = "平均：",

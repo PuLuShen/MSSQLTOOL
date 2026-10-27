@@ -434,6 +434,8 @@ ORDER BY sd.[name];
             public string joinColumnRules = string.Empty;
             /// <summary>Servers this extension has connected to, so the quick-search picker can offer them again while they are offline.</summary>
             public string knownServers = string.Empty;
+            /// <summary>Last screen position of the result statistics panel ("left,top").</summary>
+            public string resultsPanelPosition = string.Empty;
             public int delayMilliseconds = 120;
             public int maximumItems = 200;
         }
