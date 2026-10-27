@@ -64,6 +64,8 @@ namespace MSSQLTool.Results
                     if (e.Button == WinForms.MouseButtons.Left) Enable();
                 };
                 hooked.Add(control);
+                enabled = true;
+                StartTimer();
             }
             catch (Exception ex)
             {
@@ -148,7 +150,8 @@ namespace MSSQLTool.Results
         private static void Hide()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            StopTimer();
+            // The poll keeps running: it is what notices the next click in the results and shows the panel
+            // again, so closing it once must not mean "open it from the menu from now on".
             window?.Hide();
         }
 
@@ -196,6 +199,9 @@ namespace MSSQLTool.Results
                         lastSelectionKey = key;
                         if (!window.IsVisible)
                         {
+                            // A click in the results changed the selection: bring the panel back without
+                            // asking the user to find the menu entry again.
+                            window.PlaceNextToResults();
                             window.Show();
                             shownUtc = DateTime.UtcNow;
                             missedResultsTicks = 0;
@@ -266,7 +272,8 @@ namespace MSSQLTool.Results
                 ShowActivated = false;
                 Focusable = false;
                 WindowStyle = WindowStyle.ToolWindow;
-                WindowStartupLocation = WindowStartupLocation.CenterScreen;
+                // Manual: CenterScreen would ignore the position computed from the results grid.
+                WindowStartupLocation = WindowStartupLocation.Manual;
                 Background = (Brush)Application.Current?.TryFindResource("ToolThemeBackgroundBrush") ?? Brushes.White;
 
                 var root = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
@@ -390,9 +397,12 @@ namespace MSSQLTool.Results
                     ResultSetStatistics.NumericSummary summary = ResultSetStatistics.SummarizeNumbers(numbers);
                     int cellCount = (rowTo - rowFrom + 1) * (columnTo - columnFrom + 1);
 
+                    string columnNames = string.Join(", ", Enumerable.Range(columnFrom, columnTo - columnFrom + 1)
+                        .Select(i => current.Columns[i].ColumnName));
                     selectionText.Text = gotSelection
                         ? LocalizationManager.Format("Selection: rows {0}-{1}, columns {2}-{3}   ({4} cells)",
                             rowFrom + 1, rowTo + 1, columnFrom + 1, columnTo + 1, cellCount)
+                          + Environment.NewLine + LocalizationManager.Format("Column(s): {0}", columnNames)
                         : LocalizationManager.T("Nothing is selected - select cells in the result grid.");
 
                     values["Count"].Text = summary.Count.ToString(CultureInfo.CurrentCulture);
@@ -615,7 +625,20 @@ namespace MSSQLTool.Results
                     }
 
                     var control = GridAccess.GetFocusGridControl() as WinForms.Control;
-                    if (control == null) return;
+                    if (control == null)
+                    {
+                        // The focus grid is often unavailable; the results control covers the whole results
+                        // area and is a good enough anchor for "to the right of the results".
+                        try { control = GridAccess.GetSQLResultsControl() as WinForms.Control; } catch (Exception) { control = null; }
+                    }
+
+                    if (control == null || control.Width == 0)
+                    {
+                        WinForms.Screen active = WinForms.Screen.FromPoint(WinForms.Cursor.Position);
+                        Left = active.WorkingArea.Right - Width - 24;
+                        Top = active.WorkingArea.Top + 80;
+                        return;
+                    }
 
                     var screen = WinForms.Screen.FromControl(control);
                     System.Drawing.Point origin = control.PointToScreen(System.Drawing.Point.Empty);

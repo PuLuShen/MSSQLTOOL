@@ -246,6 +246,7 @@ namespace MSSQLTool
             ["Every server currently connected in Object Explorer. Pick one to search it."] = "这里列出对象资源管理器中已连接的所有服务器，挑一个即可搜索。",
             ["Recent searches"] = "最近的搜索",
             ["Find column:"] = "查找列：",
+            ["Column(s): {0}"] = "统计列：{0}",
             ["Go"] = "跳转",
             ["Type part of a column name."] = "请输入列名的一部分。",
             ["No column matches '{0}'."] = "没有匹配「{0}」的列。",
