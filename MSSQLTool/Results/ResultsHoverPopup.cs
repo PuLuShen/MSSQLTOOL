@@ -320,6 +320,7 @@ namespace MSSQLTool.Results
             private DataTable cachedTable;
             private List<string> cachedNames;
             private int lastColumnNameCount = -1;
+            private string lastColumnSearchSignature = string.Empty;
             private DateTime cachedTableUtc = DateTime.MinValue;
 
             internal HoverWindow()
@@ -367,6 +368,13 @@ namespace MSSQLTool.Results
                                 columnSearch.Loaded += (_, __) => LoadColumnSearchHistory();
                 // Editable combo boxes do not open their list while typing unless asked to.
                 columnSearch.PreviewTextInput += (_, __) => { if (!columnSearch.IsDropDownOpen) columnSearch.IsDropDownOpen = true; };
+                // A window shown without activation does not take the keyboard focus on click; ask for it
+                // explicitly, otherwise Delete and the arrow keys go to the SQL editor behind the panel.
+                PreviewMouseDown += (_, __) => { try { Activate(); } catch (Exception) { } };
+                columnSearch.PreviewMouseDown += (_, __) =>
+                {
+                    try { Activate(); columnSearch.Focus(); } catch (Exception) { }
+                };
                 searchRow.Children.Add(columnSearch);
                 var jump = new Button { Content = LocalizationManager.T("Go"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
                 jump.Click += (_, __) => JumpToColumn();
@@ -492,6 +500,9 @@ namespace MSSQLTool.Results
                     int cellCount = (rowTo - rowFrom + 1) * (columnTo - columnFrom + 1);
 
                     List<string> gridHeaders = ReadGridColumnNames(grid);
+
+                    // Fill the search list here: this is the one place where the header names are known.
+                    UpdateColumnSearchItems(gridHeaders);
                     string columnNames = string.Join(", ", Enumerable.Range(columnFrom, columnTo - columnFrom + 1)
                         .Select(i =>
                         {
@@ -540,6 +551,38 @@ namespace MSSQLTool.Results
             /// Fills the column box: the names searched before first, then every column of the current
             /// result set, so the list is never empty and typing narrows it down.
             /// </summary>
+            /// <summary>Column names of the result set, with the search history first; only rebuilds on change.</summary>
+            private void UpdateColumnSearchItems(List<string> gridHeaders)
+            {
+                try
+                {
+                    var names = new List<string>();
+                    string saved = SettingsManager.GetSqlCompletionSettings()?.resultsPanelColumnSearch;
+                    if (!string.IsNullOrWhiteSpace(saved))
+                        names.AddRange(saved.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(h => h.Trim()).Where(h => h.Length > 0));
+
+                    if (gridHeaders != null)
+                        foreach (string header in gridHeaders)
+                            if (!string.IsNullOrWhiteSpace(header) && !names.Contains(header, StringComparer.OrdinalIgnoreCase))
+                                names.Add(header);
+
+                    if (names.Count == 0) return;
+                    string signature = string.Join("|", names);
+                    if (string.Equals(signature, lastColumnSearchSignature, StringComparison.Ordinal)) return;
+
+                    lastColumnSearchSignature = signature;
+                    System.Windows.Controls.ComboBox box = columnSearch;
+                    string current = box.Text;
+                    box.ItemsSource = names;
+                    box.Text = current;
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not fill the column search list.");
+                }
+            }
+
             private void LoadColumnSearchHistory()
             {
                 try
