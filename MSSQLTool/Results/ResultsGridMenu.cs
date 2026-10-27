@@ -78,6 +78,18 @@ namespace MSSQLTool.Results
                     try { InstallMenu(grid); } catch (Exception ex) { Log(ex); }
                 };
 
+                // SSMS creates (and may replace) its menu at right-click time, so the strip is null here and
+                // becomes the native menu only later. Hooking the change events is the reliable way to add
+                // our item to whatever menu the grid ends up showing.
+                control.ContextMenuStripChanged += (_, __) =>
+                {
+                    try { InstallMenu(grid); } catch (Exception ex) { Log(ex); }
+                };
+                control.ContextMenuChanged += (_, __) =>
+                {
+                    try { InstallMenu(grid); } catch (Exception ex) { Log(ex); }
+                };
+
                 // SSMS may build its menu only when it is first shown; try again shortly after the click.
                 control.MouseDown += (_, e) =>
                 {
@@ -109,7 +121,32 @@ namespace MSSQLTool.Results
             // assigning a new one hid every native item.  When SSMS has not created its menu yet the native
             // menu is still shown on right click, so this is retried on the next click.
             var menu = control.ContextMenuStrip;
-            if (menu == null) return;
+            if (menu == null)
+            {
+                // Legacy API path: some builds expose ContextMenu instead of ContextMenuStrip.
+                ContextMenu legacy = control.ContextMenu;
+                if (legacy == null) return;
+
+                foreach (MenuItem existing in legacy.MenuItems)
+                    if (existing.Text == LocalizationManager.T("Jump to column")) legacy.MenuItems.Remove(existing);
+
+                List<string> legacyColumns = ReadColumnNames(grid);
+                if (legacyColumns.Count == 0) return;
+
+                var legacyRoot = new MenuItem(LocalizationManager.T("Jump to column"));
+                for (int i = 0; i < legacyColumns.Count; i++)
+                {
+                    string legacyName = legacyColumns[i];
+                    if (string.IsNullOrWhiteSpace(legacyName)) legacyName = "(column " + (i + 1) + ")";
+                    int legacyIndex = i;
+                    var legacyEntry = new MenuItem(legacyName);
+                    legacyEntry.Click += (_, __) => Jump(grid, legacyIndex);
+                    legacyRoot.MenuItems.Add(legacyEntry);
+                }
+
+                legacy.MenuItems.Add(0, legacyRoot);
+                return;
+            }
 
             foreach (ToolStripItem existing in menu.Items)
                 if (existing is ToolStripMenuItem item && item.Name == "MSSQLToolJumpToColumn")
