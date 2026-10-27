@@ -70,15 +70,27 @@ https://github.com/PuLuShen/MSSQLTOOL/wiki
 ### SQL editing
 
 - **Smart SQL completion:** Context-aware suggestions for databases, schemas, tables, views, columns, procedures, functions, parameters, synonyms, and linked-server objects.
-- **Completion metadata cache:** Background loading, manual clear/refresh, loading status feedback, and optional SQL Server certificate trust.
+- **Completion that follows your aliases:** `c.` lists only that table's columns and inserts the bare column, so the alias you typed stays in front of it.
+- **UPDATE support:** `UPDATE t SET` suggests the writable columns of the target, including when the target is an alias declared further down in the `FROM` clause.
+- **Data types and hints:** `INT`, `NVARCHAR(50)`, `DATETIME2` and the usual `WITH (NOLOCK)` / `OPTION (RECOMPILE)` forms are offered where they belong.
+- **Function help in the popup:** 36+ built-in functions show their signature, a one-line explanation and a copy-ready example.
+- **Extensible keywords:** the built-in keyword list can be extended from Settings → SQL completion (one custom keyword per line).
+- **Completion metadata cache:** Background loading with step-by-step progress, manual clear/refresh, and optional SQL Server certificate trust.
 - **F12 Go to Definition:** Opens database object definitions and navigates to local SQL definitions.
-- **T-SQL formatting**
-- **Query templates and snippets**
+- **T-SQL formatting** (kept for existing habits; SSMS 22 formats natively - see *Formatting* below)
+- **Query templates:** inline editing with Ctrl+S, favourites, **tags** (`-- tags: 报表, 日结`) with tag search (`#tag`), and a **Recent 10** list at the top of the picker.
+- **Snippets**
 - **Expand `SELECT *` to a column list**
 - **Select current statement**
 - **Toggle block comments**
-- **Quick Search**
+- **Quick Search:** multi-database object search with a target adopted from Object Explorer, tags-free filters, scripting and open-in-new-query.
 - **Script object definition**
+
+### Result set tools
+
+- **Statistics panel (floating):** opens on its own when you click in the results and closes when you click outside. Select cells and it reports **count, sum, average, min, max and distinct** for that selection, plus the real column name; it is resizable, remembers its size and position, and can **freeze the first N columns**.
+- **Column search:** type part of a column name and the results scroll to it (`DDZ` never resolves to `DDZT`).
+- **Result set tools window:** the same search plus per-column statistics in a docked dialog (Tools → *结果集搜索与统计*), with copy-to-clipboard output.
 
 ### Result processing and data transfer
 
