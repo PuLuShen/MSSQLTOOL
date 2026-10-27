@@ -430,6 +430,24 @@ namespace MSSQLTool.Results
                     return;
                 }
 
+                // This build ignores every programmatic scroll and swallows the keys, but it does honour
+                // FirstScrollableColumn: the target column becomes the first one that scrolls, which
+                // brings it into view (the columns before it stay pinned). That is the only mechanism
+                // that visibly moves the grid here, so it is used when the scroll manager did nothing.
+                try
+                {
+                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", target);
+                    RememberSearch(needle);
+                    status.Text = LocalizationManager.Format("Column {0} is pinned at the left ({1} column(s) fixed). Use Unfreeze to release it.",
+                        target + 1, target);
+                    Refresh();
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not pin the column into view.");
+                }
+
                 var focus = grid as WinForms.Control;
                 if (focus == null)
                 {

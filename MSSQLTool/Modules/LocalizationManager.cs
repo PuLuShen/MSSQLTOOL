@@ -248,6 +248,7 @@ namespace MSSQLTool
             ["Find column:"] = "查找列：",
             ["Freeze first N columns:"] = "固定前 N 列：",
             ["The result grid is not available right now."] = "当前无法访问结果网格。",
+            ["Column {0} is pinned at the left ({1} column(s) fixed). Use Unfreeze to release it."] = "已把第 {0} 列固定到可见位置（左侧 {1} 列被固定），点「取消固定」可恢复。",
             ["Date/time selection: {0} value(s), earliest {1}, latest {2}."] = "日期时间选��：{0} 个值，最早 {1}，最晚 {2}。",
             ["The result grid did not accept the key presses. Click a cell and try again."] = "结果网格没有接受按键，请先点一下某个单元格再试。",
             ["Freeze"] = "固定",
