@@ -51,6 +51,8 @@ namespace MSSQLTool.Results
         private string lastColumnSignature = string.Empty;
         private bool filtering;
         private DataTable table;
+        private DataTable cachedTable;
+        private object cachedGrid;
         private System.Windows.Threading.DispatcherTimer timer;
 
         public ResultsStatsControl()
@@ -173,6 +175,10 @@ namespace MSSQLTool.Results
             {
                 List<DataTable> tables = GridAccess.GetDataTables();
                 DataTable current = tables?.FirstOrDefault(t => t != null && t.Columns.Count > 0);
+                // Tool windows take the focus away from the results grid, and the grid reader then
+                // returns nothing; keep the last good table so the panel keeps working.
+                if (current == null) current = cachedTable;
+                else cachedTable = current;
                 if (current == null)
                 {
                     selectionText.Text = LocalizationManager.T("No result set is available. Run a query first.");
@@ -183,8 +189,10 @@ namespace MSSQLTool.Results
 
                 table = current;
 
-                object grid = GridAccess.GetFocusGridControl()
-                    ?? FindGrid(SafeResultsControl());
+                object grid = GridAccess.GetFocusGridControl();
+                if (grid == null) grid = FindGrid(SafeResultsControl());
+                if (grid == null) grid = cachedGrid;
+                if (grid != null) cachedGrid = grid;
 
                 int startRow = 0, startColumn = 0, endRow = current.Rows.Count - 1, endColumn = 0;
                 bool gotSelection = ReadSelection(grid, ref startRow, ref startColumn, ref endRow, ref endColumn);
@@ -345,7 +353,7 @@ namespace MSSQLTool.Results
                     return;
                 }
 
-                object grid = GridAccess.GetFocusGridControl() ?? FindGrid(SafeResultsControl());
+                object grid = GridAccess.GetFocusGridControl() ?? FindGrid(SafeResultsControl()) ?? cachedGrid;
                 List<string> names = ReadColumnNames(grid);
                 int target = MatchColumn(names.Count > 0 ? names : allColumns, needle);
                 if (target < 0 || grid == null)
@@ -431,7 +439,7 @@ namespace MSSQLTool.Results
             ThreadHelper.ThrowIfNotOnUIThread();
             try
             {
-                object grid = GridAccess.GetFocusGridControl() ?? FindGrid(SafeResultsControl());
+                object grid = GridAccess.GetFocusGridControl() ?? FindGrid(SafeResultsControl()) ?? cachedGrid;
                 if (grid == null) return;
 
                 int count = 0;
