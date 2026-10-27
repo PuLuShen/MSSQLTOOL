@@ -162,23 +162,19 @@ namespace MSSQLTool.Results
                     {
                     }
 
-                    // Belt and braces: with the grid focused the key walk reaches it, unlike from a tool window.
+                    // Walk to the column one key at a time.  A press can land after the read, so an
+                    // unchanged column is not a reason to stop: keep pressing until the caret lands, with a
+                    // hard cap so a grid that refuses the keys cannot loop forever.
                     int current = CurrentColumn(grid);
                     if (current < 0) current = 0;
-                    for (int step = 0; step < columnIndex && current < columnIndex && step < 80; step++)
+                    int guard = 0;
+                    while (current != columnIndex && guard++ < 250)
                     {
-                        PressKey(Keys.Right);
+                        PressKey(current < columnIndex ? Keys.Right : Keys.Left);
+                        System.Threading.Thread.Sleep(40);
+                        Application.DoEvents();
                         int next = CurrentColumn(grid);
-                        if (next < 0 || next == current) break;
-                        current = next;
-                    }
-
-                    for (int step = 0; step < 80 && current > columnIndex; step++)
-                    {
-                        PressKey(Keys.Left);
-                        int next = CurrentColumn(grid);
-                        if (next < 0 || next == current) break;
-                        current = next;
+                        if (next >= 0) current = next;
                     }
 
                     MSSQLToolPackage._logger?.Info("Results grid menu: jumped to column " + (columnIndex + 1)
