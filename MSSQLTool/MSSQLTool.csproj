@@ -99,6 +99,9 @@
     </Compile>
     <Compile Include="QuickSearch\TextMarkerService.cs" />
     <Compile Include="QueryTemplates\QueryTemplateLibrary.cs" />
+    <Compile Include="Results\ResultSetStatistics.cs" />
+    <Compile Include="Results\ResultsToolsWindow.cs" />
+    <Compile Include="Results\ResultsToolsCommand.cs" />
     <Compile Include="QueryTemplates\QueryTemplateInsertionService.cs" />
     <Compile Include="QueryTemplates\CreateQueryTemplateDialog.xaml.cs">
       <DependentUpon>CreateQueryTemplateDialog.xaml</DependentUpon>

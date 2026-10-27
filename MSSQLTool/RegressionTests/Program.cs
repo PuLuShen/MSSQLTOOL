@@ -253,6 +253,7 @@ namespace MSSQLTool.RegressionTests
             RunCompletionParameterInfoTests();
             RunUpdateHelperTests();
             RunStorageTests();
+        RunResultSetTests();
             RunFormattingTests();
 
             RunSqlServerIntegration();

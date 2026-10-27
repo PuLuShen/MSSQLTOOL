@@ -44,6 +44,7 @@
     <Compile Include="CompletionParameterInfoTests.cs" />
     <Compile Include="UpdateHelperTests.cs" />
     <Compile Include="StorageTests.cs" />
+    <Compile Include="ResultSetTests.cs" />
     <Compile Include="StorageProbe.cs" />
   </ItemGroup>
   <ItemGroup>

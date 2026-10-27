@@ -127,6 +127,18 @@
         </Strings>
       </Button>
       
+      <Button guid="guidMSSQLToolPackageCmdSet" id="ResultsToolsButton" priority="0x0310" type="Button">
+        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Health" />
+        <CommandFlag>DefaultInvisible</CommandFlag>
+        <CommandFlag>DynamicVisibility</CommandFlag>
+        <CommandFlag>TextChanges</CommandFlag>
+        <Strings>
+          <ButtonText>结果集搜索与统计</ButtonText>
+          <LocCanonicalName>MSSQLTool.ResultsTools</LocCanonicalName>
+          <ToolTipText>在当前结果集中查找内容、跳转到命中的单元格，并查看每列的统计（空值、去重数、最值、平均、最大长度）</ToolTipText>
+        </Strings>
+      </Button>
+
       <!-- TOOLS Submenu buttons -->
       <Button guid="guidMSSQLToolPackageCmdSet" id="ExportGridAsInserts" priority="0x0110" type="Button">
         <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Export" />
@@ -357,6 +369,7 @@
       <IDSymbol name="AboutButton" value="4129" />
 
       <IDSymbol name="QueryTemplatePickerCommand" value="4156" />
+      <IDSymbol name="ResultsToolsButton" value="4158" />
       <IDSymbol name="SchemaCompareCommand" value="4157" />
 
       <IDSymbol name="ToolsSubMenu" value="0x1200" />
