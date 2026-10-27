@@ -362,7 +362,20 @@ namespace MSSQLTool.Results
                     return;
                 }
 
+                // The keystrokes must reach the results grid, not this tool window: give the focus
+                // back to the grid (and its host window) before sending anything.
                 var focus = grid as WinForms.Control;
+                if (focus == null)
+                {
+                    status.Text = LocalizationManager.T("The result grid is not available right now.");
+                    return;
+                }
+
+                WinForms.Form host = focus.FindForm();
+                if (host != null) SetForegroundWindow(host.Handle);
+                focus.Focus();
+                System.Windows.Forms.Application.DoEvents();
+                System.Threading.Thread.Sleep(60);
                 if (focus != null) { focus.Focus(); }
 
                 GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", 0);
@@ -575,6 +588,9 @@ namespace MSSQLTool.Results
 
         private static string Dec(decimal value, int count)
             => count == 0 ? "-" : value.ToString("#,0.####", CultureInfo.CurrentCulture);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         public void Dispose() => StopTimer();
     }

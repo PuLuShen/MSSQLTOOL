@@ -247,6 +247,7 @@ namespace MSSQLTool
             ["Recent searches"] = "最近的搜索",
             ["Find column:"] = "查找列：",
             ["Freeze first N columns:"] = "固定前 N 列：",
+            ["The result grid is not available right now."] = "当前无法访问结果网格。",
             ["The result grid did not accept the key presses. Click a cell and try again."] = "结果网格没有接受按键，请先点一下某个单元格再试。",
             ["Freeze"] = "固定",
             ["Unfreeze"] = "取消固定",
