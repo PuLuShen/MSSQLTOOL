@@ -930,6 +930,7 @@ namespace MSSQLTool
                 // The results grid exists now: install the statistics toggle into its context menu.
                 Results.ResultsHoverPopup.AttachContextMenu(GridAccess.GetSQLResultsControl());
                 Results.ResultsHoverPopup.HookGrid(Results.ResultsHoverPopup.FindGrid(GridAccess.GetSQLResultsControl()));
+                Results.ResultsHoverPopup.EnsurePolling();
 
                 //1. Align numeric types to the right
                 CollectionBase gridContainers = GridAccess.GetGridContainers();

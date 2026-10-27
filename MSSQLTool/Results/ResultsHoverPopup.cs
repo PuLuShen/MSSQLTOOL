@@ -34,6 +34,18 @@ namespace MSSQLTool.Results
 
         internal static bool IsEnabled => enabled;
 
+        /// <summary>
+        /// Makes sure the poll runs.  Called after every execution, because that is when the results grid
+        /// exists: the poll is what notices a selection change and brings the panel up, so it must not
+        /// depend on a click handler being installed on a particular control instance.
+        /// </summary>
+        internal static void EnsurePolling()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            enabled = true;
+            StartTimer();
+        }
+
         /// <summary>Installs the "click in the results shows the panel" hook; idempotent.</summary>
         internal static void HookGrid(object grid)
         {
@@ -262,7 +274,7 @@ namespace MSSQLTool.Results
             internal HoverWindow()
             {
                 Title = LocalizationManager.T("Result statistics panel");
-                Width = 400;
+                Width = 300;
                 SizeToContent = SizeToContent.Height;
                 ResizeMode = ResizeMode.NoResize;
                 Topmost = true;
@@ -299,7 +311,7 @@ namespace MSSQLTool.Results
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 6, 0)
                 });
-                columnSearch.Width = 180;
+                columnSearch.Width = 130;
                 columnSearch.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) JumpToColumn(); };
                 searchRow.Children.Add(columnSearch);
                 var jump = new Button { Content = LocalizationManager.T("Go"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
@@ -375,8 +387,16 @@ namespace MSSQLTool.Results
                         try { grid = FindGrid(GridAccess.GetSQLResultsControl()); } catch (Exception) { grid = null; }
                     }
 
-                    int startRow = 0, startColumn = 0, endRow = current.Rows.Count - 1, endColumn = 0;
-                    bool gotSelection = ReadSelection(grid, ref startRow, ref startColumn, ref endRow, ref endColumn);
+                    int uiStartRow = 0, uiStartColumn = 0, uiEndRow = current.Rows.Count - 1, uiEndColumn = 0;
+                    bool gotSelection = ReadSelection(grid, ref uiStartRow, ref uiStartColumn, ref uiEndRow, ref uiEndColumn);
+
+                    // SelectedCells reports UI column indexes; the DataTable uses storage order.  Without this
+                    // mapping the panel summarised the neighbouring column and showed Column_N names.
+                    int startRow = uiStartRow, endRow = uiEndRow;
+                    int startColumn = ToStorageColumn(grid, uiStartColumn);
+                    int endColumn = ToStorageColumn(grid, uiEndColumn);
+                    if (startColumn < 0) startColumn = uiStartColumn;
+                    if (endColumn < 0) endColumn = uiEndColumn;
 
                     var numbers = new List<decimal>();
                     int textCells = 0;
@@ -397,8 +417,15 @@ namespace MSSQLTool.Results
                     ResultSetStatistics.NumericSummary summary = ResultSetStatistics.SummarizeNumbers(numbers);
                     int cellCount = (rowTo - rowFrom + 1) * (columnTo - columnFrom + 1);
 
+                    List<string> gridHeaders = ReadGridColumnNames(grid);
                     string columnNames = string.Join(", ", Enumerable.Range(columnFrom, columnTo - columnFrom + 1)
-                        .Select(i => current.Columns[i].ColumnName));
+                        .Select(i =>
+                        {
+                            int ui = ToUiColumn(grid, i);
+                            return (ui >= 0 && ui < gridHeaders.Count && !string.IsNullOrWhiteSpace(gridHeaders[ui]))
+                                ? gridHeaders[ui]
+                                : current.Columns[i].ColumnName;
+                        }));
                     selectionText.Text = gotSelection
                         ? LocalizationManager.Format("Selection: rows {0}-{1}, columns {2}-{3}   ({4} cells)",
                             rowFrom + 1, rowTo + 1, columnFrom + 1, columnTo + 1, cellCount)
@@ -570,6 +597,41 @@ namespace MSSQLTool.Results
                 }
 
                 return false;
+            }
+
+            /// <summary>UI column index (what SelectedCells reports) to storage index (what the DataTable uses).</summary>
+            private static int ToStorageColumn(object grid, int uiIndex)
+            {
+                if (grid == null || uiIndex < 0) return -1;
+                try
+                {
+                    MethodInfo map = grid.GetType().GetMethod("GetStorageColumnIndexByUIIndex");
+                    object mapped = map?.Invoke(grid, new object[] { uiIndex });
+                    if (mapped != null && int.TryParse(mapped.ToString(), out int storage) && storage >= 0) return storage;
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not map a UI column to a storage column.");
+                }
+
+                return -1;
+            }
+
+            private static int ToUiColumn(object grid, int storageIndex)
+            {
+                if (grid == null || storageIndex < 0) return -1;
+                try
+                {
+                    MethodInfo map = grid.GetType().GetMethod("GetUIColumnIndexByStorageIndex");
+                    object mapped = map?.Invoke(grid, new object[] { storageIndex });
+                    if (mapped != null && int.TryParse(mapped.ToString(), out int ui) && ui >= 0) return ui;
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not map a storage column to a UI column.");
+                }
+
+                return -1;
             }
 
             private static int ToInt(object value, int fallback)
