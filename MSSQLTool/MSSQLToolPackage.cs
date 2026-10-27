@@ -65,7 +65,6 @@ namespace MSSQLTool
     [ProvideToolWindow(typeof(DataImportWindow))]
     [ProvideToolWindow(typeof(QuickSearchWindow))]
     [ProvideToolWindow(typeof(SnippetManagerWindow))]
-    [ProvideToolWindow(typeof(Results.ResultsStatsWindow))]
     [ProvideToolWindow(typeof(QueryTemplateWindow))]
     public sealed class MSSQLToolPackage : AsyncPackage
     {
