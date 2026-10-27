@@ -302,6 +302,7 @@ namespace MSSQLTool.Results
                 Margin = new Thickness(0, 6, 0, 0)
             };
             private readonly TextBox columnSearch = new TextBox { Height = 24, VerticalContentAlignment = VerticalAlignment.Center };
+            private readonly TextBox freezeCount = new TextBox { Height = 24, Width = 46, VerticalContentAlignment = VerticalAlignment.Center, Text = "0" };
             private readonly TextBlock columnStatus = new TextBlock { Opacity = 0.75, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
 
             private readonly Dictionary<string, TextBlock> values = new Dictionary<string, TextBlock>(StringComparer.Ordinal);
@@ -500,13 +501,16 @@ namespace MSSQLTool.Results
             /// Column search: typing part of a column name and pressing Go scrolls the results to that
             /// column, so a wide result set can be navigated by name instead of by scrolling.
             /// </summary>
+            /// <summary>
+            /// Column search: picks the column, selects it as one block and lets the grid scroll to the
+            /// selection.  FirstScrollableColumn is the frozen-column boundary, not a scroll position, so it
+            /// is used by the separate "freeze" action instead.
+            /// </summary>
             private void JumpToColumn()
             {
                 ThreadHelper.ThrowIfNotOnUIThread();
                 try
                 {
-                    if (table == null) return;
-
                     string needle = (columnSearch.Text ?? string.Empty).Trim();
                     if (needle.Length == 0)
                     {
@@ -515,59 +519,91 @@ namespace MSSQLTool.Results
                     }
 
                     object grid = GridAccess.GetFocusGridControl();
-                    int storedIndex = -1;
-                    string matched = null;
-
-                    // The grid knows its columns even when the DataTable we fetched belongs to another
-                    // result set, so the authoritative list comes from GridColumnsInfo.
                     List<string> names = ReadGridColumnNames(grid);
-                    for (int i = 0; i < names.Count; i++)
-                    {
-                        if (names[i] == null || names[i].IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                        storedIndex = i;
-                        matched = names[i];
-                        break;
-                    }
-
-                    if (storedIndex < 0 && table != null)
-                    {
-                        for (int i = 0; i < table.Columns.Count; i++)
-                        {
-                            if (table.Columns[i].ColumnName.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                            storedIndex = i;
-                            matched = table.Columns[i].ColumnName;
-                            break;
-                        }
-                    }
-
-                    if (storedIndex < 0 || grid == null)
+                    int index = MatchColumn(names, needle);
+                    if (index < 0)
                     {
                         columnStatus.Text = LocalizationManager.Format("No column matches '{0}'.", needle);
                         return;
                     }
 
-                    // FirstScrollableColumn is a UI index; convert from the storage index when possible.
-                    int uiIndex = storedIndex;
-                    try
-                    {
-                        MethodInfo map = grid.GetType().GetMethod("GetUIColumnIndexByStorageIndex");
-                        object mapped = map?.Invoke(grid, new object[] { storedIndex });
-                        if (mapped != null && int.TryParse(mapped.ToString(), out int converted) && converted >= 0) uiIndex = converted;
-                    }
-                    catch (Exception ex)
-                    {
-                        MSSQLToolPackage._logger?.Debug(ex, "Could not map the column index.");
-                    }
-
-                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", uiIndex);
-                    columnStatus.Text = LocalizationManager.Format("Scrolled to column '{0}'.", matched);
+                    SelectColumnBlock(grid, index);
+                    columnStatus.Text = LocalizationManager.Format("Selected column '{0}'.", names[index]);
                 }
                 catch (Exception ex)
                 {
-                    MSSQLToolPackage._logger?.Error(ex, "Could not scroll to the result column.");
+                    MSSQLToolPackage._logger?.Error(ex, "Could not jump to the result column.");
                 }
             }
 
+            /// <summary>Exact name first, then prefix, then substring - "DDZ" must not resolve to "DDZT".</summary>
+            private static int MatchColumn(List<string> names, string needle)
+            {
+                for (int i = 0; i < names.Count; i++)
+                    if (string.Equals(names[i], needle, StringComparison.OrdinalIgnoreCase)) return i;
+
+                for (int i = 0; i < names.Count; i++)
+                    if (names[i] != null && names[i].StartsWith(needle, StringComparison.OrdinalIgnoreCase)) return i;
+
+                for (int i = 0; i < names.Count; i++)
+                    if (names[i] != null && names[i].IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0) return i;
+
+                return -1;
+            }
+
+            /// <summary>Selects a whole column; the grid scrolls the selection into view.</summary>
+            private void SelectColumnBlock(object grid, int columnIndex)
+            {
+                if (grid == null) return;
+                try
+                {
+                    object blocks = GridAccess.GetProperty(grid, "SelectedCells");
+                    if (blocks == null || table == null) return;
+
+                    Type collectionType = blocks.GetType();
+                    object collection = Activator.CreateInstance(collectionType);
+                    Type blockType = collectionType.Assembly.GetType("Microsoft.SqlServer.Management.UI.Grid.BlockOfCells");
+                    if (blockType == null) return;
+
+                    object block = Activator.CreateInstance(blockType);
+                    GridAccess.SetPropertyValue(block, "X", columnIndex + 1);   // 1-based, like the reader above
+                    GridAccess.SetPropertyValue(block, "Y", 0L);
+                    GridAccess.SetPropertyValue(block, "Width", 1);
+                    GridAccess.SetPropertyValue(block, "Height", (long)Math.Max(1, table.Rows.Count));
+
+                    MethodInfo add = collectionType.GetMethod("Add", new[] { blockType });
+                    add?.Invoke(collection, new[] { block });
+                    GridAccess.SetPropertyValue(grid, "SelectedCells", collection);
+                    (grid as WinForms.Control)?.Focus();
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Error(ex, "Could not select the result column.");
+                }
+            }
+
+            /// <summary>Freezes the first N columns (0 unfreezes), which is what FirstScrollableColumn means.</summary>
+            private void FreezeColumns()
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                try
+                {
+                    object grid = GridAccess.GetFocusGridControl();
+                    if (grid == null) return;
+
+                    int count = 0;
+                    int.TryParse(freezeCount.Text, out count);
+                    count = Math.Max(0, Math.Min(20, count));
+                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", count);
+                    columnStatus.Text = count == 0
+                        ? LocalizationManager.T("Columns unfrozen.")
+                        : LocalizationManager.Format("First {0} column(s) frozen.", count);
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Error(ex, "Could not freeze the result columns.");
+                }
+            }
             /// <summary>
             /// Reads the selected rectangle through SelectedCells (blocks of cells) and falls back to
             /// GetCurrentCell(out row, out column).
@@ -591,8 +627,10 @@ namespace MSSQLTool.Results
                             long height = ToLong(GridAccess.GetProperty(block, "Height"), 1);
                             if (x < 0 || y < 0) continue;
 
-                            minColumn = Math.Min(minColumn, x);
-                            maxColumn = Math.Max(maxColumn, x + Math.Max(1, width) - 1);
+                            // X is 1-based: the grid puts a row-header column at 0, so the result columns start at 1.
+                            int dataColumn = Math.Max(0, x - 1);
+                            minColumn = Math.Min(minColumn, dataColumn);
+                            maxColumn = Math.Max(maxColumn, dataColumn + Math.Max(1, width) - 1);
                             minRow = Math.Min(minRow, (int)y);
                             maxRow = Math.Max(maxRow, (int)y + (int)Math.Max(1, height) - 1);
                         }
