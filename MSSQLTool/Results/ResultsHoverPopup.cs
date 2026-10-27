@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -160,6 +161,7 @@ namespace MSSQLTool.Results
                         return;
                     }
 
+                    window.ReadSelectionFromClipboard(false);
                     string key = window.RefreshFromSelection();
                     if (!string.IsNullOrEmpty(key) && !string.Equals(key, lastCellKey, StringComparison.Ordinal))
                     {
@@ -200,6 +202,14 @@ namespace MSSQLTool.Results
         {
             private readonly TextBlock header = new TextBlock { FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
             private readonly TextBlock cellInfo = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.85 };
+            private readonly TextBlock numericSummary = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 13,
+                Margin = new Thickness(0, 8, 0, 4)
+            };
+            private string lastClipboard;
+            private ResultSetStatistics.NumericSummary selectionSummary;
             private readonly DataGrid stats = new DataGrid { AutoGenerateColumns = true, IsReadOnly = true, CanUserAddRows = false, MaxHeight = 220 };
             private readonly TextBox find = new TextBox { Height = 24, VerticalContentAlignment = VerticalAlignment.Center };
             private readonly ComboBox columns = new ComboBox { Height = 24 };
@@ -222,6 +232,16 @@ namespace MSSQLTool.Results
                 var panel = new StackPanel { Margin = new Thickness(10) };
                 panel.Children.Add(header);
                 panel.Children.Add(cellInfo);
+                panel.Children.Add(numericSummary);
+                var readSelection = new Button
+                {
+                    Content = LocalizationManager.T("Read the selection (select cells, then Ctrl+C)"),
+                    Padding = new Thickness(8, 2, 8, 2),
+                    Margin = new Thickness(0, 4, 0, 0),
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                readSelection.Click += (_, __) => ReadSelectionFromClipboard(true);
+                panel.Children.Add(readSelection);
 
                 var findRow = new Grid { Margin = new Thickness(0, 8, 0, 6) };
                 findRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -385,6 +405,42 @@ namespace MSSQLTool.Results
 
                 return -1;
             }
+
+            /// <summary>
+            /// Reads the numbers of the current selection from the clipboard.  SSMS puts the selected cells
+            /// there on Ctrl+C, which is the one selection channel that works the same in every build, so
+            /// the summary follows whatever the user selects and copies.
+            /// </summary>
+            internal void ReadSelectionFromClipboard(bool force)
+            {
+                try
+                {
+                    if (!System.Windows.Forms.Clipboard.ContainsText()) return;
+                    string text = System.Windows.Forms.Clipboard.GetText() ?? string.Empty;
+                    if (!force && string.Equals(text, lastClipboard, StringComparison.Ordinal)) return;
+                    lastClipboard = text;
+
+                    List<decimal> numbers = ResultSetStatistics.ParseNumbers(text);
+                    selectionSummary = ResultSetStatistics.SummarizeNumbers(numbers);
+                    if (selectionSummary.Count == 0)
+                    {
+                        numericSummary.Text = LocalizationManager.T("Select cells with numbers, press Ctrl+C, then the totals appear here.");
+                        return;
+                    }
+
+                    numericSummary.Text = LocalizationManager.Format(
+                        "Count {0}   Sum {1}   Average {2}   Min {3}   Max {4}   Distinct {5}",
+                        selectionSummary.Count, Dec(selectionSummary.Sum), Dec(selectionSummary.Average),
+                        Dec(selectionSummary.Minimum), Dec(selectionSummary.Maximum), selectionSummary.Distinct);
+                    header.Text = LocalizationManager.Format("Selection from the clipboard ({0} numbers)", selectionSummary.Count);
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not read the selection from the clipboard.");
+                }
+            }
+
+            private static string Dec(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);
 
             private void FindNext()
             {

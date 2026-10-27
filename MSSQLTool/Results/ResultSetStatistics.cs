@@ -133,6 +133,69 @@ namespace MSSQLTool.Results
             return slice;
         }
 
+        /// <summary>
+        /// Aggregates of the numbers in a selection.  This is the summary the statistics panel shows for
+        /// a selected block of cells, independent of how the grid exposes its selection.
+        /// </summary>
+        internal sealed class NumericSummary
+        {
+            public int Count { get; set; }
+            public decimal Sum { get; set; }
+            public decimal Average { get; set; }
+            public decimal Minimum { get; set; }
+            public decimal Maximum { get; set; }
+            public int Distinct { get; set; }
+            public int Ignored { get; set; }
+        }
+
+        /// <summary>Reads the numbers out of tab/newline separated text (what Ctrl+C puts on the clipboard).</summary>
+        public static List<decimal> ParseNumbers(string text)
+        {
+            var numbers = new List<decimal>();
+            if (string.IsNullOrWhiteSpace(text)) return numbers;
+
+            foreach (string cell in text.Split(new[] { '\t', '\r', '\n', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string value = cell.Trim().Trim('"', '\'');
+                if (value.Length == 0) continue;
+
+                decimal number;
+                if (decimal.TryParse(value, NumberStyles.Any, CultureInfo.CurrentCulture, out number)
+                    || decimal.TryParse(value.Replace(",", string.Empty), NumberStyles.Any, CultureInfo.InvariantCulture, out number))
+                {
+                    numbers.Add(number);
+                }
+            }
+
+            return numbers;
+        }
+
+        /// <summary>Sum, average, minimum, maximum, count and distinct count of the parsed numbers.</summary>
+        public static NumericSummary SummarizeNumbers(IEnumerable<decimal> numbers)
+        {
+            var summary = new NumericSummary();
+            if (numbers == null) return summary;
+
+            var distinct = new HashSet<decimal>();
+            bool first = true;
+            foreach (decimal number in numbers)
+            {
+                summary.Count++;
+                summary.Sum += number;
+                if (first) { summary.Minimum = number; summary.Maximum = number; first = false; }
+                else
+                {
+                    if (number < summary.Minimum) summary.Minimum = number;
+                    if (number > summary.Maximum) summary.Maximum = number;
+                }
+                distinct.Add(number);
+            }
+
+            summary.Distinct = distinct.Count;
+            if (summary.Count > 0) summary.Average = summary.Sum / summary.Count;
+            return summary;
+        }
+
         /// <summary>Plain-text summary, used by "copy" and by the log.</summary>
         public static string ToText(DataTable table, IEnumerable<ResultColumnStatistics> statistics)
         {
