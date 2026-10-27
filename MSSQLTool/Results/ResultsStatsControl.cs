@@ -81,22 +81,6 @@ namespace MSSQLTool.Results
                 Background = (Brush)Application.Current?.TryFindResource("ToolThemeSubtleBorderBrush") ?? Brushes.LightGray
             });
 
-            var searchRow = new WrapPanel { Orientation = Orientation.Horizontal };
-            searchRow.Children.Add(new TextBlock
-            {
-                Text = LocalizationManager.T("Find column:"),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0)
-            });
-            columnSearch.KeyDown += (_, e) => { if (e.Key == Key.Enter) JumpToColumn(); };
-            columnSearch.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,
-                new TextChangedEventHandler((_, __) => ApplyFilter()));
-            searchRow.Children.Add(columnSearch);
-            var jump = new Button { Content = LocalizationManager.T("Go"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
-            jump.Click += (_, __) => JumpToColumn();
-            searchRow.Children.Add(jump);
-            root.Children.Add(searchRow);
-
             var freezeRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
             freezeRow.Children.Add(new TextBlock
             {

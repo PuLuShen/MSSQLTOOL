@@ -78,6 +78,19 @@ namespace MSSQLTool.Results
                     try { InstallMenu(grid); } catch (Exception ex) { Log(ex); }
                 };
 
+                // SSMS may build its menu only when it is first shown; try again shortly after the click.
+                control.MouseDown += (_, e) =>
+                {
+                    if (e.Button != MouseButtons.Right) return;
+                    try
+                    {
+                        control.BeginInvoke((Action)(() => { try { InstallMenu(grid); } catch (Exception ex) { Log(ex); } }));
+                    }
+                    catch (Exception)
+                    {
+                    }
+                };
+
                 InstallMenu(grid);
                 MSSQLToolPackage._logger?.Info("Results grid menu: jump-to-column installed on a results grid.");
             }
@@ -92,12 +105,11 @@ namespace MSSQLTool.Results
             var control = grid as Control;
             if (control == null) return;
 
+            // Never create or replace the strip: SSMS builds its own menu (Copy, Select All, Print, ...) and
+            // assigning a new one hid every native item.  When SSMS has not created its menu yet the native
+            // menu is still shown on right click, so this is retried on the next click.
             var menu = control.ContextMenuStrip;
-            if (menu == null)
-            {
-                menu = new ContextMenuStrip();
-                control.ContextMenuStrip = menu;
-            }
+            if (menu == null) return;
 
             foreach (ToolStripItem existing in menu.Items)
                 if (existing is ToolStripMenuItem item && item.Name == "MSSQLToolJumpToColumn")
