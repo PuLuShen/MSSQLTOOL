@@ -928,8 +928,14 @@ namespace MSSQLTool
                 foreach (var gridContainer in gridContainers)
                 {
                     var grid = GridAccess.GetNonPublicField(gridContainer, "m_grid") as GridControl;
+                    // A grid container exists before its grid is built (for example right after a script
+                    // action), so a missing grid, storage or schema table is a normal state - skip it
+                    // instead of letting a NullReferenceException end up in the log.
+                    if (grid == null) continue;
                     var gridStorage = grid.GridStorage;
+                    if (gridStorage == null) continue;
                     var schemaTable = GridAccess.GetNonPublicField(gridStorage, "m_schemaTable") as DataTable;
+                    if (schemaTable == null) continue;
 
                     var gridColumns = GridAccess.GetNonPublicField(grid, "m_Columns") as GridColumnCollection;
                     if (gridColumns != null)

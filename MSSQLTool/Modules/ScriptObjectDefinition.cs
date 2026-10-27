@@ -91,7 +91,10 @@ namespace MSSQLTool
                 databaseOverride = nameParts[0];
             }
 
-            using (SqlConnection currentServerConnection = new SqlConnection(connectionInfo.FullConnectionString))
+            // SSMS itself can have "trust server certificate" switched on without that flag reaching the raw
+// connection string, which then fails with "the certificate chain was issued by an untrusted
+// authority" while scripting.  Build the connection through the shared helper that applies the flag.
+            using (SqlConnection currentServerConnection = connectionInfo.CreateSqlConnection(trustServerCertificate: true))
             {
                 currentServerConnection.Open();
 
