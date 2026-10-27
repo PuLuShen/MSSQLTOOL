@@ -314,7 +314,7 @@ namespace MSSQLTool.Results
             internal HoverWindow()
             {
                 Title = LocalizationManager.T("Result statistics panel");
-                Width = 320;
+                Width = 400;
                 Height = 430;
                 MinWidth = 260;
                 MinHeight = 240;
@@ -346,7 +346,7 @@ namespace MSSQLTool.Results
                 root.Children.Add(grid);
                 root.Children.Add(ignoredText);
 
-                var searchRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+                var searchRow = new WrapPanel { Margin = new Thickness(0, 12, 0, 0), Orientation = Orientation.Horizontal };
                 searchRow.Children.Add(new TextBlock
                 {
                     Text = LocalizationManager.T("Find column:"),
@@ -364,7 +364,7 @@ namespace MSSQLTool.Results
                 searchRow.Children.Add(close);
                 root.Children.Add(searchRow);
 
-                var freezeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+                var freezeRow = new WrapPanel { Margin = new Thickness(0, 8, 0, 0), Orientation = Orientation.Horizontal };
                 freezeRow.Children.Add(new TextBlock
                 {
                     Text = LocalizationManager.T("Freeze first N columns:"),
@@ -592,11 +592,53 @@ namespace MSSQLTool.Results
 
                     WinForms.SendKeys.SendWait("{HOME}");
                     for (int i = 0; i < columnIndex; i++) WinForms.SendKeys.SendWait("{RIGHT}");
+
+                    // Keystrokes can be swallowed, so check where the caret landed and correct it.
+                    for (int attempt = 0; attempt < 4; attempt++)
+                    {
+                        int landed = CurrentColumn(grid);
+                        if (landed < 0 || landed == columnIndex) break;
+                        if (landed < columnIndex) WinForms.SendKeys.SendWait("{RIGHT}");
+                        else WinForms.SendKeys.SendWait("{LEFT}");
+                    }
                 }
                 catch (Exception ex)
                 {
                     MSSQLToolPackage._logger?.Error(ex, "Could not scroll to the result column.");
                 }
+            }
+
+            /// <summary>Column the caret is on, or -1 when it cannot be read.</summary>
+            private static int CurrentColumn(object grid)
+            {
+                try
+                {
+                    var blocks = GridAccess.GetProperty(grid, "SelectedCells") as IEnumerable;
+                    if (blocks != null)
+                    {
+                        foreach (object block in blocks)
+                        {
+                            if (block == null) continue;
+                            int x = ToInt(GridAccess.GetProperty(block, "X"), -1);
+                            if (x >= 0) return Math.Max(0, x - 1);
+                        }
+                    }
+                }
+                catch (Exception) { }
+
+                try
+                {
+                    MethodInfo current = grid.GetType().GetMethod("GetCurrentCell");
+                    if (current != null)
+                    {
+                        object[] args = { 0L, 0 };
+                        current.Invoke(grid, args);
+                        return ToInt(args[1], -1);
+                    }
+                }
+                catch (Exception) { }
+
+                return -1;
             }
 
             /// <summary>Freezes the first N columns (0 unfreezes), which is what FirstScrollableColumn means.</summary>
