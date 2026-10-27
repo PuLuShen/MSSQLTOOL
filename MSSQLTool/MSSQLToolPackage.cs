@@ -845,6 +845,9 @@ namespace MSSQLTool
             {
                 var sqlResultsControl = GridAccess.GetSQLResultsControl();
                 AttachStatisticsExecutionCompletedHandler(sqlResultsControl);
+                // Puts "结果集统计面板" in the grid's own context menu; harmless when the menu is not
+                // created yet, the next call retries.
+                Results.ResultsHoverPopup.AttachContextMenu(sqlResultsControl);
             }
             catch (Exception ex)
             {
@@ -923,6 +926,9 @@ namespace MSSQLTool
 
             try
             {
+                // The results grid exists now: install the statistics toggle into its context menu.
+                Results.ResultsHoverPopup.AttachContextMenu(GridAccess.GetSQLResultsControl());
+
                 //1. Align numeric types to the right
                 CollectionBase gridContainers = GridAccess.GetGridContainers();
 
