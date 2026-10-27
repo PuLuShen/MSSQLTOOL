@@ -592,6 +592,23 @@ namespace MSSQLTool.Results
 
                     MethodInfo add = collectionType.GetMethod("Add", new[] { blockType });
                     add?.Invoke(collection, new[] { block });
+                    // The grid drops a column block when its selection type does not allow one, which is
+                    // why selecting the column did nothing visible.  ColumnBlocks must be set first.
+                    try
+                    {
+                        MethodInfo selectionSetter = grid.GetType().GetProperty("SelectionType")?.GetSetMethod();
+                        if (selectionSetter != null)
+                        {
+                            Type selectionEnum = selectionSetter.GetParameters()[0].ParameterType;
+                            object columnBlocks = Enum.Parse(selectionEnum, "ColumnBlocks");
+                            selectionSetter.Invoke(grid, new[] { columnBlocks });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MSSQLToolPackage._logger?.Debug(ex, "Could not switch the grid selection type.");
+                    }
+
                     GridAccess.SetPropertyValue(grid, "SelectedCells", collection);
                     // EnsureCellIsVisible is the grid's own scrolling call; assigning the selection or the
                     // current cell is ignored, which is why jumping appeared to do nothing.
