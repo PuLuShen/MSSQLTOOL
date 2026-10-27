@@ -27,10 +27,47 @@ namespace MSSQLTool.Results
             ThreadHelper.ThrowIfNotOnUIThread();
             try
             {
-                object grid = FindGrid(sqlResultsControl);
-                if (grid == null) return;
-                if (!hooked.Add(grid)) return;
+                // The grid cannot be found from the results control alone (its field names differ between
+                // SSMS builds); the grid containers the rest of the extension already uses are reliable.
+                var grids = new List<object>();
+                try
+                {
+                    CollectionBase containers = GridAccess.GetGridContainers();
+                    if (containers != null)
+                        foreach (object container in containers)
+                        {
+                            object grid = GridAccess.GetNonPublicField(container, "m_grid");
+                            if (grid is Control && !grids.Contains(grid)) grids.Add(grid);
+                        }
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not enumerate the results grid containers.");
+                }
 
+                object fallback = FindGrid(sqlResultsControl);
+                if (fallback is Control && !grids.Contains(fallback)) grids.Add(fallback);
+
+                if (grids.Count == 0)
+                {
+                    MSSQLToolPackage._logger?.Info("Results grid menu: no results grid to attach to yet.");
+                    return;
+                }
+
+                foreach (object candidate in grids) Attach(candidate);
+
+            }
+            catch (Exception ex)
+            {
+                Log(ex);
+            }
+        }
+
+        private static void Attach(object grid)
+        {
+            try
+            {
+                if (grid == null || !hooked.Add(grid)) return;
                 var control = grid as Control;
                 if (control == null) return;
 
@@ -42,7 +79,7 @@ namespace MSSQLTool.Results
                 };
 
                 InstallMenu(grid);
-                MSSQLToolPackage._logger?.Info("Results grid menu: jump-to-column installed.");
+                MSSQLToolPackage._logger?.Info("Results grid menu: jump-to-column installed on a results grid.");
             }
             catch (Exception ex)
             {
