@@ -193,7 +193,12 @@ namespace MSSQLTool.Results
                 if (grid == null) grid = FindGrid(SafeResultsControl());
                 if (grid == null) grid = TryGetFocusGrid();
                 if (grid == null) grid = cachedGrid;
-                if (grid != null) cachedGrid = grid;
+                if (grid != null)
+                {
+                    cachedGrid = grid;
+                    // The grid is real here, so this is where the context menu can be installed for sure.
+                    try { ResultsGridMenu.Attach(grid); } catch (Exception) { }
+                }
 
                 int startRow = 0, startColumn = 0, endRow = current.Rows.Count - 1, endColumn = 0;
                 bool gotSelection = ReadSelection(grid, ref startRow, ref startColumn, ref endRow, ref endColumn);

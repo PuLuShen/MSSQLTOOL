@@ -42,7 +42,7 @@ namespace MSSQLTool.Results
                 }
                 catch (Exception ex)
                 {
-                    MSSQLToolPackage._logger?.Debug(ex, "Could not enumerate the results grid containers.");
+                    MSSQLToolPackage._logger?.Info("Results grid menu: could not enumerate the containers: " + ex.Message);
                 }
 
                 object fallback = FindGrid(sqlResultsControl);
@@ -63,7 +63,7 @@ namespace MSSQLTool.Results
             }
         }
 
-        private static void Attach(object grid)
+        internal static void Attach(object grid)
         {
             try
             {
