@@ -589,25 +589,47 @@ namespace MSSQLTool.Results
                     focus.Focus();
                     try { grid.GetType().GetMethod("Select")?.Invoke(grid, null); } catch (Exception) { }
 
-                    // Land on the first cell first; Home alone can be relative to the current row.
-                    WinForms.SendKeys.SendWait("^{HOME}");
-                    WinForms.Application.DoEvents();
-
-                    // Closed loop: SendKeys both drops and doubles keystrokes, so the caret column is read
-                    // back after every single key press and the loop stops exactly on the target column.
-                    for (int step = 0; step < 60; step++)
+                    // Walk from wherever the user is, so only the column changes and never the row.
+                    int current = CurrentColumn(grid);
+                    if (current < 0)
                     {
-                        int landed = CurrentColumn(grid);
-                        if (landed < 0) break;
-                        if (landed == columnIndex) break;
-
-                        WinForms.SendKeys.SendWait(landed < columnIndex ? "{RIGHT}" : "{LEFT}");
+                        // No caret could be read: fall back to the top-left cell once, then re-read.
+                        WinForms.SendKeys.SendWait("^{HOME}");
                         WinForms.Application.DoEvents();
+                        System.Threading.Thread.Sleep(40);
+                        current = CurrentColumn(grid);
                     }
 
-                    int final = CurrentColumn(grid);
-                    if (final >= 0 && final != columnIndex)
-                        MSSQLToolPackage._logger?.Info("Column jump ended on " + final + " instead of " + columnIndex + ".");
+                    if (current < 0)
+                    {
+                        columnStatus.Text = LocalizationManager.T("The result grid did not accept the key presses. Click a cell and try again.");
+                        return;
+                    }
+
+                    // One key at a time, reading the caret back each time: SendKeys both drops and doubles
+                    // presses, so a fixed count cannot be trusted.
+                    for (int step = 0; step < 80 && current != columnIndex; step++)
+                    {
+                        WinForms.SendKeys.SendWait(current < columnIndex ? "{RIGHT}" : "{LEFT}");
+                        WinForms.Application.DoEvents();
+                        System.Threading.Thread.Sleep(20);
+                        int next = CurrentColumn(grid);
+                        if (next < 0) break;
+                        if (next == current)
+                        {
+                            // The grid swallowed this key; nudge again rather than spinning forever.
+                            WinForms.SendKeys.SendWait(current < columnIndex ? "{RIGHT}" : "{LEFT}");
+                            WinForms.Application.DoEvents();
+                            System.Threading.Thread.Sleep(20);
+                            next = CurrentColumn(grid);
+                            if (next == current) break;
+                        }
+
+                        current = next;
+                    }
+
+                    if (current != columnIndex)
+                        MSSQLToolPackage._logger?.Info("Column jump ended on " + current + " instead of " + columnIndex + ".");
                 }
                 catch (Exception ex)
                 {
