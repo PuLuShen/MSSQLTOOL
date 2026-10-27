@@ -640,7 +640,11 @@ namespace MSSQLTool.Results
             private static long ToLong(object value, long fallback)
                 => value != null && long.TryParse(value.ToString(), out long number) ? number : fallback;
 
-            /// <summary>Column headers straight from the grid (authoritative, whatever the DataTable says).</summary>
+            /// <summary>
+            /// Column headers of the grid.  GridColumnInfo carries no text at all; the grid renders the
+            /// headers from its own table and exposes them through GetGridHeaderAccessibleName(index),
+            /// which is also what a screen reader uses, so it is the reliable source here.
+            /// </summary>
             private static List<string> ReadGridColumnNames(object grid)
             {
                 var names = new List<string>();
@@ -648,16 +652,23 @@ namespace MSSQLTool.Results
 
                 try
                 {
-                    object infos = GridAccess.GetProperty(grid, "GridColumnsInfo");
-                    var enumerable = infos as IEnumerable;
-                    if (enumerable == null) return names;
+                    MethodInfo header = grid.GetType().GetMethod("GetGridHeaderAccessibleName");
+                    int count = 0;
+                    object columnsNumber = GridAccess.GetProperty(grid, "ColumnsNumber");
+                    if (columnsNumber != null) int.TryParse(columnsNumber.ToString(), out count);
+                    if (count <= 0) count = 64;
 
-                    foreach (object info in enumerable)
+                    for (int i = 0; i < count; i++)
                     {
-                        if (info == null) continue;
-                        object header = GridAccess.GetProperty(info, "HeaderText") ?? GridAccess.GetProperty(info, "Text")
-                            ?? GridAccess.GetProperty(info, "ColumnName");
-                        names.Add(header == null ? string.Empty : header.ToString());
+                        string text = null;
+                        if (header != null)
+                        {
+                            object value = header.Invoke(grid, new object[] { i });
+                            text = value == null ? null : value.ToString();
+                        }
+
+                        if (string.IsNullOrWhiteSpace(text)) break;
+                        names.Add(text);
                     }
                 }
                 catch (Exception ex)
