@@ -1,38 +1,36 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.VisualStudio.Shell;
+using WinForms = System.Windows.Forms;
 
 namespace MSSQLTool.Results
 {
     /// <summary>
-    /// Small floating panel that follows the selection in the results grid.  It is toggled from the grid's
-    /// own context menu, opens itself when a cell is selected, disappears as soon as the focus leaves the
-    /// results, and shows the statistics of the selected column plus a find box and a column jump list.
-    /// Independent from <see cref="ResultsToolsWindow"/> on purpose: that one is a full dialog.
+    /// Floating panel that follows the selection in the results grid and reports the numbers in it:
+    /// count, sum, average, minimum, maximum and distinct.  Toggled from the grid context menu or from the
+    /// Tools menu; the selection is read through the grid's own API (SelectedCells / GetCurrentCell), so no
+    /// clipboard round-trip is needed.
     /// </summary>
     internal static class ResultsHoverPopup
     {
         private static HoverWindow window;
         private static DispatcherTimer timer;
         private static bool enabled;
-        private static bool attached;
-        private static readonly System.Collections.Generic.HashSet<System.Windows.Forms.Control> hooked =
-            new System.Collections.Generic.HashSet<System.Windows.Forms.Control>();
-        private static string lastCellKey = string.Empty;
+        private static readonly HashSet<WinForms.Control> hooked = new HashSet<WinForms.Control>();
+        private static string lastSelectionKey = string.Empty;
 
         internal static bool IsEnabled => enabled;
 
-        /// <summary>
-        /// Adds the toggle to the results grid context menu.  SSMS creates that menu lazily, so this is
-        /// called again from every right click; it is idempotent.
-        /// </summary>
+        /// <summary>Adds the toggle to the results grid context menu; idempotent, called on every right click.</summary>
         internal static void AttachContextMenu(object sqlResultsControl)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -44,30 +42,20 @@ namespace MSSQLTool.Results
                 if (grid == null) return;
 
                 object menu = GridAccess.GetProperty(grid, "ContextMenu") ?? GridAccess.GetNonPublicField(grid, "m_contextMenu");
-                var strip = menu as System.Windows.Forms.ContextMenuStrip;
-                if (strip == null)
-                {
-                    // The menu may be created on first right click; retry on the next attach.
-                    return;
-                }
+                var strip = menu as WinForms.ContextMenuStrip;
+                if (strip == null) return;
 
-                if (strip.Items.OfType<System.Windows.Forms.ToolStripMenuItem>()
-                        .Any(item => string.Equals(item.Name, "MSSQLToolResultsToggle", StringComparison.Ordinal)))
-                {
-                    attached = true;
-                    return;
-                }
+                if (strip.Items.OfType<WinForms.ToolStripMenuItem>().Any(item => item.Name == "MSSQLToolResultsToggle")) return;
 
-                var toggle = new System.Windows.Forms.ToolStripMenuItem(LocalizationManager.T("Result statistics panel"))
+                var toggle = new WinForms.ToolStripMenuItem(LocalizationManager.T("Result statistics panel"))
                 {
                     Name = "MSSQLToolResultsToggle",
                     CheckOnClick = true,
                     Checked = enabled
                 };
                 toggle.Click += (_, __) => Toggle();
-                strip.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+                strip.Items.Add(new WinForms.ToolStripSeparator());
                 strip.Items.Add(toggle);
-                attached = true;
             }
             catch (Exception ex)
             {
@@ -75,21 +63,18 @@ namespace MSSQLTool.Results
             }
         }
 
-        /// <summary>
-        /// Right clicks are the only moment SSMS has the grid menu at hand, so the toggle is installed
-        /// just before the menu opens instead of once after the query.
-        /// </summary>
+        /// <summary>Installs the right-click hook once per grid so the menu toggle gets a chance to appear.</summary>
         internal static void HookGrid(object grid)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            var control = grid as System.Windows.Forms.Control;
+            var control = grid as WinForms.Control;
             if (control == null || hooked.Contains(control)) return;
 
             try
             {
                 control.MouseUp += (sender, e) =>
                 {
-                    if (e.Button != System.Windows.Forms.MouseButtons.Right) return;
+                    if (e.Button != WinForms.MouseButtons.Right) return;
                     try { AttachContextMenu(GridAccess.GetSQLResultsControl()); } catch (Exception) { }
                 };
                 hooked.Add(control);
@@ -114,7 +99,6 @@ namespace MSSQLTool.Results
             {
                 window = new HoverWindow();
                 window.Closed += (_, __) => { window = null; };
-                window.Show();
             }
 
             window.RefreshFromSelection();
@@ -127,15 +111,12 @@ namespace MSSQLTool.Results
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             StopTimer();
-            if (window != null)
-            {
-                window.Hide();
-            }
+            window?.Hide();
         }
 
         /// <summary>
-        /// Polls the grid: a new selection updates the panel, and losing the results grid closes it.
-        /// SSMS does not raise a managed selection event, so polling is the reliable option here.
+        /// Polls the grid: a new selection updates the panel, leaving the results hides it.  The feature
+        /// stays enabled, so the next selection brings the panel back.
         /// </summary>
         private static void StartTimer()
         {
@@ -145,28 +126,20 @@ namespace MSSQLTool.Results
             {
                 try
                 {
-                    if (!enabled || window == null)
-                    {
-                        StopTimer();
-                        return;
-                    }
+                    if (!enabled || window == null) { StopTimer(); return; }
 
                     object grid = GridAccess.GetFocusGridControl();
                     if (grid == null)
                     {
-                        // Focus left the results (clicking anywhere else closes the panel), except inside
-                        // the panel itself where the find box lives.  The feature stays enabled: the next
-                        // cell selection brings the panel back.
                         if (!window.IsMouseOver) window.Hide();
                         return;
                     }
 
-                    window.ReadSelectionFromClipboard(false);
                     string key = window.RefreshFromSelection();
-                    if (!string.IsNullOrEmpty(key) && !string.Equals(key, lastCellKey, StringComparison.Ordinal))
+                    if (!string.IsNullOrEmpty(key) && !string.Equals(key, lastSelectionKey, StringComparison.Ordinal))
                     {
-                        lastCellKey = key;
-                        window.Show();
+                        lastSelectionKey = key;
+                        if (!window.IsVisible) window.Show();
                     }
                 }
                 catch (Exception ex)
@@ -184,7 +157,6 @@ namespace MSSQLTool.Results
             timer = null;
         }
 
-        /// <summary>Finds the grid control inside the SQL results control.</summary>
         internal static object FindGrid(object sqlResultsControl)
         {
             foreach (string field in new[] { "m_grid", "grid", "m_dataGrid" })
@@ -193,90 +165,53 @@ namespace MSSQLTool.Results
                 if (grid != null) return grid;
             }
 
-            // Fall back to the focused grid.
             return GridAccess.GetFocusGridControl();
         }
 
-        /// <summary>The small panel itself.</summary>
+        /// <summary>The panel.</summary>
         private sealed class HoverWindow : Window
         {
             private readonly TextBlock header = new TextBlock { FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
-            private readonly TextBlock cellInfo = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.85 };
-            private readonly TextBlock numericSummary = new TextBlock
-            {
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = 13,
-                Margin = new Thickness(0, 8, 0, 4)
-            };
-            private string lastClipboard;
-            private ResultSetStatistics.NumericSummary selectionSummary;
-            private readonly DataGrid stats = new DataGrid { AutoGenerateColumns = true, IsReadOnly = true, CanUserAddRows = false, MaxHeight = 220 };
-            private readonly TextBox find = new TextBox { Height = 24, VerticalContentAlignment = VerticalAlignment.Center };
-            private readonly ComboBox columns = new ComboBox { Height = 24 };
-            private readonly TextBlock findStatus = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.8 };
+            private readonly TextBlock totals = new TextBlock { FontSize = 15, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 2) };
+            private readonly TextBlock detail = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.8 };
+            private readonly ComboBox columns = new ComboBox { Height = 24, Width = 260 };
 
             private DataTable table;
-            private int row = -1, column = -1;
 
             internal HoverWindow()
             {
                 Title = LocalizationManager.T("Result statistics panel");
-                Width = 520;
-                Height = 420;
+                Width = 470;
+                Height = 230;
                 Topmost = true;
                 ShowInTaskbar = false;
                 WindowStyle = WindowStyle.ToolWindow;
                 WindowStartupLocation = WindowStartupLocation.CenterScreen;
                 Background = (Brush)Application.Current?.TryFindResource("ToolThemeBackgroundBrush") ?? Brushes.White;
 
-                var panel = new StackPanel { Margin = new Thickness(10) };
+                var panel = new StackPanel { Margin = new Thickness(12) };
                 panel.Children.Add(header);
-                panel.Children.Add(cellInfo);
-                panel.Children.Add(numericSummary);
-                var readSelection = new Button
-                {
-                    Content = LocalizationManager.T("Read the selection (select cells, then Ctrl+C)"),
-                    Padding = new Thickness(8, 2, 8, 2),
-                    Margin = new Thickness(0, 4, 0, 0),
-                    HorizontalAlignment = HorizontalAlignment.Left
-                };
-                readSelection.Click += (_, __) => ReadSelectionFromClipboard(true);
-                panel.Children.Add(readSelection);
+                panel.Children.Add(totals);
+                panel.Children.Add(detail);
 
-                var findRow = new Grid { Margin = new Thickness(0, 8, 0, 6) };
-                findRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                findRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                findRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var label = new TextBlock { Text = LocalizationManager.T("Find:"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
-                Grid.SetColumn(label, 0);
-                findRow.Children.Add(label);
-                find.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) FindNext(); };
-                Grid.SetColumn(find, 1);
-                findRow.Children.Add(find);
-                var next = new Button { Content = LocalizationManager.T("Find next"), Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(6, 0, 0, 0) };
-                next.Click += (_, __) => FindNext();
-                Grid.SetColumn(next, 2);
-                findRow.Children.Add(next);
-                panel.Children.Add(findRow);
-                panel.Children.Add(findStatus);
-
-                var jumpRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 6) };
-                jumpRow.Children.Add(new TextBlock { Text = LocalizationManager.T("Jump to column:"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
-                columns.Width = 220;
-                columns.SelectionChanged += (_, __) =>
+                var jumpRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+                jumpRow.Children.Add(new TextBlock
                 {
-                    if (columns.SelectedItem == null || table == null) return;
-                    int index = ResultSetStatistics.FindColumn(table, columns.SelectedItem.ToString());
-                    if (index >= 0) JumpToCell(0, index);
-                };
+                    Text = LocalizationManager.T("Select column:"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 6, 0)
+                });
+                columns.SelectionChanged += (_, __) => SelectColumn();
                 jumpRow.Children.Add(columns);
+                var close = new Button { Content = LocalizationManager.T("Close"), Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(10, 0, 0, 0) };
+                close.Click += (_, __) => Hide();
+                jumpRow.Children.Add(close);
                 panel.Children.Add(jumpRow);
 
-                panel.Children.Add(stats);
                 Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             }
 
-            /// <summary>Reads the grid, updates the header/statistics for the selected column.</summary>
+            /// <summary>Reads the grid selection and recomputes the numbers of that rectangle.</summary>
             internal string RefreshFromSelection()
             {
                 ThreadHelper.ThrowIfNotOnUIThread();
@@ -287,8 +222,8 @@ namespace MSSQLTool.Results
                     if (current == null)
                     {
                         header.Text = LocalizationManager.T("No result set is available. Run a query first.");
-                        cellInfo.Text = string.Empty;
-                        stats.ItemsSource = null;
+                        totals.Text = string.Empty;
+                        detail.Text = string.Empty;
                         return string.Empty;
                     }
 
@@ -299,59 +234,46 @@ namespace MSSQLTool.Results
                     }
 
                     object grid = GridAccess.GetFocusGridControl();
-                    object cell = grid == null ? null : GridAccess.GetProperty(grid, "CurrentCell");
-                    if (cell != null)
-                    {
-                        object rowValue = GridAccess.GetProperty(cell, "RowIndex") ?? GridAccess.GetProperty(cell, "Row");
-                        object columnValue = GridAccess.GetProperty(cell, "ColumnIndex") ?? GridAccess.GetProperty(cell, "Column");
-                        if (rowValue != null) int.TryParse(rowValue.ToString(), out row);
-                        if (columnValue != null) int.TryParse(columnValue.ToString(), out column);
-                    }
+                    int startRow = 0, startColumn = 0, endRow = table.Rows.Count - 1, endColumn = 0;
+                    bool gotSelection = ReadSelection(grid, ref startRow, ref startColumn, ref endRow, ref endColumn);
 
-                    if (column < 0 || column >= table.Columns.Count) column = 0;
-                    if (row < 0 || row >= table.Rows.Count) row = 0;
+                    var numbers = new List<decimal>();
+                    int textCells = 0;
+                    int rowFrom = Math.Max(0, Math.Min(startRow, endRow));
+                    int rowTo = Math.Min(table.Rows.Count - 1, Math.Max(startRow, endRow));
+                    int columnFrom = Math.Max(0, Math.Min(startColumn, endColumn));
+                    int columnTo = Math.Min(table.Columns.Count - 1, Math.Max(startColumn, endColumn));
 
-                    // The panel follows the selected rectangle: SSMS exposes the selection differently
-                    // between builds, so every known shape is tried and a single cell is the fallback.
-                    int startRow = row, startColumn = column, endRow = row, endColumn = column;
-                    ReadSelection(grid, ref startRow, ref startColumn, ref endRow, ref endColumn);
-                    if (SelectionCount > 1) { /* keep the range */ }
+                    for (int row = rowFrom; row <= rowTo; row++)
+                        for (int column = columnFrom; column <= columnTo; column++)
+                        {
+                            string text = Convert.ToString(table.Rows[row][column], CultureInfo.CurrentCulture) ?? string.Empty;
+                            List<decimal> parsed = ResultSetStatistics.ParseNumbers(text);
+                            if (parsed.Count > 0) numbers.AddRange(parsed);
+                            else if (text.Trim().Length > 0) textCells++;
+                        }
 
-                    DataTable slice = ResultSetStatistics.Slice(table, startRow, startColumn, endRow, endColumn);
-                    if (slice == null) slice = table;
+                    ResultSetStatistics.NumericSummary summary = ResultSetStatistics.SummarizeNumbers(numbers);
+                    int cellCount = (rowTo - rowFrom + 1) * (columnTo - columnFrom + 1);
 
-                    string columnName = table.Columns[column].ColumnName;
-                    string value = row < table.Rows.Count
-                        ? Convert.ToString(table.Rows[row][column] ?? string.Empty) ?? string.Empty
-                        : string.Empty;
+                    header.Text = gotSelection
+                        ? LocalizationManager.Format("Selection: rows {0}-{1}, columns {2}-{3}   ({4} cells)",
+                            rowFrom + 1, rowTo + 1, columnFrom + 1, columnTo + 1, cellCount)
+                        : LocalizationManager.T("Nothing is selected - select cells in the result grid.");
 
-                    bool single = slice.Rows.Count <= 1 && slice.Columns.Count <= 1;
-                    header.Text = single
-                        ? LocalizationManager.Format("Column '{0}'   (row {1} of {2})", columnName, row + 1, table.Rows.Count)
-                        : LocalizationManager.Format("Selection rows {0}-{1}, columns {2}-{3}   ({4} x {5} cells)",
-                            Math.Min(startRow, endRow) + 1, Math.Max(startRow, endRow) + 1,
-                            Math.Min(startColumn, endColumn) + 1, Math.Max(startColumn, endColumn) + 1,
-                            slice.Rows.Count, slice.Columns.Count);
-                    cellInfo.Text = value.Length > 300 ? value.Substring(0, 297) + "..." : value;
-                    columns.SelectedItem = columnName;
+                    totals.Text = summary.Count == 0
+                        ? LocalizationManager.T("No numbers in the selection.")
+                        : LocalizationManager.Format("Count {0}   Sum {1}   Average {2}   Min {3}   Max {4}   Distinct {5}",
+                            summary.Count, Dec(summary.Sum), Dec(summary.Average), Dec(summary.Minimum), Dec(summary.Maximum), summary.Distinct);
 
-                    List<ResultColumnStatistics> all = ResultSetStatistics.Summarize(slice);
-                    stats.ItemsSource = all.Select(s => new
-                    {
-                        Column = s.Name,
-                        Type = s.DataType,
-                        NonNull = s.NonNullCount,
-                        Null = s.NullCount,
-                        Distinct = s.DistinctCount,
-                        Min = s.Minimum,
-                        Max = s.Maximum,
-                        Average = s.Average,
-                        Sum = s.Sum,
-                        MaxLength = s.MaximumLength
-                    }).ToList();
+                    detail.Text = summary.Count == 0
+                        ? string.Empty
+                        : LocalizationManager.Format("{0} cell(s) with text or empty values were ignored.", textCells);
 
-                    // The key includes the range so a new selection is always picked up.
-                    return table.Rows.Count + "|" + startRow + "|" + startColumn + "|" + endRow + "|" + endColumn;
+                    if (columns.SelectedItem == null && table.Columns.Count > 0)
+                        columns.SelectedItem = table.Columns[columnFrom].ColumnName;
+
+                    return rowFrom + "|" + rowTo + "|" + columnFrom + "|" + columnTo;
                 }
                 catch (Exception ex)
                 {
@@ -360,134 +282,126 @@ namespace MSSQLTool.Results
                 }
             }
 
-            private int selectionCount = 1;
-            private int SelectionCount => selectionCount;
-
             /// <summary>
-            /// Reads the selected rectangle.  Known shapes: a selection object with Start/End (row,column),
-            /// a Selection with Row/Column/RowCount/ColumnCount, or SelectedCells-style cell objects.
+            /// Reads the selected rectangle through SelectedCells (a collection of cell blocks) and falls
+            /// back to GetCurrentCell(out row, out column).
             /// </summary>
-            private void ReadSelection(object grid, ref int startRow, ref int startColumn, ref int endRow, ref int endColumn)
+            private static bool ReadSelection(object grid, ref int startRow, ref int startColumn, ref int endRow, ref int endColumn)
             {
-                selectionCount = 1;
-                if (grid == null) return;
+                if (grid == null) return false;
 
-                object selection = GridAccess.GetProperty(grid, "Selection")
-                    ?? GridAccess.GetNonPublicField(grid, "m_selection");
-                if (selection == null) return;
-
-                int firstRow = Pick(selection, "StartRow", "TopRow", "Row", "RowIndex");
-                int firstColumn = Pick(selection, "StartColumn", "LeftColumn", "Column", "ColumnIndex");
-                int lastRow = Pick(selection, "EndRow", "BottomRow");
-                int lastColumn = Pick(selection, "EndColumn", "RightColumn");
-                int rowCount = Pick(selection, "RowCount", "Rows", "Height");
-                int columnCount = Pick(selection, "ColumnCount", "Columns", "Width");
-
-                if (firstRow < 0 || firstColumn < 0) return;
-                if (lastRow < 0) lastRow = rowCount > 0 ? firstRow + rowCount - 1 : firstRow;
-                if (lastColumn < 0) lastColumn = columnCount > 0 ? firstColumn + columnCount - 1 : firstColumn;
-
-                startRow = firstRow;
-                startColumn = firstColumn;
-                endRow = lastRow;
-                endColumn = lastColumn;
-                selectionCount = Math.Max(1, (Math.Abs(endRow - startRow) + 1) * (Math.Abs(endColumn - startColumn) + 1));
-            }
-
-            private static int Pick(object source, params string[] names)
-            {
-                foreach (string name in names)
-                {
-                    object value = GridAccess.GetProperty(source, name) ?? GridAccess.GetNonPublicField(source, name);
-                    if (value == null) continue;
-                    if (int.TryParse(value.ToString(), out int number)) return number;
-                }
-
-                return -1;
-            }
-
-            /// <summary>
-            /// Reads the numbers of the current selection from the clipboard.  SSMS puts the selected cells
-            /// there on Ctrl+C, which is the one selection channel that works the same in every build, so
-            /// the summary follows whatever the user selects and copies.
-            /// </summary>
-            internal void ReadSelectionFromClipboard(bool force)
-            {
                 try
                 {
-                    if (!System.Windows.Forms.Clipboard.ContainsText()) return;
-                    string text = System.Windows.Forms.Clipboard.GetText() ?? string.Empty;
-                    if (!force && string.Equals(text, lastClipboard, StringComparison.Ordinal)) return;
-                    lastClipboard = text;
-
-                    List<decimal> numbers = ResultSetStatistics.ParseNumbers(text);
-                    selectionSummary = ResultSetStatistics.SummarizeNumbers(numbers);
-                    if (selectionSummary.Count == 0)
+                    object blocks = GridAccess.GetProperty(grid, "SelectedCells");
+                    var enumerable = blocks as IEnumerable;
+                    if (enumerable != null)
                     {
-                        numericSummary.Text = LocalizationManager.T("Select cells with numbers, press Ctrl+C, then the totals appear here.");
-                        return;
-                    }
+                        int minRow = int.MaxValue, minColumn = int.MaxValue, maxRow = -1, maxColumn = -1;
+                        foreach (object block in enumerable)
+                        {
+                            if (block == null) continue;
+                            int x = ToInt(GridAccess.GetProperty(block, "X"), -1);
+                            long y = ToLong(GridAccess.GetProperty(block, "Y"), -1);
+                            int width = ToInt(GridAccess.GetProperty(block, "Width"), 1);
+                            long height = ToLong(GridAccess.GetProperty(block, "Height"), 1);
+                            if (x < 0 || y < 0) continue;
 
-                    numericSummary.Text = LocalizationManager.Format(
-                        "Count {0}   Sum {1}   Average {2}   Min {3}   Max {4}   Distinct {5}",
-                        selectionSummary.Count, Dec(selectionSummary.Sum), Dec(selectionSummary.Average),
-                        Dec(selectionSummary.Minimum), Dec(selectionSummary.Maximum), selectionSummary.Distinct);
-                    header.Text = LocalizationManager.Format("Selection from the clipboard ({0} numbers)", selectionSummary.Count);
+                            minColumn = Math.Min(minColumn, x);
+                            maxColumn = Math.Max(maxColumn, x + Math.Max(1, width) - 1);
+                            minRow = Math.Min(minRow, (int)y);
+                            maxRow = Math.Max(maxRow, (int)y + (int)Math.Max(1, height) - 1);
+                        }
+
+                        if (maxRow >= 0 && maxColumn >= 0)
+                        {
+                            startRow = minRow;
+                            endRow = maxRow;
+                            startColumn = minColumn;
+                            endColumn = maxColumn;
+                            return true;
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
-                    MSSQLToolPackage._logger?.Debug(ex, "Could not read the selection from the clipboard.");
+                    MSSQLToolPackage._logger?.Debug(ex, "SelectedCells could not be read.");
                 }
-            }
 
-            private static string Dec(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);
-
-            private void FindNext()
-            {
-                ThreadHelper.ThrowIfNotOnUIThread();
-                if (table == null) return;
-
-                ResultCellMatch match = ResultSetStatistics.Find(table, find.Text, row, column)
-                    ?? ResultSetStatistics.Find(table, find.Text, -1, -1);
-                if (match == null)
+                try
                 {
-                    findStatus.Text = LocalizationManager.Format("'{0}' was not found.", find.Text);
-                    return;
+                    MethodInfo current = grid.GetType().GetMethod("GetCurrentCell");
+                    if (current != null)
+                    {
+                        object[] args = { 0L, 0 };
+                        current.Invoke(grid, args);
+                        long row = ToLong(args[0], -1);
+                        int column = ToInt(args[1], -1);
+                        if (row >= 0 && column >= 0)
+                        {
+                            startRow = endRow = (int)row;
+                            startColumn = endColumn = column;
+                            return true;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "GetCurrentCell could not be read.");
                 }
 
-                row = match.Row;
-                column = match.Column;
-                findStatus.Text = LocalizationManager.Format("Found in row {0}, column '{1}'.", match.Row + 1, match.ColumnName);
-                JumpToCell(match.Row, match.Column);
-                RefreshFromSelection();
+                return false;
             }
 
-            /// <summary>Best effort: move the results grid to a cell (same approach as the dialog window).</summary>
-            private void JumpToCell(int targetRow, int targetColumn)
+            /// <summary>Moves the grid to a column, selects the whole column and scrolls it into view.</summary>
+            private void SelectColumn()
             {
                 ThreadHelper.ThrowIfNotOnUIThread();
                 try
                 {
                     object grid = GridAccess.GetFocusGridControl();
-                    object currentCell = grid == null ? null : GridAccess.GetProperty(grid, "CurrentCell");
-                    if (currentCell == null) return;
+                    if (grid == null || table == null || columns.SelectedItem == null) return;
 
-                    object cell = Activator.CreateInstance(currentCell.GetType(), targetRow, targetColumn);
-                    GridAccess.SetPropertyValue(grid, "CurrentCell", cell);
-                    foreach (string method in new[] { "SelectCell", "SetCurrentCell", "EnsureVisible" })
+                    int column = ResultSetStatistics.FindColumn(table, columns.SelectedItem.ToString());
+                    if (column < 0) return;
+
+                    long rows = Math.Max(1, table.Rows.Count);
+                    object blocks = GridAccess.GetProperty(grid, "SelectedCells");
+                    if (blocks != null)
                     {
-                        System.Reflection.MethodInfo info = grid.GetType().GetMethod(method);
-                        if (info == null) continue;
-                        object[] args = info.GetParameters().Length == 2 ? new object[] { targetRow, targetColumn } : new object[] { targetRow };
-                        info.Invoke(grid, args);
-                        break;
+                        Type collectionType = blocks.GetType();
+                        object collection = Activator.CreateInstance(collectionType);
+                        Type blockType = collectionType.Assembly.GetType("Microsoft.SqlServer.Management.UI.Grid.BlockOfCells");
+                        if (blockType != null)
+                        {
+                            object block = Activator.CreateInstance(blockType);
+                            GridAccess.SetPropertyValue(block, "X", column);
+                            GridAccess.SetPropertyValue(block, "Y", 0L);
+                            GridAccess.SetPropertyValue(block, "Width", 1);
+                            GridAccess.SetPropertyValue(block, "Height", rows);
+
+                            MethodInfo add = collectionType.GetMethod("Add", new[] { blockType });
+                            add?.Invoke(collection, new[] { block });
+                            GridAccess.SetPropertyValue(grid, "SelectedCells", collection);
+                        }
                     }
+
+                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", column);
+                    GridAccess.SetPropertyValue(grid, "FirstScrollableRow", 0u);
+                    (grid as WinForms.Control)?.Focus();
                 }
                 catch (Exception ex)
                 {
-                    MSSQLToolPackage._logger?.Debug(ex, "Could not move the result grid to the matched cell.");
+                    MSSQLToolPackage._logger?.Error(ex, "Could not select the result column.");
                 }
             }
+
+            private static int ToInt(object value, int fallback)
+                => value != null && int.TryParse(value.ToString(), out int number) ? number : fallback;
+
+            private static long ToLong(object value, long fallback)
+                => value != null && long.TryParse(value.ToString(), out long number) ? number : fallback;
+
+            private static string Dec(decimal value) => value.ToString("0.####", CultureInfo.InvariantCulture);
         }
     }
 }
