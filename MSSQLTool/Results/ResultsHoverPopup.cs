@@ -572,22 +572,30 @@ namespace MSSQLTool.Results
 
             /// <summary>Selects a whole column; the grid scrolls the selection into view.</summary>
             /// <summary>
-            /// Brings a column into view.  Mutating the grid selection from outside is unreliable (it moved
-            /// the selection to the wrong column), so the column is made the first scrollable one: the
-            /// results scroll to it and the columns before it stay pinned, which covers jump and freeze.
+            /// Scrolls the results to a column the way a user would: focus the grid, go to the first column
+            /// and step right N times.  The grid ignores every programmatic scroll call (EnsureCellIsVisible,
+            /// CurrentCell, SelectedCells), so this is the only reliable way to move it, and it never pins
+            /// any column.
             /// </summary>
             private void SelectColumnBlock(object grid, int columnIndex)
             {
                 if (grid == null) return;
                 try
                 {
-                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", columnIndex);
-                    GridAccess.SetPropertyValue(grid, "FirstScrollableRow", 0u);
-                    (grid as WinForms.Control)?.Focus();
+                    // Undo any freeze so the horizontal scrolling is not restricted.
+                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", 0);
+
+                    var focus = grid as WinForms.Control;
+                    if (focus == null) return;
+                    focus.Focus();
+                    try { grid.GetType().GetMethod("Select")?.Invoke(grid, null); } catch (Exception) { }
+
+                    WinForms.SendKeys.SendWait("{HOME}");
+                    for (int i = 0; i < columnIndex; i++) WinForms.SendKeys.SendWait("{RIGHT}");
                 }
                 catch (Exception ex)
                 {
-                    MSSQLToolPackage._logger?.Error(ex, "Could not bring the result column into view.");
+                    MSSQLToolPackage._logger?.Error(ex, "Could not scroll to the result column.");
                 }
             }
 
