@@ -309,6 +309,8 @@ namespace MSSQLTool.Results
             private readonly Dictionary<string, TextBlock> values = new Dictionary<string, TextBlock>(StringComparer.Ordinal);
             private DataTable table;
             private DataTable cachedTable;
+            private List<string> cachedNames;
+            private int lastColumnNameCount = -1;
             private DateTime cachedTableUtc = DateTime.MinValue;
 
             internal HoverWindow()
@@ -809,9 +811,11 @@ namespace MSSQLTool.Results
             /// but its GridStorage keeps the schema table of the result set - the same table the scripting
             /// code already reads - and that one carries the real column names.
             /// </summary>
-            private static List<string> ReadGridColumnNames(object grid)
+            private List<string> ReadGridColumnNames(object grid)
             {
+                if (cachedNames != null) return cachedNames;
                 var names = new List<string>();
+                cachedNames = names;
                 if (grid == null) return names;
 
                 try
@@ -838,7 +842,11 @@ namespace MSSQLTool.Results
                     MSSQLToolPackage._logger?.Debug(ex, "Could not read the result set schema table.");
                 }
 
-                MSSQLToolPackage._logger?.Info("Results statistics panel: " + names.Count + " column name(s) from the result schema.");
+                if (names.Count != lastColumnNameCount)
+                {
+                    lastColumnNameCount = names.Count;
+                    MSSQLToolPackage._logger?.Info("Results statistics panel: " + names.Count + " column name(s) from the result schema.");
+                }
                 return names;
             }
             /// <summary>
