@@ -29,6 +29,7 @@ namespace MSSQLTool.Results
         private static bool enabled;
         private static readonly HashSet<WinForms.Control> hooked = new HashSet<WinForms.Control>();
         private static string lastSelectionKey = string.Empty;
+        private static DateTime shownUtc = DateTime.MinValue;
 
         internal static bool IsEnabled => enabled;
 
@@ -127,6 +128,7 @@ namespace MSSQLTool.Results
             window.RefreshFromSelection();
             window.PlaceNextToResults();
             window.Show();
+            shownUtc = DateTime.UtcNow;
             StartTimer();
         }
 
@@ -147,12 +149,19 @@ namespace MSSQLTool.Results
                 {
                     if (window == null) { StopTimer(); return; }
 
+                    object results = null;
+                    try { results = GridAccess.GetSQLResultsControl(); } catch (Exception) { results = null; }
+
                     object grid = GridAccess.GetFocusGridControl();
-                    if (grid == null)
+                    if (grid == null && results != null) grid = FindGrid(results);
+
+                    if (results == null && grid == null)
                     {
-                        // Clicking anywhere outside the results closes the panel; using the panel itself
-                        // (typing a column name) must not count as "outside".
-                        if (!window.IsMouseOver && !window.IsKeyboardFocusWithin) window.Hide();
+                        // A results tab is not the active document any more: the user clicked outside the
+                        // results.  The grace period keeps the panel from vanishing on the tick that showed
+                        // it, and the panel itself never counts as outside.
+                        bool graceOver = (DateTime.UtcNow - shownUtc) > TimeSpan.FromMilliseconds(1200);
+                        if (graceOver && !window.IsMouseOver && !window.IsKeyboardFocusWithin) window.Hide();
                         return;
                     }
 
@@ -313,6 +322,11 @@ namespace MSSQLTool.Results
                     table = current;
 
                     object grid = GridAccess.GetFocusGridControl();
+                    if (grid == null)
+                    {
+                        try { grid = FindGrid(GridAccess.GetSQLResultsControl()); } catch (Exception) { grid = null; }
+                    }
+
                     int startRow = 0, startColumn = 0, endRow = current.Rows.Count - 1, endColumn = 0;
                     bool gotSelection = ReadSelection(grid, ref startRow, ref startColumn, ref endRow, ref endColumn);
 
