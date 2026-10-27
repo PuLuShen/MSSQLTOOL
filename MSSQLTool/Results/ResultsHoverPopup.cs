@@ -570,7 +570,6 @@ namespace MSSQLTool.Results
                 return -1;
             }
 
-            /// <summary>Selects a whole column; the grid scrolls the selection into view.</summary>
             /// <summary>
             /// Scrolls the results to a column the way a user would: focus the grid, go to the first column
             /// and step right N times.  The grid ignores every programmatic scroll call (EnsureCellIsVisible,
@@ -590,23 +589,32 @@ namespace MSSQLTool.Results
                     focus.Focus();
                     try { grid.GetType().GetMethod("Select")?.Invoke(grid, null); } catch (Exception) { }
 
-                    WinForms.SendKeys.SendWait("{HOME}");
-                    for (int i = 0; i < columnIndex; i++) WinForms.SendKeys.SendWait("{RIGHT}");
+                    // Land on the first cell first; Home alone can be relative to the current row.
+                    WinForms.SendKeys.SendWait("^{HOME}");
+                    WinForms.Application.DoEvents();
 
-                    // Keystrokes can be swallowed, so check where the caret landed and correct it.
-                    for (int attempt = 0; attempt < 4; attempt++)
+                    // Closed loop: SendKeys both drops and doubles keystrokes, so the caret column is read
+                    // back after every single key press and the loop stops exactly on the target column.
+                    for (int step = 0; step < 60; step++)
                     {
                         int landed = CurrentColumn(grid);
-                        if (landed < 0 || landed == columnIndex) break;
-                        if (landed < columnIndex) WinForms.SendKeys.SendWait("{RIGHT}");
-                        else WinForms.SendKeys.SendWait("{LEFT}");
+                        if (landed < 0) break;
+                        if (landed == columnIndex) break;
+
+                        WinForms.SendKeys.SendWait(landed < columnIndex ? "{RIGHT}" : "{LEFT}");
+                        WinForms.Application.DoEvents();
                     }
+
+                    int final = CurrentColumn(grid);
+                    if (final >= 0 && final != columnIndex)
+                        MSSQLToolPackage._logger?.Info("Column jump ended on " + final + " instead of " + columnIndex + ".");
                 }
                 catch (Exception ex)
                 {
                     MSSQLToolPackage._logger?.Error(ex, "Could not scroll to the result column.");
                 }
             }
+
 
             /// <summary>Column the caret is on, or -1 when it cannot be read.</summary>
             private static int CurrentColumn(object grid)
