@@ -332,10 +332,8 @@ namespace MSSQLTool.Results
                 ResizeMode = ResizeMode.CanResizeWithGrip;
                 Topmost = true;
                 ShowInTaskbar = false;
-                // Showing the panel must not take the focus: SSMS paints the grid selection grey while the
                 // grid is inactive, and the panel would then hide itself because the grid lost the focus.
                 ShowActivated = false;
-                Focusable = false;
                 WindowStyle = WindowStyle.ToolWindow;
                 // Manual: CenterScreen would ignore the position computed from the results grid.
                 WindowStartupLocation = WindowStartupLocation.Manual;
@@ -366,7 +364,9 @@ namespace MSSQLTool.Results
                 });
                 columnSearch.Width = 130;
                 columnSearch.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) JumpToColumn(); };
-                columnSearch.Loaded += (_, __) => LoadColumnSearchHistory();
+                                columnSearch.Loaded += (_, __) => LoadColumnSearchHistory();
+                // Editable combo boxes do not open their list while typing unless asked to.
+                columnSearch.PreviewTextInput += (_, __) => { if (!columnSearch.IsDropDownOpen) columnSearch.IsDropDownOpen = true; };
                 searchRow.Children.Add(columnSearch);
                 var jump = new Button { Content = LocalizationManager.T("Go"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
                 jump.Click += (_, __) => JumpToColumn();
@@ -536,23 +536,38 @@ namespace MSSQLTool.Results
             /// Column search: typing part of a column name and pressing Go scrolls the results to that
             /// column, so a wide result set can be navigated by name instead of by scrolling.
             /// </summary>
-            /// <summary>Fills the column box with the names searched before, newest first.</summary>
+            /// <summary>
+            /// Fills the column box: the names searched before first, then every column of the current
+            /// result set, so the list is never empty and typing narrows it down.
+            /// </summary>
             private void LoadColumnSearchHistory()
             {
                 try
                 {
+                    var names = new List<string>();
+
                     string saved = SettingsManager.GetSqlCompletionSettings()?.resultsPanelColumnSearch;
-                    if (string.IsNullOrWhiteSpace(saved)) return;
-                    var history = saved.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(h => h.Trim()).Where(h => h.Length > 0).ToList();
-                    if (history.Count > 0) columnSearch.ItemsSource = history;
+                    if (!string.IsNullOrWhiteSpace(saved))
+                        names.AddRange(saved.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(h => h.Trim()).Where(h => h.Length > 0));
+
+                    object grid = GridAccess.GetFocusGridControl() ?? FindGrid(GridAccess.GetSQLResultsControl());
+                    foreach (string column in ReadGridColumnNames(grid))
+                        if (!string.IsNullOrWhiteSpace(column) && !names.Contains(column, StringComparer.OrdinalIgnoreCase))
+                            names.Add(column);
+
+                    if (table != null)
+                        foreach (DataColumn column in table.Columns)
+                            if (!names.Contains(column.ColumnName, StringComparer.OrdinalIgnoreCase))
+                                names.Add(column.ColumnName);
+
+                    if (names.Count > 0) columnSearch.ItemsSource = names;
                 }
                 catch (Exception ex)
                 {
-                    MSSQLToolPackage._logger?.Debug(ex, "Could not load the column search history.");
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not fill the column search list.");
                 }
             }
-
             /// <summary>Remembers a successful search at the top of the list.</summary>
             private void RememberColumnSearch(string needle)
             {
