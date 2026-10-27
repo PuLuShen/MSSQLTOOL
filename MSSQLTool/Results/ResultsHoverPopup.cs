@@ -35,6 +35,18 @@ namespace MSSQLTool.Results
         internal static bool IsEnabled => enabled;
 
         /// <summary>
+        /// Installs the context menu toggle and the poll for a results control.  Everything is guarded:
+        /// this runs from window activation and query execution, where an exception would disturb SSMS
+        /// itself (the log showed InvalidCastException escaping into the activation path).
+        /// </summary>
+        internal static void AttachTo(object sqlResultsControl)
+        {
+            try { HookGrid(FindGrid(sqlResultsControl)); } catch (Exception ex) { MSSQLToolPackage._logger?.Debug(ex, "Hook grid failed."); }
+            try { AttachContextMenu(sqlResultsControl); } catch (Exception ex) { MSSQLToolPackage._logger?.Debug(ex, "Context menu install failed."); }
+            try { EnsurePolling(); } catch (Exception ex) { MSSQLToolPackage._logger?.Debug(ex, "Starting the panel poll failed."); }
+        }
+
+        /// <summary>
         /// Makes sure the poll runs.  Called after every execution, because that is when the results grid
         /// exists: the poll is what notices a selection change and brings the panel up, so it must not
         /// depend on a click handler being installed on a particular control instance.
@@ -238,13 +250,26 @@ namespace MSSQLTool.Results
 
         internal static object FindGrid(object sqlResultsControl)
         {
-            foreach (string field in new[] { "m_grid", "grid", "m_dataGrid" })
+            try
             {
-                object grid = GridAccess.GetNonPublicField(sqlResultsControl, field);
-                if (grid != null) return grid;
-            }
+                if (sqlResultsControl != null)
+                {
+                    foreach (string field in new[] { "m_grid", "grid", "m_dataGrid" })
+                    {
+                        object grid = GridAccess.GetNonPublicField(sqlResultsControl, field);
+                        if (grid is WinForms.Control) return grid;
+                    }
+                }
 
-            return GridAccess.GetFocusGridControl();
+                object focused = GridAccess.GetFocusGridControl();
+                return focused is WinForms.Control ? focused : null;
+            }
+            catch (Exception ex)
+            {
+                // A code window control reaches this path while windows activate; that must stay silent.
+                MSSQLToolPackage._logger?.Debug(ex, "Could not locate the results grid.");
+                return null;
+            }
         }
 
         /// <summary>The panel itself: a small grid of aligned label/value pairs.</summary>
