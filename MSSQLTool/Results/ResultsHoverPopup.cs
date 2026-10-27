@@ -114,12 +114,22 @@ namespace MSSQLTool.Results
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             enabled = true;
+            if (window != null && window.IsVisible) return;
             Show();
         }
 
         private static void Show()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+
+            // Already on screen: only refresh.  Calling Show() again repaints the window, which is what made
+            // the panel flicker several times a second (the log showed "shown" repeated in bursts).
+            if (window != null && window.IsVisible)
+            {
+                window.RefreshFromSelection();
+                return;
+            }
+
             if (window == null)
             {
                 window = new HoverWindow();
@@ -184,7 +194,13 @@ namespace MSSQLTool.Results
                     if (!string.IsNullOrEmpty(key) && !string.Equals(key, lastSelectionKey, StringComparison.Ordinal))
                     {
                         lastSelectionKey = key;
-                        if (!window.IsVisible) window.Show();
+                        if (!window.IsVisible)
+                        {
+                            window.Show();
+                            shownUtc = DateTime.UtcNow;
+                            missedResultsTicks = 0;
+                            MSSQLToolPackage._logger?.Info("Results statistics panel re-shown after a selection change.");
+                        }
                     }
                 }
                 catch (Exception ex)
