@@ -123,29 +123,18 @@ namespace MSSQLTool.Results
             var menu = control.ContextMenuStrip;
             if (menu == null)
             {
-                // Legacy API path: some builds expose ContextMenu instead of ContextMenuStrip.
-                ContextMenu legacy = control.ContextMenu;
-                if (legacy == null) return;
-
-                foreach (MenuItem existing in legacy.MenuItems)
-                    if (existing.Text == LocalizationManager.T("Jump to column")) legacy.MenuItems.Remove(existing);
-
-                List<string> legacyColumns = ReadColumnNames(grid);
-                if (legacyColumns.Count == 0) return;
-
-                var legacyRoot = new MenuItem(LocalizationManager.T("Jump to column"));
-                for (int i = 0; i < legacyColumns.Count; i++)
-                {
-                    string legacyName = legacyColumns[i];
-                    if (string.IsNullOrWhiteSpace(legacyName)) legacyName = "(column " + (i + 1) + ")";
-                    int legacyIndex = i;
-                    var legacyEntry = new MenuItem(legacyName);
-                    legacyEntry.Click += (_, __) => Jump(grid, legacyIndex);
-                    legacyRoot.MenuItems.Add(legacyEntry);
-                }
-
-                legacy.MenuItems.Add(0, legacyRoot);
-                return;
+                // The grid does not own a strip until SSMS builds one, and the menu it shows then is not the
+                // one we can extend. Owning the strip is the only way to get our item in, so the two most
+                // used native commands are re-created here (they run the same grid operations).
+                menu = new ContextMenuStrip();
+                menu.Items.Add(new ToolStripMenuItem(LocalizationManager.T("Copy"), null,
+                    (_, __) => { try { PressKey(Keys.Control | Keys.C); } catch (Exception ex) { Log(ex); } })
+                { ShortcutKeyDisplayString = "Ctrl+C" });
+                menu.Items.Add(new ToolStripMenuItem(LocalizationManager.T("Select all"), null,
+                    (_, __) => { try { PressKey(Keys.Control | Keys.A); } catch (Exception ex) { Log(ex); } })
+                { ShortcutKeyDisplayString = "Ctrl+A" });
+                menu.Items.Add(new ToolStripSeparator());
+                control.ContextMenuStrip = menu;
             }
 
             foreach (ToolStripItem existing in menu.Items)
