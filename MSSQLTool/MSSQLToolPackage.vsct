@@ -127,11 +127,10 @@
         </Strings>
       </Button>
       
+      <!-- Visible by default: DefaultInvisible would hide the entry until code made it visible, which
+           left the command unreachable in the Tools menu. -->
       <Button guid="guidMSSQLToolPackageCmdSet" id="ResultsToolsButton" priority="0x0310" type="Button">
         <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Health" />
-        <CommandFlag>DefaultInvisible</CommandFlag>
-        <CommandFlag>DynamicVisibility</CommandFlag>
-        <CommandFlag>TextChanges</CommandFlag>
         <Strings>
           <ButtonText>结果集搜索与统计</ButtonText>
           <LocCanonicalName>MSSQLTool.ResultsTools</LocCanonicalName>
