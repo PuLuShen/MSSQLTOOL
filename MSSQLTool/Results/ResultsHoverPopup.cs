@@ -571,73 +571,23 @@ namespace MSSQLTool.Results
             }
 
             /// <summary>Selects a whole column; the grid scrolls the selection into view.</summary>
+            /// <summary>
+            /// Brings a column into view.  Mutating the grid selection from outside is unreliable (it moved
+            /// the selection to the wrong column), so the column is made the first scrollable one: the
+            /// results scroll to it and the columns before it stay pinned, which covers jump and freeze.
+            /// </summary>
             private void SelectColumnBlock(object grid, int columnIndex)
             {
                 if (grid == null) return;
                 try
                 {
-                    object blocks = GridAccess.GetProperty(grid, "SelectedCells");
-                    if (blocks == null || table == null) return;
-
-                    Type collectionType = blocks.GetType();
-                    object collection = Activator.CreateInstance(collectionType);
-                    Type blockType = collectionType.Assembly.GetType("Microsoft.SqlServer.Management.UI.Grid.BlockOfCells");
-                    if (blockType == null) return;
-
-                    object block = Activator.CreateInstance(blockType);
-                    GridAccess.SetPropertyValue(block, "X", columnIndex + 1);   // 1-based, like the reader above
-                    GridAccess.SetPropertyValue(block, "Y", 0L);
-                    GridAccess.SetPropertyValue(block, "Width", 1);
-                    GridAccess.SetPropertyValue(block, "Height", (long)Math.Max(1, table.Rows.Count));
-
-                    MethodInfo add = collectionType.GetMethod("Add", new[] { blockType });
-                    add?.Invoke(collection, new[] { block });
-                    // The grid drops a column block when its selection type does not allow one, which is
-                    // why selecting the column did nothing visible.  ColumnBlocks must be set first.
-                    try
-                    {
-                        MethodInfo selectionSetter = grid.GetType().GetProperty("SelectionType")?.GetSetMethod();
-                        if (selectionSetter != null)
-                        {
-                            Type selectionEnum = selectionSetter.GetParameters()[0].ParameterType;
-                            object columnBlocks = Enum.Parse(selectionEnum, "ColumnBlocks");
-                            selectionSetter.Invoke(grid, new[] { columnBlocks });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        MSSQLToolPackage._logger?.Debug(ex, "Could not switch the grid selection type.");
-                    }
-
-                    GridAccess.SetPropertyValue(grid, "SelectedCells", collection);
-                    // EnsureCellIsVisible is the grid's own scrolling call; assigning the selection or the
-                    // current cell is ignored, which is why jumping appeared to do nothing.
-                    var focus = grid as WinForms.Control;
-                    try { grid.GetType().GetMethod("Select")?.Invoke(grid, null); } catch (Exception) { }
-                    if (focus != null) focus.Focus();
-
-                    MethodInfo ensure = grid.GetType().GetMethod("EnsureCellIsVisible");
-                    MethodInfo isVisible = grid.GetType().GetMethod("IsCellVisible");
-                    if (ensure != null)
-                    {
-                        foreach (int candidate in new[] { columnIndex + 1, columnIndex })
-                        {
-                            try
-                            {
-                                ensure.Invoke(grid, new object[] { 0L, candidate });
-                                bool visible = isVisible == null || (bool)isVisible.Invoke(grid, new object[] { candidate, 0L });
-                                if (visible) break;
-                            }
-                            catch (Exception ex)
-                            {
-                                MSSQLToolPackage._logger?.Debug(ex, "EnsureCellIsVisible failed for column " + candidate + ".");
-                            }
-                        }
-                    }
+                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", columnIndex);
+                    GridAccess.SetPropertyValue(grid, "FirstScrollableRow", 0u);
+                    (grid as WinForms.Control)?.Focus();
                 }
                 catch (Exception ex)
                 {
-                    MSSQLToolPackage._logger?.Error(ex, "Could not select the result column.");
+                    MSSQLToolPackage._logger?.Error(ex, "Could not bring the result column into view.");
                 }
             }
 
