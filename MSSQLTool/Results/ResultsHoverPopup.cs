@@ -130,6 +130,14 @@ namespace MSSQLTool.Results
             }
         }
 
+        /// <summary>Toolbar entry point: always shows the panel rather than toggling it away.</summary>
+        internal static void ShowFromCommand()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            enabled = true;
+            Show();
+        }
+
         internal static void Toggle()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -302,7 +310,8 @@ namespace MSSQLTool.Results
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0)
             };
-            private readonly TextBox columnSearch = new TextBox { Height = 24, VerticalContentAlignment = VerticalAlignment.Center };
+            // Editable combo box: typing still works and previous searches stay one click away.
+            private readonly ComboBox columnSearch = new ComboBox { Height = 24, Width = 170, IsEditable = true, IsTextSearchEnabled = false, VerticalContentAlignment = VerticalAlignment.Center };
             private readonly TextBox freezeCount = new TextBox { Height = 24, Width = 46, VerticalContentAlignment = VerticalAlignment.Center, Text = "0" };
             private readonly TextBlock columnStatus = new TextBlock { Opacity = 0.75, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
 
@@ -357,6 +366,7 @@ namespace MSSQLTool.Results
                 });
                 columnSearch.Width = 130;
                 columnSearch.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) JumpToColumn(); };
+                columnSearch.Loaded += (_, __) => LoadColumnSearchHistory();
                 searchRow.Children.Add(columnSearch);
                 var jump = new Button { Content = LocalizationManager.T("Go"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
                 jump.Click += (_, __) => JumpToColumn();
@@ -526,6 +536,49 @@ namespace MSSQLTool.Results
             /// Column search: typing part of a column name and pressing Go scrolls the results to that
             /// column, so a wide result set can be navigated by name instead of by scrolling.
             /// </summary>
+            /// <summary>Fills the column box with the names searched before, newest first.</summary>
+            private void LoadColumnSearchHistory()
+            {
+                try
+                {
+                    string saved = SettingsManager.GetSqlCompletionSettings()?.resultsPanelColumnSearch;
+                    if (string.IsNullOrWhiteSpace(saved)) return;
+                    var history = saved.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(h => h.Trim()).Where(h => h.Length > 0).ToList();
+                    if (history.Count > 0) columnSearch.ItemsSource = history;
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not load the column search history.");
+                }
+            }
+
+            /// <summary>Remembers a successful search at the top of the list.</summary>
+            private void RememberColumnSearch(string needle)
+            {
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(needle)) return;
+                    var settings = SettingsManager.GetSqlCompletionSettings();
+                    if (settings == null) return;
+
+                    var history = (settings.resultsPanelColumnSearch ?? string.Empty)
+                        .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(h => h.Trim()).Where(h => h.Length > 0).ToList();
+                    history.RemoveAll(h => string.Equals(h, needle, StringComparison.OrdinalIgnoreCase));
+                    history.Insert(0, needle);
+                    if (history.Count > 20) history.RemoveRange(20, history.Count - 20);
+
+                    settings.resultsPanelColumnSearch = string.Join(";", history);
+                    SettingsManager.SaveSqlCompletionSettings(settings);
+                    columnSearch.ItemsSource = history;
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not store the column search history.");
+                }
+            }
+
             /// <summary>
             /// Column search: picks the column, selects it as one block and lets the grid scroll to the
             /// selection.  FirstScrollableColumn is the frozen-column boundary, not a scroll position, so it
@@ -536,7 +589,7 @@ namespace MSSQLTool.Results
                 ThreadHelper.ThrowIfNotOnUIThread();
                 try
                 {
-                    string needle = (columnSearch.Text ?? string.Empty).Trim();
+                    string needle = ((columnSearch.Text ?? string.Empty)).Trim();
                     if (needle.Length == 0)
                     {
                         columnStatus.Text = LocalizationManager.T("Type part of a column name.");
@@ -553,6 +606,7 @@ namespace MSSQLTool.Results
                     }
 
                     SelectColumnBlock(grid, index);
+                    RememberColumnSearch(needle);
                     columnStatus.Text = LocalizationManager.Format("Selected column '{0}'.", names[index]);
                 }
                 catch (Exception ex)

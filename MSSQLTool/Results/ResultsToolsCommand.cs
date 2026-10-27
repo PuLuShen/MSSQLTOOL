@@ -37,7 +37,7 @@ namespace MSSQLTool.Results
             package.JoinableTaskFactory.RunAsync(async delegate
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(package.DisposalToken);
-                ResultsHoverPopup.Toggle();
+                ResultsHoverPopup.ShowFromCommand();
             });
         }
 
