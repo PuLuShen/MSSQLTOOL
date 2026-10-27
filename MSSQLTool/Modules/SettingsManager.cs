@@ -436,6 +436,8 @@ ORDER BY sd.[name];
             public string knownServers = string.Empty;
             /// <summary>Last screen position of the result statistics panel ("left,top").</summary>
             public string resultsPanelPosition = string.Empty;
+            /// <summary>Last size of the result statistics panel ("width,height").</summary>
+            public string resultsPanelSize = string.Empty;
             public int delayMilliseconds = 120;
             public int maximumItems = 200;
         }

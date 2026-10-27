@@ -160,6 +160,7 @@ namespace MSSQLTool.Results
             if (window == null)
             {
                 window = new HoverWindow();
+                window.RestoreSize();
                 window.Closed += (_, __) => { window.RememberPosition(); window = null; };
             }
 
@@ -313,9 +314,11 @@ namespace MSSQLTool.Results
             internal HoverWindow()
             {
                 Title = LocalizationManager.T("Result statistics panel");
-                Width = 300;
-                SizeToContent = SizeToContent.Height;
-                ResizeMode = ResizeMode.NoResize;
+                Width = 320;
+                Height = 430;
+                MinWidth = 260;
+                MinHeight = 240;
+                ResizeMode = ResizeMode.CanResizeWithGrip;
                 Topmost = true;
                 ShowInTaskbar = false;
                 // Showing the panel must not take the focus: SSMS paints the grid selection grey while the
@@ -574,6 +577,14 @@ namespace MSSQLTool.Results
                     MethodInfo add = collectionType.GetMethod("Add", new[] { blockType });
                     add?.Invoke(collection, new[] { block });
                     GridAccess.SetPropertyValue(grid, "SelectedCells", collection);
+
+                    // SelectedCells does not scroll on its own; the current cell is what the grid brings into view.
+                    object currentCell = GridAccess.GetProperty(grid, "CurrentCell");
+                    if (currentCell != null)
+                    {
+                        object cell = Activator.CreateInstance(currentCell.GetType(), 0L, columnIndex);
+                        GridAccess.SetPropertyValue(grid, "CurrentCell", cell);
+                    }
                     (grid as WinForms.Control)?.Focus();
                 }
                 catch (Exception ex)
@@ -756,6 +767,24 @@ namespace MSSQLTool.Results
             /// Puts the panel to the right of the results grid (or restores the last position), so it never
             /// covers the rows the user is reading.
             /// </summary>
+            /// <summary>Restores the size the user left the panel at, when it is still usable.</summary>
+            internal void RestoreSize()
+            {
+                try
+                {
+                    string saved = SettingsManager.GetSqlCompletionSettings()?.resultsPanelSize;
+                    double width, height;
+                    if (!TryParse(saved, out width, out height)) return;
+                    if (width < 240 || height < 200 || width > 2000 || height > 1600) return;
+                    Width = width;
+                    Height = height;
+                }
+                catch (Exception ex)
+                {
+                    MSSQLToolPackage._logger?.Debug(ex, "Could not restore the results statistics panel size.");
+                }
+            }
+
             internal void PlaceNextToResults()
             {
                 ThreadHelper.ThrowIfNotOnUIThread();
@@ -810,6 +839,8 @@ namespace MSSQLTool.Results
                     var settings = SettingsManager.GetSqlCompletionSettings();
                     if (settings == null) return;
                     settings.resultsPanelPosition = Math.Round(Left) + "," + Math.Round(Top);
+                    settings.resultsPanelSize = Math.Round(Width) + "," + Math.Round(Height);
+                    settings.resultsPanelSize = Math.Round(Width) + "," + Math.Round(Height);
                     SettingsManager.SaveSqlCompletionSettings(settings);
                 }
                 catch (Exception ex)
