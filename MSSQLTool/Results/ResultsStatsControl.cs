@@ -15,12 +15,13 @@ using WinForms = System.Windows.Forms;
 namespace MSSQLTool.Results
 {
     /// <summary>
-    /// Docked tool window content: the statistics of the selection in the results grid, a column search
-    /// that scrolls the results to a column, and column freezing.
+    /// Content of the floating statistics panel: the statistics of the selection in the results grid,
+    /// a column search that moves the caret to a column, and column freezing.
     ///
-    /// It is a UserControl inside a real SSMS tool window on purpose: the shell then owns the keyboard
-    /// focus, so typing in the search box no longer sends Delete to the SQL editor (which happened while
-    /// this was a separate floating window).
+    /// The floating window is owned by SSMS but is not part of its tool-window layout, so the panel can
+    /// stay next to the results without taking over the shell's docking.  Focus behaves differently from
+    /// the earlier docked version: the grid keeps the selection colour and the panel never activates
+    /// itself, which is why every jump first hands the focus back to the grid and verifies it.
     /// </summary>
     public sealed class ResultsStatsControl : UserControl, IDisposable
     {
@@ -36,14 +37,6 @@ namespace MSSQLTool.Results
             Margin = new Thickness(0, 0, 0, 8)
         };
         private readonly Dictionary<string, TextBlock> values = new Dictionary<string, TextBlock>(StringComparer.Ordinal);
-        private readonly ComboBox columnSearch = new ComboBox
-        {
-            Height = 24,
-            Width = 170,
-            IsEditable = true,
-            IsTextSearchEnabled = false,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
         private readonly TextBox freezeCount = new TextBox { Height = 24, Width = 46, Text = "0", VerticalContentAlignment = VerticalAlignment.Center };
         private readonly ComboBox columnBox = new ComboBox { Height = 24, Width = 150, IsEditable = true, IsTextSearchEnabled = false, VerticalContentAlignment = VerticalAlignment.Center };
         private readonly List<object[]> matches = new List<object[]>();   // row, column, text of every hit
@@ -55,11 +48,18 @@ namespace MSSQLTool.Results
 
         private List<string> allColumns = new List<string>();
         private string lastColumnSignature = string.Empty;
-        private bool filtering;
+        private bool suppressColumnFilter;
         private DataTable table;
         private DataTable cachedTable;
         private object cachedGrid;
         private System.Windows.Threading.DispatcherTimer timer;
+
+        // Material Design icon paths (24 x 24 view box): a pin, crosshairs and a magnifier.  Unfreeze
+        // reuses the pin and adds a diagonal slash, which stays readable at 14 px where the stock
+        // "pin-off" path turns into a blob.
+        private const string PinIcon = "M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z";
+        private const string CrosshairIcon = "M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10Z";
+        private const string SearchIcon = "M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z";
 
         public ResultsStatsControl()
         {
@@ -95,10 +95,10 @@ namespace MSSQLTool.Results
                 Margin = new Thickness(0, 0, 6, 0)
             });
             freezeRow.Children.Add(freezeCount);
-            var freeze = new Button { Content = LocalizationManager.T("Freeze"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            Button freeze = CreateIconButton("Freeze", PinIcon);
             freeze.Click += (_, __) => FreezeColumns();
             freezeRow.Children.Add(freeze);
-            var unfreeze = new Button { Content = LocalizationManager.T("Unfreeze"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            Button unfreeze = CreateIconButton("Unfreeze", PinIcon, true);
             unfreeze.Click += (_, __) => { freezeCount.Text = "0"; FreezeColumns(); };
             freezeRow.Children.Add(unfreeze);
             root.Children.Add(freezeRow);
@@ -109,9 +109,9 @@ namespace MSSQLTool.Results
             var columnRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
             columnRow.Children.Add(new TextBlock { Text = LocalizationManager.T("Locate column:"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
             columnBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,
-                new TextChangedEventHandler((_, __) => FilterColumns()));
+                new TextChangedEventHandler((_, __) => { if (!suppressColumnFilter) FilterColumns(); }));
             columnRow.Children.Add(columnBox);
-            var locate = new Button { Content = LocalizationManager.T("Locate"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            Button locate = CreateIconButton("Locate column:", CrosshairIcon);
             locate.Click += (_, __) => LocateColumn();
             columnRow.Children.Add(locate);
             root.Children.Add(columnRow);
@@ -119,7 +119,7 @@ namespace MSSQLTool.Results
             var valueRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
             valueRow.Children.Add(new TextBlock { Text = LocalizationManager.T("Find value:"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
             valueRow.Children.Add(valueBox);
-            var find = new Button { Content = LocalizationManager.T("Find"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            Button find = CreateIconButton("Find value:", SearchIcon);
             find.Click += (_, __) => FindValue();
             valueRow.Children.Add(find);
             root.Children.Add(valueRow);
@@ -161,6 +161,74 @@ namespace MSSQLTool.Results
             Grid.SetColumn(value, 1);
             grid.Children.Add(value);
             values[key] = value;
+        }
+
+        /// <summary>
+        /// An icon-only button with a localized tooltip.  Text buttons made the panel look cluttered and
+        /// pushed the inputs to the right, so the actions are drawn as the familiar pin, crosshair and
+        /// magnifier symbols; the tooltip and the automation name keep them accessible.
+        /// </summary>
+        private static Button CreateIconButton(string tooltipKey, string pathData, bool slashed = false)
+        {
+            string tooltip = LocalizationManager.T(tooltipKey);
+            System.Windows.Shapes.Path icon = CreateIconPath(pathData);
+            FrameworkElement visual = icon;
+
+            if (slashed)
+            {
+                // A diagonal slash over the pin reads as "unpin" far better than the stock pin-off
+                // glyph once both are squeezed into 14 pixels.
+                var overlay = new Grid { Width = 14, Height = 14 };
+                overlay.Children.Add(icon);
+                var slash = new System.Windows.Shapes.Line
+                {
+                    X1 = 1.5,
+                    Y1 = 12.5,
+                    X2 = 12.5,
+                    Y2 = 1.5,
+                    StrokeThickness = 1.8,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round,
+                    SnapsToDevicePixels = true
+                };
+                slash.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "ToolThemeForegroundBrush");
+                if (slash.Stroke == null)
+                    slash.Stroke = (Brush)Application.Current?.TryFindResource("ToolThemeForegroundBrush") ?? Brushes.Black;
+                overlay.Children.Add(slash);
+                visual = overlay;
+            }
+
+            var button = new Button
+            {
+                Content = visual,
+                Width = 30,
+                Height = 24,
+                MinWidth = 0,
+                MinHeight = 0,
+                Padding = new Thickness(0),
+                Margin = new Thickness(6, 0, 0, 0),
+                ToolTip = tooltip
+            };
+            System.Windows.Automation.AutomationProperties.SetName(button, tooltip);
+            return button;
+        }
+
+        private static System.Windows.Shapes.Path CreateIconPath(string pathData)
+        {
+            var icon = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse(pathData),
+                Stretch = Stretch.Uniform,
+                Width = 14,
+                Height = 14,
+                SnapsToDevicePixels = true,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            icon.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "ToolThemeForegroundBrush");
+            if (icon.Fill == null)
+                icon.Fill = (Brush)Application.Current?.TryFindResource("ToolThemeForegroundBrush") ?? Brushes.Black;
+            return icon;
         }
 
         /// <summary>The window is open: poll the results grid so the numbers follow the selection.</summary>
@@ -322,15 +390,15 @@ namespace MSSQLTool.Results
             return names;
         }
 
-        /// <summary>Search history first, then the result columns; the list is only rebuilt when it changes.</summary>
+        /// <summary>
+        /// The dropdown lists the current result columns only.  It used to prepend a saved search history,
+        /// so old search terms appeared above the columns; that history is deliberately gone.  When the
+        /// result set changes the box is cleared as well, because a term typed for the previous columns
+        /// means nothing for the new ones.
+        /// </summary>
         private void UpdateColumns(List<string> headers)
         {
             var names = new List<string>();
-
-            string saved = SettingsManager.GetSqlCompletionSettings()?.resultsPanelColumnSearch;
-            if (!string.IsNullOrWhiteSpace(saved))
-                names.AddRange(saved.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(h => h.Trim()).Where(h => h.Length > 0));
 
             foreach (string header in headers ?? new List<string>())
                 if (!string.IsNullOrWhiteSpace(header) && !names.Contains(header, StringComparer.OrdinalIgnoreCase))
@@ -342,51 +410,27 @@ namespace MSSQLTool.Results
                         names.Add(column.ColumnName);
 
             allColumns = names;
-            try
-            {
-                string keep = columnBox.Text;
-                columnBox.ItemsSource = names;
-                columnBox.Text = keep;
-            }
-            catch (Exception)
-            {
-            }
             string signature = string.Join("|", names);
             if (string.Equals(signature, lastColumnSignature, StringComparison.Ordinal)) return;
 
             lastColumnSignature = signature;
-            ApplyFilter();
-        }
-
-        /// <summary>Narrows the dropdown to the columns that contain what has been typed.</summary>
-        private void ApplyFilter()
-        {
-            if (filtering || allColumns.Count == 0) return;
             try
             {
-                filtering = true;
-                string text = (columnSearch.Text ?? string.Empty).Trim();
-                List<string> filtered = text.Length == 0
-                    ? allColumns
-                    : allColumns.Where(c => c.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
-                if (filtered.Count == 0) filtered = allColumns;
-
-                string keep = columnSearch.Text;
-                columnSearch.ItemsSource = filtered;
-                columnSearch.Text = keep;
-                if (!columnSearch.IsDropDownOpen) columnSearch.IsDropDownOpen = true;
+                suppressColumnFilter = true;
+                columnBox.IsDropDownOpen = false;
+                columnBox.ItemsSource = names;
+                columnBox.Text = string.Empty;
             }
             catch (Exception ex)
             {
-                MSSQLToolPackage._logger?.Debug(ex, "Could not filter the column list.");
+                MSSQLToolPackage._logger?.Debug(ex, "Could not refresh the column list.");
             }
             finally
             {
-                filtering = false;
+                suppressColumnFilter = false;
             }
         }
 
-        /// <summary>Exact name first, then prefix, then substring.</summary>
         /// <summary>Narrows the column dropdown to the names that contain what has been typed.</summary>
         private void FilterColumns()
         {
@@ -410,6 +454,26 @@ namespace MSSQLTool.Results
             }
         }
 
+        /// <summary>Clears the locate box after a jump so the next search starts empty.</summary>
+        private void ResetColumnSearch()
+        {
+            try
+            {
+                suppressColumnFilter = true;
+                columnBox.IsDropDownOpen = false;
+                columnBox.Text = string.Empty;
+                columnBox.ItemsSource = allColumns;
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                suppressColumnFilter = false;
+            }
+        }
+
+        /// <summary>Exact name first, then prefix, then substring.</summary>
         private static int MatchColumn(List<string> names, string needle)
         {
             for (int i = 0; i < names.Count; i++) if (string.Equals(names[i], needle, StringComparison.OrdinalIgnoreCase)) return i;
@@ -418,172 +482,6 @@ namespace MSSQLTool.Results
             return -1;
         }
 
-        /// <summary>Scrolls the results to the column by walking the caret, one key at a time.</summary>
-        private void JumpToColumn()
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-            try
-            {
-                string needle = (columnSearch.Text ?? string.Empty).Trim();
-                if (needle.Length == 0)
-                {
-                    status.Text = LocalizationManager.T("Type part of a column name.");
-                    return;
-                }
-
-                object grid = cachedGrid ?? FindGrid(SafeResultsControl()) ?? TryGetFocusGrid();
-                List<string> names = ReadColumnNames(grid);
-                int target = MatchColumn(names.Count > 0 ? names : allColumns, needle);
-                if (target < 0 || grid == null)
-                {
-                    status.Text = LocalizationManager.Format("No column matches '{0}'.", needle);
-                    return;
-                }
-
-                // The keystrokes must reach the results grid, not this tool window: give the focus
-                // back to the grid (and its host window) before sending anything.
-                // The grid keeps its own ScrollManager; EnsureColumnIsVisible is the routine its UI uses,
-                // so this scrolls for real instead of pretending to press arrow keys.
-                bool scrolled = false;
-                try
-                {
-                    object scrollManager = GridAccess.GetNonPublicField(grid, "m_scrollMgr");
-                    MethodInfo ensureColumn = scrollManager?.GetType().GetMethod("EnsureColumnIsVisible");
-                    if (ensureColumn != null)
-                    {
-                        foreach (int candidate in new[] { target + 1, target })
-                        {
-                            try
-                            {
-                                ensureColumn.Invoke(scrollManager, new object[] { candidate, true, true });
-                                scrolled = true;
-                                break;
-                            }
-                            catch (Exception ex)
-                            {
-                                MSSQLToolPackage._logger?.Debug(ex, "EnsureColumnIsVisible failed for " + candidate + ".");
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MSSQLToolPackage._logger?.Debug(ex, "Could not reach the grid scroll manager.");
-                }
-
-                if (scrolled)
-                {
-                    RememberSearch(needle);
-                    status.Text = LocalizationManager.Format("Selected column '{0}'.", names.Count > 0 && target < names.Count ? names[target] : needle);
-                    Refresh();
-                    return;
-                }
-
-                // This build ignores every programmatic scroll and swallows the keys, but it does honour
-                // FirstScrollableColumn: the target column becomes the first one that scrolls, which
-                // brings it into view (the columns before it stay pinned). That is the only mechanism
-                // that visibly moves the grid here, so it is used when the scroll manager did nothing.
-                try
-                {
-                    GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", target);
-                    RememberSearch(needle);
-                    status.Text = LocalizationManager.Format("Column {0} is pinned at the left ({1} column(s) fixed). Use Unfreeze to release it.",
-                        target + 1, target);
-                    Refresh();
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    MSSQLToolPackage._logger?.Debug(ex, "Could not pin the column into view.");
-                }
-
-                var focus = grid as WinForms.Control;
-                if (focus == null)
-                {
-                    status.Text = LocalizationManager.T("The result grid is not available right now.");
-                    return;
-                }
-
-                WinForms.Form host = focus.FindForm();
-                if (host != null) SetForegroundWindow(host.Handle);
-                focus.Focus();
-                System.Windows.Forms.Application.DoEvents();
-                System.Threading.Thread.Sleep(60);
-                if (focus != null) { focus.Focus(); }
-
-                GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", 0);
-                int current = CurrentColumn(grid);
-                if (current < 0)
-                {
-                    SendKey(WinForms.Keys.Home);
-                    System.Windows.Forms.Application.DoEvents();
-                    System.Threading.Thread.Sleep(40);
-                    current = CurrentColumn(grid);
-                }
-
-                if (current < 0)
-                {
-                    status.Text = LocalizationManager.T("The result grid did not accept the key presses. Click a cell and try again.");
-                    return;
-                }
-
-                for (int step = 0; step < 80 && current != target; step++)
-                {
-                    SendKey(current < target ? WinForms.Keys.Right : WinForms.Keys.Left);
-                    System.Windows.Forms.Application.DoEvents();
-                    System.Threading.Thread.Sleep(20);
-                    int next = CurrentColumn(grid);
-                    if (next < 0) break;
-                    current = next;
-                }
-
-                for (int settle = 0; settle < 5; settle++)
-                {
-                    System.Threading.Thread.Sleep(30);
-                    System.Windows.Forms.Application.DoEvents();
-                    int settled = CurrentColumn(grid);
-                    if (settled < 0 || settled == target) break;
-                    SendKey(settled < target ? WinForms.Keys.Right : WinForms.Keys.Left);
-                    current = settled;
-                }
-
-                RememberSearch(needle);
-                status.Text = LocalizationManager.Format("Selected column '{0}'.", names.Count > 0 && target < names.Count ? names[target] : needle);
-                Refresh();
-            }
-            catch (Exception ex)
-            {
-                MSSQLToolPackage._logger?.Error(ex, "Could not scroll to the result column.");
-            }
-        }
-
-        private void RememberSearch(string needle)
-        {
-            try
-            {
-                var settings = SettingsManager.GetSqlCompletionSettings();
-                if (settings == null) return;
-
-                var history = (settings.resultsPanelColumnSearch ?? string.Empty)
-                    .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(h => h.Trim()).Where(h => h.Length > 0).ToList();
-                history.RemoveAll(h => string.Equals(h, needle, StringComparison.OrdinalIgnoreCase));
-                history.Insert(0, needle);
-                if (history.Count > 20) history.RemoveRange(20, history.Count - 20);
-
-                settings.resultsPanelColumnSearch = string.Join(";", history);
-                SettingsManager.SaveSqlCompletionSettings(settings);
-            }
-            catch (Exception ex)
-            {
-                MSSQLToolPackage._logger?.Debug(ex, "Could not store the column search history.");
-            }
-        }
-
-        /// <summary>
-        /// Brings a column into view by making it the first scrollable one.  The grid ignores every other
-        /// scroll API on this build, but this property is honoured, so the reaction is guaranteed; the
-        /// columns before it stay pinned and Unfreeze releases them.
-        /// </summary>
         /// <summary>Moves the caret to the chosen column without pinning anything, by walking the cells.</summary>
         private void LocateColumn()
         {
@@ -621,14 +519,15 @@ namespace MSSQLTool.Results
 
                 foundText.Text = LocalizationManager.Format("Moved {0} column(s): now at column {1} ({2}), row {3}.",
                     Math.Abs(delta), finalColumn + 1, finalColumn < source.Count ? source[finalColumn] : "?", finalRow + 1);
-                RememberSearch(needle);
+                // Start the next search from an empty box instead of keeping this term around.
+                if (finalColumn == target) ResetColumnSearch();
             }
             catch (Exception ex)
             {
                 MSSQLToolPackage._logger?.Info("Locate column failed: " + ex.Message);
             }
         }
-        /// <summary>Finds the first matching cell and walks the caret to it (row and column).</summary>
+
         /// <summary>Collects every match and steps through them, so repeated clicks walk all hits.</summary>
         private void FindValue()
         {
@@ -689,7 +588,6 @@ namespace MSSQLTool.Results
                 }
 
                 foundText.Text = where;
-                RememberSearch(needle);
             }
             catch (Exception ex)
             {
@@ -951,21 +849,6 @@ namespace MSSQLTool.Results
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
-
-        /// <summary>
-        /// Injects a real key press.  SendKeys is swallowed by the SSMS host in some builds, while these
-        /// OS level events always reach the focused control.
-        /// </summary>
-        private static void SendKey(WinForms.Keys key)
-        {
-            const uint KeyUp = 0x0002;
-            byte virtualKey = (byte)key;
-            keybd_event(virtualKey, 0, 0, UIntPtr.Zero);
-            System.Threading.Thread.Sleep(25);
-            keybd_event(virtualKey, 0, KeyUp, UIntPtr.Zero);
-            System.Windows.Forms.Application.DoEvents();
-            System.Threading.Thread.Sleep(25);
-        }
 
         public void Dispose() => StopTimer();
     }

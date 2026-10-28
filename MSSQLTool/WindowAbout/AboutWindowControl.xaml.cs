@@ -26,7 +26,8 @@ namespace MSSQLTool
             _themeController = new ToolWindowThemeController(this, ApplyThemeBrushResources);
 
             Version currentVersion = Assembly.GetExecutingAssembly().GetName().Version;
-            string currentVersionString = currentVersion.ToString();
+            // Show the product version (5.371), not the four-part assembly version (5.371.0.0).
+            string currentVersionString = UpdateChecker.FormatVersion(currentVersion);
 
             TextBlock_CurrentVersion.Text = LocalizationManager.Format("SSMS extension version {0}", currentVersionString);
 

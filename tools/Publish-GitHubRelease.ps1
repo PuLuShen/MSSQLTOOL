@@ -1,18 +1,22 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Publishes the built VSIX as a GitHub release.
+    Uploads a built VSIX to a GitHub release, manually and on demand.
 
 .DESCRIPTION
-    Every build of MSSQL Tool is published as a release so users can install it and so the
-    built-in update check (GET /releases/latest) finds it.  Only the VSIX is uploaded; the
-    downloadable ZIP bundle stays local.
+    This script is NOT part of the build.  Nothing is uploaded unless the user runs it, which
+    keeps ordinary development builds out of the public releases feed.
 
-    The release is idempotent: an existing release for the same version is reused and its asset
-    replaced, so re-running after a rebuild updates the same release instead of failing.
+    The release body comes from RELEASE_NOTES.md: the section whose heading is the version
+    ("## 5.371") is used, and "## Unreleased" is used as a fallback while the version heading
+    has not been added yet.  Editing that file is therefore enough to change what the release
+    page says, and re-running the script patches an existing release instead of ignoring it.
+
+    Only the VSIX is attached.  The upload is idempotent: re-running for the same version
+    replaces the asset and refreshes the notes.
 
 .PARAMETER Version
-    Product version to publish (for example 4.59).  Defaults to the version in
+    Product version to publish (for example 5.371).  Defaults to the version in
     MSSQLTool\source.extension.vsixmanifest.
 
 .PARAMETER Repo
@@ -26,11 +30,19 @@
     Windows already stores for github.com, so no token has to be written down anywhere.
 
 .PARAMETER Notes
-    Release notes text.  Defaults to a short generated line.
+    Release notes text.  Overrides the notes file for a one-off upload.
+
+.PARAMETER NotesFile
+    Markdown file that holds the release notes.  Defaults to RELEASE_NOTES.md in the repository
+    root.
+
+.PARAMETER DryRun
+    Resolve the version, asset and notes, print them, and stop without contacting GitHub.
 
 .EXAMPLE
-    pwsh -File tools\Publish-GitHubRelease.ps1
-    pwsh -File tools\Publish-GitHubRelease.ps1 -Version 4.59
+    .\tools\Publish-Release.cmd
+    .\tools\Publish-Release.cmd -DryRun
+    .\tools\Publish-Release.cmd -Version 5.371 -VsixPath .\artifacts\MSSQLTool_SSMS22_5.371.vsix
 #>
 [CmdletBinding()]
 param(
@@ -39,6 +51,7 @@ param(
     [string]$VsixPath,
     [string]$Token,
     [string]$Notes,
+    [string]$NotesFile,
     [switch]$DryRun
 )
 
@@ -188,6 +201,30 @@ function Assert-ReleaseAssetMatches {
     }
 }
 
+function Get-NotesSection {
+    param(
+        [string]$Path,
+        [string]$Version
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Release notes file not found: $Path"
+    }
+
+    $text = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
+    foreach ($heading in @($Version, 'Unreleased')) {
+        $pattern = '(?ims)^##[ \t]+' + [regex]::Escape($heading) + '[ \t]*\r?\n(.*?)(?=^##[ \t]+|\z)'
+        $match = [regex]::Match($text, $pattern)
+        if ($match.Success) {
+            $section = $match.Groups[1].Value.Trim()
+            if ($section.Length -gt 0) { return $section }
+        }
+    }
+
+    throw ("No release notes for {0} in {1}. Add a '## {0}' section (or '## Unreleased') with the text to publish." -f
+        $Version, $Path)
+}
+
 # ---------------------------------------------------------------- resolve inputs
 
 if (-not $Version) {
@@ -207,21 +244,31 @@ if (-not (Test-Path $VsixPath)) { throw "VSIX not found: $VsixPath (build the Re
 $VsixPath = (Resolve-Path $VsixPath).Path
 $assetName = [System.IO.Path]::GetFileName($VsixPath)
 $tag = "v$Version"
+$releaseName = "MSSQL Tool $Version"
 
 if (-not $Notes) {
-    $Notes = "MSSQL Tool $Version for SSMS 22.`n`nInstall: download the VSIX below (or use the ZIP bundle's installer locally) and restart SSMS."
+    if (-not $NotesFile) { $NotesFile = Join-Path $repoRoot 'RELEASE_NOTES.md' }
+    $Notes = Get-NotesSection -Path $NotesFile -Version $Version
 }
+if ([string]::IsNullOrWhiteSpace($Notes)) { throw "The release notes are empty." }
 
 $sizeMb = [Math]::Round((Get-Item $VsixPath).Length / 1MB, 2)
 Write-Host "repo    : $Repo"
 Write-Host "tag     : $tag"
 Write-Host "asset   : $assetName ($sizeMb MB)"
-if ($DryRun) { Write-Host "dry run : nothing uploaded"; return }
+if ($NotesFile) { Write-Host "notes   : $NotesFile" }
+if ($DryRun) {
+    Write-Host "dry run : nothing uploaded"
+    Write-Host ""
+    Write-Host "----- release notes -----"
+    Write-Host $Notes
+    return
+}
 
 $token = Get-GitHubToken -Explicit $Token
 $api = "https://api.github.com/repos/$Repo"
 
-# ---------------------------------------------------------------- create or reuse the release
+# ---------------------------------------------------------------- create or update the release
 
 $release = $null
 try {
@@ -233,10 +280,23 @@ catch {
     if ($_.Exception.Message -notmatch '404') { throw }
 }
 
-if (-not $release) {
+if ($release) {
+    # Re-running must also refresh the text: the notes are edited between builds, and the old
+    # script only wrote them when the release was created.
+    if ($release.name -ne $releaseName -or $release.body -ne $Notes) {
+        $patch = @{
+            name  = $releaseName
+            body  = $Notes
+            draft = $false
+        } | ConvertTo-Json
+        $release = Invoke-GitHubApi -Method PATCH -Uri "$api/releases/$($release.id)" -AuthToken $token -Body $patch
+        Write-Host "notes   : updated"
+    }
+}
+else {
     $body = @{
         tag_name         = $tag
-        name             = "MSSQL Tool $Version"
+        name             = $releaseName
         body             = $Notes
         draft            = $false
         prerelease       = $false

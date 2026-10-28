@@ -438,8 +438,6 @@ ORDER BY sd.[name];
             public string resultsPanelPosition = string.Empty;
             /// <summary>Last size of the result statistics panel ("width,height").</summary>
             public string resultsPanelSize = string.Empty;
-            /// <summary>Previously searched result column names (";" separated), newest first.</summary>
-            public string resultsPanelColumnSearch = string.Empty;
             public int delayMilliseconds = 120;
             public int maximumItems = 200;
         }
