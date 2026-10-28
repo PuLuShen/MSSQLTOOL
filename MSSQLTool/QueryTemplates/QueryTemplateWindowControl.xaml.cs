@@ -28,6 +28,8 @@ namespace MSSQLTool
         private readonly ToolWindowThemeController themeController;
         private readonly DispatcherTimer settingsStatusTimer;
         private bool subscribed;
+        private string originalPreviewText = string.Empty;
+        private bool updatingPreview;
 
         public QueryTemplateWindowControl()
         {
@@ -137,20 +139,32 @@ namespace MSSQLTool
             SetActionState(item);
             if (item == null)
             {
+                originalPreviewText = string.Empty;
+                PreviewEditor.IsReadOnly = true;
                 PreviewEditor.Text = string.Empty;
                 SelectedPathText.Text = string.Empty;
                 return;
             }
 
             SelectedPathText.Text = item.RelativePath;
+            updatingPreview = true;
             try
             {
-                PreviewEditor.Text = QueryTemplateLibrary.Instance.ReadContent(item);
+                PreviewEditor.IsReadOnly = false;
+                originalPreviewText = QueryTemplateLibrary.Instance.ReadContent(item);
+                PreviewEditor.Text = originalPreviewText;
                 PreviewEditor.ScrollToHome();
             }
             catch (Exception ex)
             {
+                originalPreviewText = string.Empty;
+                PreviewEditor.IsReadOnly = true;
                 PreviewEditor.Text = "-- " + LocalizationManager.T("Preview unavailable") + Environment.NewLine + "-- " + ex.Message;
+            }
+            finally
+            {
+                updatingPreview = false;
+                SaveButton.IsEnabled = false;
             }
         }
 
@@ -162,6 +176,33 @@ namespace MSSQLTool
 
         private void InsertButton_Click(object sender, RoutedEventArgs e) => InsertSelected(false);
         private void NewQueryButton_Click(object sender, RoutedEventArgs e) => InsertSelected(true);
+
+        private void PreviewEditor_TextChanged(object sender, EventArgs e)
+        {
+            if (updatingPreview) return;
+            SaveButton.IsEnabled = SelectedTemplate != null && PreviewEditor.IsReadOnly == false
+                && !string.Equals(PreviewEditor.Text, originalPreviewText, StringComparison.Ordinal);
+        }
+
+        private void SaveButton_Click(object sender, RoutedEventArgs e) => SaveSelected();
+
+        private void SaveSelected()
+        {
+            QueryTemplateItem item = SelectedTemplate;
+            if (item == null || PreviewEditor.IsReadOnly) return;
+            try
+            {
+                QueryTemplateLibrary.Instance.WriteContent(item.FullPath, PreviewEditor.Text);
+                originalPreviewText = PreviewEditor.Text;
+                SaveButton.IsEnabled = false;
+                StatusText.Text = LocalizationManager.T("Saved: ") + item.RelativePath;
+            }
+            catch (Exception ex)
+            {
+                LocalizedMessageBox.Show(LocalizationManager.T("Could not save the template:") + " " + ex.Message,
+                    "Query Templates", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
 
         private void InsertSelected(bool newQuery)
         {
@@ -490,6 +531,13 @@ namespace MSSQLTool
 
         private void Control_PreviewKeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Key == Key.S && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                if (SaveButton.IsEnabled) SaveSelected();
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key != Key.Enter || SelectedTemplate == null) return;
             if (!SearchBox.IsKeyboardFocusWithin && !TemplateGrid.IsKeyboardFocusWithin) return;
             e.Handled = true;
@@ -503,6 +551,8 @@ namespace MSSQLTool
             NewQueryButton.IsEnabled = enabled;
             FavoriteButton.IsEnabled = enabled;
             ShowFileButton.IsEnabled = enabled;
+            SaveButton.IsEnabled = enabled && !updatingPreview
+                && !string.Equals(PreviewEditor.Text, originalPreviewText, StringComparison.Ordinal);
             FavoriteButton.Content = item?.IsFavorite == true
                 ? LocalizationManager.T("Remove favorite")
                 : LocalizationManager.T("Add favorite");

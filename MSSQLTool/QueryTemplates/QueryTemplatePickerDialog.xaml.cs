@@ -39,6 +39,13 @@ namespace MSSQLTool
         {
             InitializeComponent();
             TryLoadSqlHighlighting();
+            // A click in the preview must give the editor the keyboard even when the dialog was
+            // opened from the SSMS toolbar (the shell tends to keep the focus otherwise).
+            PreviewEditor.PreviewMouseDown += (_, __) =>
+            {
+                try { Activate(); PreviewEditor.Focus(); }
+                catch (Exception) { }
+            };
             SetActionState();
         }
 
@@ -65,6 +72,16 @@ namespace MSSQLTool
                 // The owner is cosmetic; the dialog also works unowned.
             }
             dialog.Show();
+            try
+            {
+                // Editing the preview is the point of this window; take the keyboard explicitly
+                // instead of leaving it in the SQL editor behind the modeless window.
+                dialog.Activate();
+                dialog.PreviewEditor.Focus();
+            }
+            catch
+            {
+            }
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)

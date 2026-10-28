@@ -104,13 +104,16 @@
                                        ShowLineNumbers="True" FontFamily="Consolas" FontSize="13"
                                        Background="{DynamicResource ToolThemeBackgroundBrush}"
                                        Foreground="{DynamicResource ToolThemeForegroundBrush}"
-                                       IsReadOnly="True" HorizontalScrollBarVisibility="Auto"
-                                       VerticalScrollBarVisibility="Auto" />
+                                       IsReadOnly="False" HorizontalScrollBarVisibility="Auto"
+                                       VerticalScrollBarVisibility="Auto"
+                                       TextChanged="PreviewEditor_TextChanged" />
             </Grid>
         </Grid>
 
         <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,8,0,6">
-            <Button x:Name="InsertButton" Content="Insert" Width="90" Height="28" FontWeight="Bold"
+            <Button x:Name="SaveButton" Content="Save" Width="75" Height="28" IsEnabled="False"
+                    Click="SaveButton_Click" ToolTip="Save edits made in the preview (Ctrl+S)" />
+            <Button x:Name="InsertButton" Content="Insert" Width="90" Height="28" FontWeight="Bold" Margin="7,0,0,0"
                     Style="{DynamicResource PrimaryButtonStyle}" Click="InsertButton_Click" />
             <Button x:Name="NewQueryButton" Content="Open in new query" Width="125" Height="28" Margin="7,0,0,0"
                     Click="NewQueryButton_Click" />

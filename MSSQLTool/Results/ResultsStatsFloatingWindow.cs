@@ -1,5 +1,7 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -14,6 +16,17 @@ namespace MSSQLTool.Results
     public sealed class ResultsStatsFloatingWindow : Window
     {
         private readonly ResultsStatsControl content;
+
+        private const int WhKeyboardLowLevel = 13;
+        private const int WmKeyDown = 0x0100;
+        private const int WmSysKeyDown = 0x0104;
+        private const int VkBack = 0x08;
+        private const int VkDelete = 0x2E;
+
+        private delegate IntPtr KeyboardHookProc(int code, IntPtr wParam, IntPtr lParam);
+        private static IntPtr deleteHook;
+        private static KeyboardHookProc deleteHookCallback;
+        private static ResultsStatsFloatingWindow deleteHookOwner;
 
         /// <summary>The window that is currently open, if any.</summary>
         internal static ResultsStatsFloatingWindow Current { get; set; }
@@ -45,6 +58,12 @@ namespace MSSQLTool.Results
                 catch (Exception ex) { MSSQLToolPackage._logger?.Debug(ex, "Could not activate the statistics window."); }
             };
 
+            // SSMS translates Delete into an editor command before WPF sees it, even when the
+            // floating window's text box owns the keyboard.  A low-level hook is the only place
+            // early enough to keep Delete inside the panel; it edits the focused box itself.
+            Loaded += (_, __) => InstallDeleteGuard();
+            Closed += (_, __) => UninstallDeleteGuard();
+
             RestoreGeometry();
 
             // Give the window the SSMS main window as its owner: without it the panel disappears behind
@@ -63,6 +82,98 @@ namespace MSSQLTool.Results
             Closed += (_, __) => { RememberGeometry(); if (ReferenceEquals(Current, this)) Current = null; };
             Closed += (_, __) => content.Dispose();
         }
+
+        private void InstallDeleteGuard()
+        {
+            if (deleteHook != IntPtr.Zero) return;
+
+            try
+            {
+                deleteHookCallback = DeleteGuardCallback;
+                deleteHook = SetWindowsHookEx(WhKeyboardLowLevel, deleteHookCallback, GetModuleHandle(null), 0);
+                if (deleteHook == IntPtr.Zero)
+                {
+                    MSSQLToolPackage._logger?.Info("Could not install the panel Delete guard (Win32 error "
+                        + Marshal.GetLastWin32Error() + ").");
+                    deleteHookCallback = null;
+                    return;
+                }
+
+                deleteHookOwner = this;
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not install the panel Delete guard.");
+                deleteHook = IntPtr.Zero;
+                deleteHookCallback = null;
+            }
+        }
+
+        private static void UninstallDeleteGuard()
+        {
+            if (deleteHook == IntPtr.Zero) return;
+
+            try
+            {
+                UnhookWindowsHookEx(deleteHook);
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not remove the panel Delete guard.");
+            }
+            finally
+            {
+                deleteHook = IntPtr.Zero;
+                deleteHookCallback = null;
+                deleteHookOwner = null;
+            }
+        }
+
+        private static IntPtr DeleteGuardCallback(int code, IntPtr wParam, IntPtr lParam)
+        {
+            try
+            {
+                if (code >= 0 && deleteHook != IntPtr.Zero)
+                {
+                    long message = wParam.ToInt64();
+                    if (message == WmKeyDown || message == WmSysKeyDown)
+                    {
+                        int virtualKey = Marshal.ReadInt32(lParam);
+                        if (virtualKey == VkDelete || virtualKey == VkBack)
+                        {
+                            ResultsStatsFloatingWindow owner = Current ?? deleteHookOwner;
+                            if (owner != null && owner.TryHandleDeleteKey(virtualKey == VkBack))
+                                return new IntPtr(1);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "The panel Delete guard failed.");
+            }
+
+            return CallNextHookEx(deleteHook, code, wParam, lParam);
+        }
+
+        private bool TryHandleDeleteKey(bool back)
+        {
+            if (!IsVisible || content == null) return false;
+            return content.TryHandleDeleteKey(back);
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetWindowsHookEx(int idHook, KeyboardHookProc callback, IntPtr module, uint threadId);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string moduleName);
 
         /// <summary>Shows the panel (creating it when needed) without stealing the focus.</summary>
         internal static void ShowOrFocus()

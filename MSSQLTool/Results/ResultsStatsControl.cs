@@ -168,6 +168,83 @@ namespace MSSQLTool.Results
             }
         }
 
+        /// <summary>
+        /// Handles Delete/Backspace inside the panel.  SSMS turns these keys into editor commands
+        /// before WPF sees them, so the floating window's low-level hook calls this instead of
+        /// letting the key reach the SQL editor.
+        /// </summary>
+        internal bool TryHandleDeleteKey(bool back)
+        {
+            TextBox box = GetFocusedInputTextBox();
+            if (box == null) return false;
+
+            try
+            {
+                if (box.SelectionLength > 0)
+                {
+                    box.SelectedText = string.Empty;
+                    return true;
+                }
+
+                int caret = box.CaretIndex;
+                bool control = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
+                if (back)
+                {
+                    if (caret <= 0) return true;
+                    int count = control ? PreviousWordLength(box.Text, caret) : 1;
+                    box.Select(caret - count, count);
+                    box.SelectedText = string.Empty;
+                    box.CaretIndex = caret - count;
+                }
+                else
+                {
+                    if (caret >= box.Text.Length) return true;
+                    int count = control ? NextWordLength(box.Text, caret) : 1;
+                    box.Select(caret, count);
+                    box.SelectedText = string.Empty;
+                    box.CaretIndex = caret;
+                }
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not delete text in the statistics input.");
+            }
+
+            return true;
+        }
+
+        private TextBox GetFocusedInputTextBox()
+        {
+            if (valueBox.IsKeyboardFocusWithin) return valueBox;
+            if (!columnBox.IsKeyboardFocusWithin) return null;
+
+            try
+            {
+                columnBox.ApplyTemplate();
+                return columnBox.Template?.FindName("PART_EditableTextBox", columnBox) as TextBox;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static int PreviousWordLength(string text, int caret)
+        {
+            int index = caret;
+            while (index > 0 && char.IsWhiteSpace(text[index - 1])) index--;
+            while (index > 0 && !char.IsWhiteSpace(text[index - 1])) index--;
+            return Math.Max(1, caret - index);
+        }
+
+        private static int NextWordLength(string text, int caret)
+        {
+            int index = caret;
+            while (index < text.Length && char.IsWhiteSpace(text[index])) index++;
+            while (index < text.Length && !char.IsWhiteSpace(text[index])) index++;
+            return Math.Max(1, index - caret);
+        }
+
         private void AddRow(Grid grid, int row, string key, string label)
         {
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
