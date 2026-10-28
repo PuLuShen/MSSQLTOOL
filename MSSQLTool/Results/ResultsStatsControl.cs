@@ -547,6 +547,7 @@ namespace MSSQLTool.Results
         /// scroll API on this build, but this property is honoured, so the reaction is guaranteed; the
         /// columns before it stay pinned and Unfreeze releases them.
         /// </summary>
+        /// <summary>Moves the caret to the chosen column without pinning anything, by walking the cells.</summary>
         private void LocateColumn()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -559,15 +560,30 @@ namespace MSSQLTool.Results
                 if (needle.Length == 0) { foundText.Text = LocalizationManager.T("Type part of a column name."); return; }
 
                 List<string> names = ReadColumnNames(grid);
-                int index = MatchColumn(names.Count > 0 ? names : table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList(), needle);
-                if (index < 0)
+                List<string> source = names.Count > 0 ? names : table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
+                int target = MatchColumn(source, needle);
+                if (target < 0) { foundText.Text = LocalizationManager.Format("No column matches \'{0}\'.", needle); return; }
+
+                if (!TryFocusGrid(grid))
                 {
-                    foundText.Text = LocalizationManager.Format("No column matches \'{0}\'.", needle);
+                    foundText.Text = LocalizationManager.T("Click a cell in the results first, then locate again.");
                     return;
                 }
 
-                GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", index);
-                foundText.Text = LocalizationManager.Format("Column {0} ({1}) is now at the left edge.", index + 1, needle);
+                int row, current;
+                if (!TryGetCaret(grid, out row, out current))
+                {
+                    foundText.Text = LocalizationManager.T("The result grid did not report its current cell.");
+                    return;
+                }
+
+                int delta = target - current;
+                MoveCaret(grid, 0, delta);
+                int finalRow, finalColumn;
+                TryGetCaret(grid, out finalRow, out finalColumn);
+
+                foundText.Text = LocalizationManager.Format("Moved {0} column(s): now at column {1} ({2}), row {3}.",
+                    Math.Abs(delta), finalColumn + 1, finalColumn < source.Count ? source[finalColumn] : "?", finalRow + 1);
                 RememberSearch(needle);
             }
             catch (Exception ex)
@@ -575,11 +591,7 @@ namespace MSSQLTool.Results
                 MSSQLToolPackage._logger?.Info("Locate column failed: " + ex.Message);
             }
         }
-
-        /// <summary>
-        /// Finds the first cell containing the text (inside the current selection when there is one) and
-        /// scrolls the grid there with FirstScrollableRow, then reports the exact position and value.
-        /// </summary>
+        /// <summary>Finds the first matching cell and walks the caret to it (row and column).</summary>
         private void FindValue()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -591,28 +603,142 @@ namespace MSSQLTool.Results
                 string needle = (valueBox.Text ?? string.Empty).Trim();
                 if (needle.Length == 0) { foundText.Text = LocalizationManager.T("Type something to find."); return; }
 
-                for (int row = 0; row < table.Rows.Count; row++)
+                int matchRow = -1, matchColumn = -1;
+                string matchText = null;
+                for (int row = 0; row < table.Rows.Count && matchRow < 0; row++)
                     for (int column = 0; column < table.Columns.Count; column++)
                     {
                         string text = Convert.ToString(table.Rows[row][column], CultureInfo.CurrentCulture) ?? string.Empty;
                         if (text.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
-
-                        GridAccess.SetPropertyValue(grid, "FirstScrollableRow", (uint)row);
-                        GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", column);
-                        foundText.Text = LocalizationManager.Format("Row {0}, column {1} ({2}): {3}",
-                            row + 1, column + 1, table.Columns[column].ColumnName, text);
-                        RememberSearch(needle);
-                        return;
+                        matchRow = row;
+                        matchColumn = column;
+                        matchText = text;
+                        break;
                     }
 
-                foundText.Text = LocalizationManager.Format("Nothing matches \'{0}\'.", needle);
+                if (matchRow < 0)
+                {
+                    foundText.Text = LocalizationManager.Format("Nothing matches \'{0}\'.", needle);
+                    return;
+                }
+
+                string where = LocalizationManager.Format("Row {0}, column {1} ({2}): {3}",
+                    matchRow + 1, matchColumn + 1, table.Columns[matchColumn].ColumnName, matchText);
+
+                if (!TryFocusGrid(grid))
+                {
+                    foundText.Text = where + "  " + LocalizationManager.T("Click a cell in the results first, then find again.");
+                    return;
+                }
+
+                int caretRow, caretColumn;
+                if (TryGetCaret(grid, out caretRow, out caretColumn))
+                {
+                    MoveCaret(grid, matchRow - caretRow, matchColumn - caretColumn);
+                    int finalRow, finalColumn;
+                    TryGetCaret(grid, out finalRow, out finalColumn);
+                    where += "  " + LocalizationManager.Format("caret at row {0}, column {1}.", finalRow + 1, finalColumn + 1);
+                }
+
+                foundText.Text = where;
+                RememberSearch(needle);
             }
             catch (Exception ex)
             {
                 MSSQLToolPackage._logger?.Info("Find value failed: " + ex.Message);
             }
         }
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr GetFocus();
+
+        /// <summary>Focuses the results grid and verifies it before any key is sent.</summary>
+        private bool TryFocusGrid(object grid)
+        {
+            var control = grid as WinForms.Control;
+            if (control == null) return false;
+
+            try
+            {
+                WinForms.Form host = control.FindForm();
+                if (host != null) SetForegroundWindow(host.Handle);
+                control.Focus();
+                WinForms.Application.DoEvents();
+                System.Threading.Thread.Sleep(60);
+                return GetFocus() == control.Handle || control.ContainsFocus;
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Info("Focus hand-off failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        private static void Press(WinForms.Keys key)
+        {
+            const uint KeyUp = 0x0002;
+            keybd_event((byte)key, 0, 0, UIntPtr.Zero);
+            System.Threading.Thread.Sleep(20);
+            keybd_event((byte)key, 0, KeyUp, UIntPtr.Zero);
+            WinForms.Application.DoEvents();
+            System.Threading.Thread.Sleep(20);
+        }
+
+        /// <summary>Moves the caret by whole cells, one key at a time, reading the position back.</summary>
+        private void MoveCaret(object grid, int deltaRow, int deltaColumn)
+        {
+            var columnKey = deltaColumn > 0 ? WinForms.Keys.Right : WinForms.Keys.Left;
+            for (int i = 0; i < Math.Abs(deltaColumn); i++) Press(columnKey);
+
+            var rowKey = deltaRow > 0 ? WinForms.Keys.Down : WinForms.Keys.Up;
+            for (int i = 0; i < Math.Abs(deltaRow); i++) Press(rowKey);
+        }
+
+        private static bool TryGetCaret(object grid, out int row, out int column)
+        {
+            row = column = -1;
+            if (grid == null) return false;
+
+            try
+            {
+                MethodInfo current = grid.GetType().GetMethod("GetCurrentCell");
+                if (current != null)
+                {
+                    object[] args = { 0L, 0 };
+                    current.Invoke(grid, args);
+                    row = (int)Convert.ToInt64(args[0]);
+                    column = Convert.ToInt32(args[1]) - 1;
+                    if (column < 0) column = 0;
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                var blocks = GridAccess.GetProperty(grid, "SelectedCells") as IEnumerable;
+                if (blocks != null)
+                    foreach (object block in blocks)
+                    {
+                        if (block == null) continue;
+                        int x = ToInt(GridAccess.GetProperty(block, "X"), -1);
+                        long y = ToLong(GridAccess.GetProperty(block, "Y"), -1);
+                        if (x < 0 || y < 0) continue;
+                        column = Math.Max(0, x - 1);
+                        row = (int)y;
+                        return true;
+                    }
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
+        }
         /// <summary>Freezes the first N columns; 0 unfreezes.</summary>
         private void FreezeColumns()
         {
@@ -774,8 +900,6 @@ namespace MSSQLTool.Results
         private static string Dec(decimal value, int count)
             => count == 0 ? "-" : value.ToString("#,0.####", CultureInfo.CurrentCulture);
 
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
         private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
