@@ -45,6 +45,9 @@ namespace MSSQLTool.Results
             VerticalContentAlignment = VerticalAlignment.Center
         };
         private readonly TextBox freezeCount = new TextBox { Height = 24, Width = 46, Text = "0", VerticalContentAlignment = VerticalAlignment.Center };
+        private readonly TextBox columnBox = new TextBox { Height = 24, Width = 120, VerticalContentAlignment = VerticalAlignment.Center };
+        private readonly TextBox valueBox = new TextBox { Height = 24, Width = 120, VerticalContentAlignment = VerticalAlignment.Center };
+        private readonly TextBlock foundText = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.8, Margin = new Thickness(0, 4, 0, 0) };
         private readonly TextBlock status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, FontSize = 11, Margin = new Thickness(0, 4, 0, 0) };
 
         private List<string> allColumns = new List<string>();
@@ -96,6 +99,26 @@ namespace MSSQLTool.Results
             unfreeze.Click += (_, __) => { freezeCount.Text = "0"; FreezeColumns(); };
             freezeRow.Children.Add(unfreeze);
             root.Children.Add(freezeRow);
+
+            // Both actions use FirstScrollableColumn / FirstScrollableRow: those are the only properties this
+            // build actually honours (verified), so the grid always reacts even though its own scroll calls
+            // and the key injection are ignored.
+            var columnRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+            columnRow.Children.Add(new TextBlock { Text = LocalizationManager.T("Locate column:"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+            columnRow.Children.Add(columnBox);
+            var locate = new Button { Content = LocalizationManager.T("Locate"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            locate.Click += (_, __) => LocateColumn();
+            columnRow.Children.Add(locate);
+            root.Children.Add(columnRow);
+
+            var valueRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+            valueRow.Children.Add(new TextBlock { Text = LocalizationManager.T("Find value:"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+            valueRow.Children.Add(valueBox);
+            var find = new Button { Content = LocalizationManager.T("Find"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            find.Click += (_, __) => FindValue();
+            valueRow.Children.Add(find);
+            root.Children.Add(valueRow);
+            root.Children.Add(foundText);
 
             root.Children.Add(status);
             Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -516,6 +539,77 @@ namespace MSSQLTool.Results
             catch (Exception ex)
             {
                 MSSQLToolPackage._logger?.Debug(ex, "Could not store the column search history.");
+            }
+        }
+
+        /// <summary>
+        /// Brings a column into view by making it the first scrollable one.  The grid ignores every other
+        /// scroll API on this build, but this property is honoured, so the reaction is guaranteed; the
+        /// columns before it stay pinned and Unfreeze releases them.
+        /// </summary>
+        private void LocateColumn()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                object grid = cachedGrid ?? TryGetFocusGrid();
+                if (grid == null || table == null) { foundText.Text = LocalizationManager.T("No result set is available."); return; }
+
+                string needle = (columnBox.Text ?? string.Empty).Trim();
+                if (needle.Length == 0) { foundText.Text = LocalizationManager.T("Type part of a column name."); return; }
+
+                List<string> names = ReadColumnNames(grid);
+                int index = MatchColumn(names.Count > 0 ? names : table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList(), needle);
+                if (index < 0)
+                {
+                    foundText.Text = LocalizationManager.Format("No column matches \'{0}\'.", needle);
+                    return;
+                }
+
+                GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", index);
+                foundText.Text = LocalizationManager.Format("Column {0} ({1}) is now at the left edge.", index + 1, needle);
+                RememberSearch(needle);
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Info("Locate column failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Finds the first cell containing the text (inside the current selection when there is one) and
+        /// scrolls the grid there with FirstScrollableRow, then reports the exact position and value.
+        /// </summary>
+        private void FindValue()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                object grid = cachedGrid ?? TryGetFocusGrid();
+                if (grid == null || table == null) { foundText.Text = LocalizationManager.T("No result set is available."); return; }
+
+                string needle = (valueBox.Text ?? string.Empty).Trim();
+                if (needle.Length == 0) { foundText.Text = LocalizationManager.T("Type something to find."); return; }
+
+                for (int row = 0; row < table.Rows.Count; row++)
+                    for (int column = 0; column < table.Columns.Count; column++)
+                    {
+                        string text = Convert.ToString(table.Rows[row][column], CultureInfo.CurrentCulture) ?? string.Empty;
+                        if (text.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                        GridAccess.SetPropertyValue(grid, "FirstScrollableRow", (uint)row);
+                        GridAccess.SetPropertyValue(grid, "FirstScrollableColumn", column);
+                        foundText.Text = LocalizationManager.Format("Row {0}, column {1} ({2}): {3}",
+                            row + 1, column + 1, table.Columns[column].ColumnName, text);
+                        RememberSearch(needle);
+                        return;
+                    }
+
+                foundText.Text = LocalizationManager.Format("Nothing matches \'{0}\'.", needle);
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Info("Find value failed: " + ex.Message);
             }
         }
 

@@ -37,6 +37,20 @@ namespace MSSQLTool.Results
             Content = content;
 
             RestoreGeometry();
+
+            // Give the window the SSMS main window as its owner: without it the panel disappears behind
+            // the shell as soon as the results grid is clicked.
+            try
+            {
+                var uiShell = ServiceProvider.GlobalProvider.GetService(typeof(SVsUIShell)) as IVsUIShell;
+                IntPtr owner;
+                if (uiShell != null && uiShell.GetDialogOwnerHwnd(out owner) == 0 && owner != IntPtr.Zero)
+                    new System.Windows.Interop.WindowInteropHelper(this) { Owner = owner };
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not give the statistics window an owner.");
+            }
             Closed += (_, __) => { RememberGeometry(); if (ReferenceEquals(Current, this)) Current = null; };
             Closed += (_, __) => content.Dispose();
         }
