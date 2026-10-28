@@ -6,6 +6,21 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.373
+
+### 中文
+
+- **修复「新建查询」报 `已经存在 (STG_E_FILEREADYEXISTS)`**：SSMS 自动恢复历史标签后，扩展在窗口创建/激活时同步读取 `Window.Object` / `DocData`，会在 SSMS 还在创建新查询时再次初始化文档，导致临时查询文件 `SQLQuery*.sql` 被重复创建。现在窗口创建和激活的处理都延后到 WPF Dispatcher 的 Background 优先级，等 SSMS 完成命令后再挂接统计钩子和编辑器补全。
+
+### English
+
+- **Fix "already exists (STG_E_FILEREADYEXISTS)" when clicking New Query**: after SSMS restored auto-recovered tabs, the extension read `Window.Object` / `DocData` synchronously during window creation/activation, re-initialising the document while SSMS was still creating it and causing the temporary `SQLQuery*.sql` file to be created twice. Window-created and window-activated work now runs at Dispatcher Background priority, after the shell has finished the command.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.373.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.373.vsix` asset below, then restart SSMS.
+
 ## 5.372
 
 ### 中文

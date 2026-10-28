@@ -695,11 +695,43 @@ namespace MSSQLTool
         {
             if (!ThreadHelper.CheckAccess()) return;
 
-            bool isDocument = IsDocumentWindow(GotFocus);
+            if (!IsDocumentWindow(GotFocus))
+            {
+                foreach (KeypressCommandFilter existing in _commandFilters) existing.DismissCompletion();
+                return;
+            }
+
+            // Activation is raised from inside SSMS's command execution.  Reading Window.Object /
+            // DocData synchronously here makes the shell initialise the document again while it is
+            // still creating the new query, which produced
+            // "already exists (STG_E_FILEREADYEXISTS)" after an auto-recovery replay.  Wait for the
+            // dispatcher to go idle first, then attach the editor filter to the finished document.
+            try
+            {
+                var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                if (dispatcher == null)
+                {
+                    HandleWindowActivated(GotFocus);
+                    return;
+                }
+
+                dispatcher.BeginInvoke(new Action(() => HandleWindowActivated(GotFocus)),
+                    System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Could not schedule the window-activation work.");
+            }
+        }
+
+        private void HandleWindowActivated(EnvDTE.Window window)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (!IsDocumentWindow(window)) return;
 
             try
             {
-                if (isDocument) EnsureStatisticsExecutionHookForActiveWindow("window-activated");
+                EnsureStatisticsExecutionHookForActiveWindow("window-activated");
             }
             catch (Exception ex)
             {
@@ -708,51 +740,40 @@ namespace MSSQLTool
 
             // The editor command filter owns completion as well as optional snippets,
             // so it must be attached independently of the snippet setting.
-            if (isDocument)
+            try
             {
-                try
+                // snippet processor
+                var DocData = GridAccess.GetProperty(window.Object, "DocData");
+                if (DocData != null)
                 {
-                    // snippet processor
-                    var DocData = GridAccess.GetProperty(GotFocus.Object, "DocData");
-                    if (DocData != null)
-                    {
-                        var txtMgr = (IVsTextManager)GridAccess.GetProperty(DocData, "TextManager");
+                    var txtMgr = (IVsTextManager)GridAccess.GetProperty(DocData, "TextManager");
 
-                        IVsTextView textView;
-                        if (txtMgr != null && txtMgr.GetActiveView(0, null, out textView) == VSConstants.S_OK)
+                    IVsTextView textView;
+                    if (txtMgr != null && txtMgr.GetActiveView(0, null, out textView) == VSConstants.S_OK)
+                    {
+                        foreach (KeypressCommandFilter existing in _commandFilters)
                         {
-                            foreach (KeypressCommandFilter existing in _commandFilters)
-                            {
-                                if (!existing.IsFor(textView)) existing.DismissCompletion();
-                            }
-                            EnsureCommandFilter(textView);
+                            if (!existing.IsFor(textView)) existing.DismissCompletion();
                         }
+                        EnsureCommandFilter(textView);
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logger.Error(ex, "An exception occurred");
-                }
             }
-            else
+            catch (Exception ex)
             {
-                foreach (KeypressCommandFilter existing in _commandFilters) existing.DismissCompletion();
+                _logger.Error(ex, "An exception occurred");
             }
 
             // Apply connection-based status-bar coloring through SSMS's native API.
             try
             {
-                if (isDocument)
-                {
-                    TryApplyConnectionColorForWindow(GotFocus);
-                    ScheduleActiveWindowConnectionColorRefresh();
-                }
+                TryApplyConnectionColorForWindow(window);
+                ScheduleActiveWindowConnectionColorRefresh();
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "An exception occurred applying connection color");
             }
-
         }
 
         internal KeypressCommandFilter EnsureCommandFilter(IVsTextView textView)
