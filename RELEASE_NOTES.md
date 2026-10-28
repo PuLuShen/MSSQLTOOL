@@ -6,6 +6,21 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.379
+
+### 中文
+
+- **修正 A 方案的保存方式**：部分 SSMS 版本的 `Document.Save(newPath)` 只写副本、不改变文档路径，导致 `SQLQuery1.sql` 又被重建。现在检测到路径未变化时，会关闭旧恢复标签并重新打开唯一路径的 `.sql` 副本，再删除旧临时文件，真正释放 `SQLQueryN` 编号。标签内容保留，连接可能需要重新选择。
+
+### English
+
+- **Fix the Plan A save path**: on some SSMS builds `Document.Save(newPath)` writes a copy but leaves the document path unchanged, so `SQLQuery1.sql` is recreated. When that happens the old recovered tab is now closed, the unique `.sql` copy is reopened, and the old temp file is deleted, truly freeing the `SQLQueryN` names. Content is kept; the connection may need to be reselected.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.379.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.379.vsix` asset below, then restart SSMS.
+
 ## 5.378
 
 ### 中文

@@ -111,7 +111,10 @@ namespace MSSQLTool
                 string target = TargetFolder;
                 Directory.CreateDirectory(target);
 
-                foreach (Document document in dte.Documents)
+                var documents = new List<Document>();
+                foreach (Document document in dte.Documents) documents.Add(document);
+
+                foreach (Document document in documents)
                 {
                     try
                     {
@@ -123,12 +126,27 @@ namespace MSSQLTool
                         document.Save(newPath);
                         if (!File.Exists(newPath)) continue;
 
+                        bool pathChanged = false;
+                        try { pathChanged = string.Equals(document.FullName, newPath, StringComparison.OrdinalIgnoreCase); }
+                        catch (Exception) { }
+
+                        bool closed = false;
+                        if (!pathChanged)
+                        {
+                            // Some SSMS builds save a copy but keep the old document path, which
+                            // lets the shell recreate SQLQueryN.sql.  Close the old tab and open
+                            // the saved copy so the old name is really released.
+                            try { document.Close(vsSaveChanges.vsSaveChangesNo); closed = true; }
+                            catch (Exception ex) { MSSQLToolPackage._logger?.Debug(ex, "Could not close the old recovered tab."); }
+                            try { dte.ItemOperations.OpenFile(newPath); }
+                            catch (Exception ex) { MSSQLToolPackage._logger?.Debug(ex, "Could not reopen the recovered query copy."); }
+                        }
+
                         moved++;
                         MSSQLToolPackage._logger?.Info("Moved an open recovered query to: " + newPath);
 
-                        // The document now points at newPath.  Remove the old temp name so SSMS can
-                        // allocate SQLQuery1.sql / SQLQuery2.sql again for New Query.
-                        TryDelete(oldPath);
+                        // The old temp name is free now; SSMS can allocate SQLQuery1.sql again.
+                        if (pathChanged || closed) TryDelete(oldPath);
                     }
                     catch (Exception ex)
                     {
@@ -196,7 +214,8 @@ namespace MSSQLTool
         private static string UniquePath(string folder, string fileName)
         {
             string stem = Path.GetFileNameWithoutExtension(fileName);
-            string extension = Path.GetExtension(fileName);
+            // Always reopen as a .sql query, even when the auto-recovered temp name was .sql0/.sql1.
+            const string extension = ".sql";
             string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
 
             string candidate = Path.Combine(folder, stem + "_" + stamp + extension);
