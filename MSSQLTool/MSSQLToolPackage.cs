@@ -912,6 +912,7 @@ namespace MSSQLTool
 
         public static void SQLResultsControl_ScriptExecutionCompleted(object QEOLESQLExec, object b)
         {
+            EnsureResultsGridMenu();
 
             ThreadHelper.ThrowIfNotOnUIThread();
 
