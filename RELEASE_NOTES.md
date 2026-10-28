@@ -6,6 +6,21 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.376
+
+### 中文
+
+- **修复 SSMS 自动恢复标签后「新建查询」报 `已经存在 (STG_E_FILEREADYEXISTS)`**：根因是窗口创建/激活/关闭事件里读取了 `Window.Object` / `DocData`，SSMS 还在创建临时 `SQLQuery*.sql` 时会再次初始化文档，第二次创建同名文件就失败。现在这些事件完全不碰 `Window.Object`：补全过滤器改用 `SVsTextManager.GetActiveView`，统计钩子改在窗口激活/执行前挂接，窗口关闭也只用活动文本视图。
+
+### English
+
+- **Fix "already exists (STG_E_FILEREADYEXISTS)" when clicking New Query after SSMS restores auto-recovered tabs**: the window created/activated/closing handlers read `Window.Object` / `DocData`; that re-initialised the document while SSMS was still creating the temporary `SQLQuery*.sql` file, so the second create failed. Those handlers no longer touch `Window.Object`: the editor filter uses `SVsTextManager.GetActiveView`, the statistics hook attaches on activation/before execution, and window closing only uses the active text view.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.376.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.376.vsix` asset below, then restart SSMS.
+
 ## 5.375
 
 ### 中文

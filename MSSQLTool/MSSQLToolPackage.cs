@@ -742,21 +742,18 @@ namespace MSSQLTool
             // so it must be attached independently of the snippet setting.
             try
             {
-                // snippet processor
-                var DocData = GridAccess.GetProperty(window.Object, "DocData");
-                if (DocData != null)
+                // Do not touch window.Object here: doing so while SSMS is still creating the
+                // document makes it create the temporary query file twice (STG_E_FILEREADYEXISTS
+                // after an AutoRecover replay).  The active text view is enough for the filter.
+                var textManager = Package.GetGlobalService(typeof(SVsTextManager)) as IVsTextManager;
+                IVsTextView textView;
+                if (textManager != null && textManager.GetActiveView(1, null, out textView) == VSConstants.S_OK)
                 {
-                    var txtMgr = (IVsTextManager)GridAccess.GetProperty(DocData, "TextManager");
-
-                    IVsTextView textView;
-                    if (txtMgr != null && txtMgr.GetActiveView(0, null, out textView) == VSConstants.S_OK)
+                    foreach (KeypressCommandFilter existing in _commandFilters)
                     {
-                        foreach (KeypressCommandFilter existing in _commandFilters)
-                        {
-                            if (!existing.IsFor(textView)) existing.DismissCompletion();
-                        }
-                        EnsureCommandFilter(textView);
+                        if (!existing.IsFor(textView)) existing.DismissCompletion();
                     }
+                    EnsureCommandFilter(textView);
                 }
             }
             catch (Exception ex)
@@ -795,12 +792,12 @@ namespace MSSQLTool
         {
             if (!ThreadHelper.CheckAccess()) return;
             if (!IsDocumentWindow(Window)) return;
-            // Re-color remaining tabs after a tab closes
+            // Re-color remaining tabs after a tab closes.  Do not touch Window.Object here either;
+            // the active text view is enough to find the filter that belonged to the closing tab.
             try
             {
-                var docData = Window == null ? null : GridAccess.GetProperty(Window.Object, "DocData");
-                var textManager = docData == null ? null : GridAccess.GetProperty(docData, "TextManager") as IVsTextManager;
-                if (textManager != null && textManager.GetActiveView(0, null, out IVsTextView closingView) == VSConstants.S_OK)
+                var textManager = Package.GetGlobalService(typeof(SVsTextManager)) as IVsTextManager;
+                if (textManager != null && textManager.GetActiveView(1, null, out IVsTextView closingView) == VSConstants.S_OK)
                 {
                     for (int i = _commandFilters.Count - 1; i >= 0; i--)
                     {
@@ -848,14 +845,13 @@ namespace MSSQLTool
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            // subscribe to the execution completed event
+            // Do not touch Window.Object while the shell is still creating the window: that is what
+            // made the temporary SQLQuery*.sql file be created twice after an AutoRecover replay.
+            // The results/statistics hook is attached on activation and before execution instead.
             try
             {
-                var sqlResultsControl = GridAccess.GetNonPublicField(Window.Object, "m_sqlResultsControl");
-                AttachStatisticsExecutionCompletedHandler(sqlResultsControl);
                 TryApplyConnectionColorForWindow(Window);
                 ScheduleActiveWindowConnectionColorRefresh();
-
             }
             catch (Exception ex) 
             {
