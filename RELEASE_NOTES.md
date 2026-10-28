@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.372
+
+### 中文
+
+- **定位列下拉框只显示真实列名**：之前每个字段名后面还会多出 `Column_0`、`Column_1`……（结果集内部 DataTable 的占位列名），现在读取真实列名，不再重复。
+- **Delete 键不再删到 SQL 编辑器**：点击「定位列」或「查找值」输入框时，面板会显式激活浮窗并把键盘焦点交给输入框；删除键只作用于输入内容。
+- **自动恢复后新建查询报错**：修复查询历史「在新查询窗口中打开」在当前连接为空时的空引用；同时把 SSMS 恢复多个历史标签时的窗口创建/激活挂接延后到窗口创建完成之后，避免重入导致新建查询失败。
+
+### English
+
+- **The locate dropdown shows real column names only**: the internal `Column_0`, `Column_1`, ... placeholders no longer appear after the actual result columns.
+- **Delete no longer reaches the SQL editor**: clicking the locate or find box explicitly activates the floating panel and focuses the input, so Delete only edits the text there.
+- **New-query error after auto-recovery**: opening a history record in a new query no longer dereferences a null connection, and the window-created/activated hooks now run after SSMS has finished creating each restored tab.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.372.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.372.vsix` asset below, then restart SSMS.
+
 ## 5.371
 
 ### 中文

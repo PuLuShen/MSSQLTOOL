@@ -36,6 +36,15 @@ namespace MSSQLTool.Results
             content = new ResultsStatsControl();
             Content = content;
 
+            // ShowActivated=false keeps the grid selection alive, but it also means the first click
+            // in the panel does not move the keyboard focus here: Delete and the arrow keys then
+            // still reach the SQL editor.  Activate explicitly when the user clicks the panel.
+            PreviewMouseDown += (_, __) =>
+            {
+                try { if (!IsActive) Activate(); }
+                catch (Exception ex) { MSSQLToolPackage._logger?.Debug(ex, "Could not activate the statistics window."); }
+            };
+
             RestoreGeometry();
 
             // Give the window the SSMS main window as its owner: without it the panel disappears behind

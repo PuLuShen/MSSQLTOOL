@@ -693,12 +693,13 @@ namespace MSSQLTool
 
         private void WindowActivated_Event(EnvDTE.Window GotFocus, EnvDTE.Window LostFocus)
         {
+            if (!ThreadHelper.CheckAccess()) return;
 
-            ThreadHelper.ThrowIfNotOnUIThread();
+            bool isDocument = IsDocumentWindow(GotFocus);
 
             try
             {
-                EnsureStatisticsExecutionHookForActiveWindow("window-activated");
+                if (isDocument) EnsureStatisticsExecutionHookForActiveWindow("window-activated");
             }
             catch (Exception ex)
             {
@@ -707,7 +708,7 @@ namespace MSSQLTool
 
             // The editor command filter owns completion as well as optional snippets,
             // so it must be attached independently of the snippet setting.
-            if (GotFocus != null)
+            if (isDocument)
             {
                 try
                 {
@@ -741,7 +742,7 @@ namespace MSSQLTool
             // Apply connection-based status-bar coloring through SSMS's native API.
             try
             {
-                if (GotFocus != null)
+                if (isDocument)
                 {
                     TryApplyConnectionColorForWindow(GotFocus);
                     ScheduleActiveWindowConnectionColorRefresh();
@@ -771,7 +772,8 @@ namespace MSSQLTool
 
         private void WindowClosing_Event(EnvDTE.Window Window)
         {
-            ThreadHelper.ThrowIfNotOnUIThread();
+            if (!ThreadHelper.CheckAccess()) return;
+            if (!IsDocumentWindow(Window)) return;
             // Re-color remaining tabs after a tab closes
             try
             {
@@ -796,7 +798,33 @@ namespace MSSQLTool
 
         private void WindowCreated_Event(EnvDTE.Window Window)
         {
+            // WindowCreated fires while SSMS is still constructing the window (and, after a crash,
+            // while it replays every auto-recovered tab).  Touching Window.Object at that moment can
+            // re-enter the shell's document creation.  Let the shell finish first, then hook the
+            // results control on the dispatcher; non-document windows do not own a results grid.
+            if (!ThreadHelper.CheckAccess()) return;
+            if (!IsDocumentWindow(Window)) return;
 
+            try
+            {
+                var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                if (dispatcher == null)
+                {
+                    HandleWindowCreated(Window);
+                    return;
+                }
+
+                dispatcher.BeginInvoke(new Action(() => HandleWindowCreated(Window)),
+                    System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "An exception occurred");
+            }
+        }
+
+        private void HandleWindowCreated(EnvDTE.Window Window)
+        {
             ThreadHelper.ThrowIfNotOnUIThread();
 
             // subscribe to the execution completed event
@@ -812,6 +840,14 @@ namespace MSSQLTool
             {
                 _logger.Error(ex, "An exception occurred");
             }
+        }
+
+        private static bool IsDocumentWindow(EnvDTE.Window window)
+        {
+            if (window == null) return false;
+
+            try { return string.Equals(window.Kind, "Document", StringComparison.Ordinal); }
+            catch (Exception) { return false; }
         }
 
         private static void AttachStatisticsExecutionCompletedHandler(object sqlResultsControl)
@@ -843,6 +879,11 @@ namespace MSSQLTool
 
             try
             {
+                // The toolbar, Start Page and other tool windows have no results grid.  Probing
+                // them can throw (and after an auto-recovery replay it is especially noisy), so
+                // only document windows are considered.
+                if (!IsDocumentWindow(ServiceCache.ExtensibilityModel?.ActiveWindow)) return;
+
                 var sqlResultsControl = GridAccess.GetSQLResultsControl();
                 AttachStatisticsExecutionCompletedHandler(sqlResultsControl);
                 // Puts "结果集统计面板" in the grid's own context menu; harmless when the menu is not

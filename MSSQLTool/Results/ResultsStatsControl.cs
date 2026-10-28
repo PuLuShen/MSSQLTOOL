@@ -125,12 +125,47 @@ namespace MSSQLTool.Results
             root.Children.Add(valueRow);
             root.Children.Add(foundText);
 
+            // The floating window is shown without activation, so the first click has to take the
+            // keyboard explicitly.  Without this the SQL editor behind the panel keeps the focus and
+            // Delete removes code there instead of characters in these boxes.
+            PreviewMouseDown += (_, __) => ActivatePanel();
+            columnBox.PreviewMouseLeftButtonDown += (_, __) => ActivateInput(columnBox);
+            valueBox.PreviewMouseLeftButtonDown += (_, __) => ActivateInput(valueBox);
+
             root.Children.Add(status);
             Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
 
             Loaded += (_, __) => StartTimer();
             Unloaded += (_, __) => StopTimer();
             IsVisibleChanged += (_, __) => { if (IsVisible) { StartTimer(); Refresh(); } else StopTimer(); };
+        }
+
+        /// <summary>Activates the floating window when the user clicks anywhere in the panel.</summary>
+        private void ActivatePanel()
+        {
+            try
+            {
+                Window host = Window.GetWindow(this);
+                if (host != null && !host.IsActive) host.Activate();
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not activate the statistics panel.");
+            }
+        }
+
+        /// <summary>Gives an input box the real keyboard focus, not just the window's attention.</summary>
+        private void ActivateInput(FrameworkElement input)
+        {
+            ActivatePanel();
+            try
+            {
+                if (input != null && !input.Focus()) Keyboard.Focus(input);
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not focus the statistics input.");
+            }
         }
 
         private void AddRow(Grid grid, int row, string key, string label)
@@ -325,7 +360,7 @@ namespace MSSQLTool.Results
                 UpdateColumns(headers);
                 columnText.Text = LocalizationManager.Format("Column(s): {0}", string.Join(", ",
                     Enumerable.Range(columnFrom, columnTo - columnFrom + 1).Select(i =>
-                        i < headers.Count && !string.IsNullOrWhiteSpace(headers[i]) ? headers[i] : current.Columns[i].ColumnName)));
+                        i < headers.Count && !string.IsNullOrWhiteSpace(headers[i]) ? headers[i] : ColumnDisplayName(current.Columns[i]))));
 
                 if (summary.Count == 0 && dates.Count > 0)
                 {
@@ -391,6 +426,32 @@ namespace MSSQLTool.Results
         }
 
         /// <summary>
+        /// The display name of a data-table column.  GetDataTables names the DataColumns
+        /// "Column_0", "Column_1", ... and keeps the real result column name in the
+        /// "columnName" extended property, so reading ColumnName directly leaked those
+        /// synthetic names into the locate dropdown after the real ones.
+        /// </summary>
+        private static string ColumnDisplayName(DataColumn column)
+        {
+            if (column == null) return string.Empty;
+
+            try
+            {
+                object name = column.ExtendedProperties["columnName"];
+                if (name != null)
+                {
+                    string text = Convert.ToString(name, CultureInfo.CurrentCulture);
+                    if (!string.IsNullOrWhiteSpace(text)) return text;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return column.ColumnName ?? string.Empty;
+        }
+
+        /// <summary>
         /// The dropdown lists the current result columns only.  It used to prepend a saved search history,
         /// so old search terms appeared above the columns; that history is deliberately gone.  When the
         /// result set changes the box is cleared as well, because a term typed for the previous columns
@@ -406,8 +467,11 @@ namespace MSSQLTool.Results
 
             if (table != null)
                 foreach (DataColumn column in table.Columns)
-                    if (!names.Contains(column.ColumnName, StringComparer.OrdinalIgnoreCase))
-                        names.Add(column.ColumnName);
+                {
+                    string name = ColumnDisplayName(column);
+                    if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name, StringComparer.OrdinalIgnoreCase))
+                        names.Add(name);
+                }
 
             allColumns = names;
             string signature = string.Join("|", names);
@@ -495,7 +559,7 @@ namespace MSSQLTool.Results
                 if (needle.Length == 0) { foundText.Text = LocalizationManager.T("Type part of a column name."); return; }
 
                 List<string> names = ReadColumnNames(grid);
-                List<string> source = names.Count > 0 ? names : table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
+                List<string> source = names.Count > 0 ? names : table.Columns.Cast<DataColumn>().Select(ColumnDisplayName).ToList();
                 int target = MatchColumn(source, needle);
                 if (target < 0) { foundText.Text = LocalizationManager.Format("No column matches \'{0}\'.", needle); return; }
 
@@ -569,7 +633,7 @@ namespace MSSQLTool.Results
 
                 string where = LocalizationManager.Format("{0}/{1} - row {2}, column {3} ({4}): {5}",
                     matchCursor + 1, matches.Count, matchRow + 1, matchColumn + 1,
-                    table.Columns[matchColumn].ColumnName, matchText);
+                    ColumnDisplayName(table.Columns[matchColumn]), matchText);
 
                 if (TryFocusGrid(grid))
                 {

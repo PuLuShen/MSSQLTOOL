@@ -171,7 +171,13 @@ namespace MSSQLTool
             try
             {
                 var current = ScriptFactoryAccess.GetCurrentConnectionInfo();
-                ServiceCache.ScriptFactory.CreateNewBlankScript(ScriptType.Sql, current.ActiveConnectionInfo, null);
+                if (current != null && current.ActiveConnectionInfo != null)
+                    ServiceCache.ScriptFactory.CreateNewBlankScript(ScriptType.Sql, current.ActiveConnectionInfo, null);
+                else
+                    // After a crash/auto-recovery the restored tab may have no live connection.  Open a
+                    // plain query window instead of dereferencing a null connection and failing.
+                    ServiceCache.ScriptFactory.CreateNewBlankScript(ScriptType.Sql);
+
                 var document = (EnvDTE.TextDocument)ServiceCache.ExtensibilityModel.Application.ActiveDocument.Object(null);
                 document.EndPoint.CreateEditPoint().Insert($"-- Query history source: {record.DataSource} / {record.DatabaseName}{Environment.NewLine}" + record.QueryText);
             }
