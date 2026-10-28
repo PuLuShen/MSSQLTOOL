@@ -362,6 +362,7 @@ namespace MSSQLTool
 
             LocalizationManager.Initialize();
             InitializeLogging();
+            RecoveredTempFileService.Schedule();
             AppDomain.CurrentDomain.FirstChanceException += OnFirstChanceException;
 
             try

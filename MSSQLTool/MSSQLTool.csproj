@@ -129,6 +129,7 @@
     <Compile Include="Modules\EditorEditTransaction.cs" />
     <Compile Include="Modules\DatabaseIdentifier.cs" />
     <Compile Include="Modules\QueryHistoryPrivacy.cs" />
+    <Compile Include="Modules\RecoveredTempFileService.cs" />
     <Compile Include="Modules\TemplateEditorKeyGuard.cs" />
     <Compile Include="Modules\QueryHistorySqliteStore.cs" />
     <Compile Include="UpdateChecker.cs" />

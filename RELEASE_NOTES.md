@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.378
+
+### 中文
+
+- **绕过 SSMS 恢复标签后新建查询的 `STG_E_FILEREADYEXISTS`**：插件启动时把 `%TEMP%\SQLQuery*.sql*` 临时查询文件移到 `D:\SQLTOOLDATA\RecoveredQueries`，并给打开中的恢复标签执行 `Document.Save` 到唯一文件名；随后删除旧的 `SQLQueryN.sql`，把编号让给 SSMS 的「新建查询」。真实路径的 .sql 文件不会被动。
+- 被移动的恢复标签会改成 `SQLQueryN_<时间戳>.sql` 这样的文件名，内容保留，仍可继续编辑/保存。
+
+### English
+
+- **Work around `STG_E_FILEREADYEXISTS` after SSMS restores auto-recovered tabs**: on startup the extension moves `%TEMP%\SQLQuery*.sql*` files into `D:\SQLTOOLDATA\RecoveredQueries`, uses `Document.Save` to give open recovered tabs unique names, then removes the old `SQLQueryN.sql` so native New Query can allocate that number again. Real .sql files are never touched.
+- Recovered tabs are renamed to `SQLQueryN_<timestamp>.sql`; their content is kept and they stay editable/saveable.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.378.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.378.vsix` asset below, then restart SSMS.
+
 ## 5.377
 
 ### 中文
