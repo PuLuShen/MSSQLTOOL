@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.375
+
+### 中文
+
+- **恢复完全交给 SSMS**：插件不再弹恢复框、不扫描 `BackupFiles`、不额外打开查询窗口；异常退出后的标签恢复由 SSMS 自带 AutoRecover 负责。
+- **面板输入框 Delete 可用**：定位列/查找值输入框获得焦点时，Delete/Backspace（含 Ctrl 按词删除）由面板自身处理，不再删到 SQL 编辑器。
+- **模板语句可编辑**：模板浏览器和停靠版模板窗口的预览支持 Delete/Backspace/Enter，停靠版提供 Save / Ctrl+S。
+
+### English
+
+- **Recovery owned by SSMS**: no plugin recovery prompt, `BackupFiles` scan or extra query windows; SSMS AutoRecover restores tabs after an abnormal exit.
+- **Delete works in the panel inputs**: Delete/Backspace (including Ctrl-word variants) edit the focused locate/find box instead of the SQL editor.
+- **Template statements are editable**: both template previews handle Delete/Backspace/Enter; the docked window also has Save / Ctrl+S.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.375.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.375.vsix` asset below, then restart SSMS.
+
 ## 5.374
 
 ### 中文
