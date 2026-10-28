@@ -130,14 +130,7 @@
 
       <!-- Visible by default: DefaultInvisible would hide the entry until code made it visible, which
            left the command unreachable in the Tools menu. -->
-      <Button guid="guidMSSQLToolPackageCmdSet" id="ResultsToolsButton" priority="0x0310" type="Button">
-        <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolsSubMenuGroup_Health" />
-        <Strings>
-          <ButtonText>结果集搜索与统计</ButtonText>
-          <LocCanonicalName>MSSQLTool.ResultsTools</LocCanonicalName>
-          <ToolTipText>在当前结果集中查找内容、跳转到命中的单元格，并查看每列的统计（空值、去重数、最值、平均、最大长度）</ToolTipText>
-        </Strings>
-      </Button>
+
 
       <Button guid="guidMSSQLToolPackageCmdSet" id="ResultsPanelButton" priority="0x0001" type="Button">
         <Parent guid="guidMSSQLToolPackageCmdSet" id="ToolbarGroup" />
@@ -329,7 +322,7 @@
             bitmap strip containing the bitmaps and then there are the numeric ids of the elements used
             inside a button definition. An important aspect of this declaration is that the element id
             must be the actual index (1-based) of the bitmap inside the bitmap strip. -->
-      <Bitmap guid="guidResultsStats" href="Resources\results-stats.png" usedList="bmpResultsStats" />
+      <Bitmap guid="guidResultsStats" href="Resources\statistics-summary.png" usedList="bmpResultsStats" />
       <Bitmap guid="guidImagesSettings" href="Resources\settings.png" usedList="bmpSettings" />
       <Bitmap guid="guidImagesMagicWand" href="Resources\wizard.png" usedList="bmpMagicWand" />
       <Bitmap guid="guidImagesTemplate" href="Resources\template.png" usedList="bmpTemplate" />

@@ -45,7 +45,10 @@ namespace MSSQLTool.Results
             VerticalContentAlignment = VerticalAlignment.Center
         };
         private readonly TextBox freezeCount = new TextBox { Height = 24, Width = 46, Text = "0", VerticalContentAlignment = VerticalAlignment.Center };
-        private readonly TextBox columnBox = new TextBox { Height = 24, Width = 120, VerticalContentAlignment = VerticalAlignment.Center };
+        private readonly ComboBox columnBox = new ComboBox { Height = 24, Width = 150, IsEditable = true, IsTextSearchEnabled = false, VerticalContentAlignment = VerticalAlignment.Center };
+        private readonly List<object[]> matches = new List<object[]>();   // row, column, text of every hit
+        private int matchCursor = -1;
+        private string lastNeedle = string.Empty;
         private readonly TextBox valueBox = new TextBox { Height = 24, Width = 120, VerticalContentAlignment = VerticalAlignment.Center };
         private readonly TextBlock foundText = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.8, Margin = new Thickness(0, 4, 0, 0) };
         private readonly TextBlock status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75, FontSize = 11, Margin = new Thickness(0, 4, 0, 0) };
@@ -105,6 +108,8 @@ namespace MSSQLTool.Results
             // and the key injection are ignored.
             var columnRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
             columnRow.Children.Add(new TextBlock { Text = LocalizationManager.T("Locate column:"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+            columnBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,
+                new TextChangedEventHandler((_, __) => FilterColumns()));
             columnRow.Children.Add(columnBox);
             var locate = new Button { Content = LocalizationManager.T("Locate"), Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
             locate.Click += (_, __) => LocateColumn();
@@ -337,6 +342,15 @@ namespace MSSQLTool.Results
                         names.Add(column.ColumnName);
 
             allColumns = names;
+            try
+            {
+                string keep = columnBox.Text;
+                columnBox.ItemsSource = names;
+                columnBox.Text = keep;
+            }
+            catch (Exception)
+            {
+            }
             string signature = string.Join("|", names);
             if (string.Equals(signature, lastColumnSignature, StringComparison.Ordinal)) return;
 
@@ -373,6 +387,29 @@ namespace MSSQLTool.Results
         }
 
         /// <summary>Exact name first, then prefix, then substring.</summary>
+        /// <summary>Narrows the column dropdown to the names that contain what has been typed.</summary>
+        private void FilterColumns()
+        {
+            try
+            {
+                if (allColumns.Count == 0) return;
+                string text = (columnBox.Text ?? string.Empty).Trim();
+                List<string> filtered = text.Length == 0
+                    ? allColumns
+                    : allColumns.Where(c => c.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                if (filtered.Count == 0) filtered = allColumns;
+
+                string keep = columnBox.Text;
+                columnBox.ItemsSource = filtered;
+                columnBox.Text = keep;
+                if (!columnBox.IsDropDownOpen) columnBox.IsDropDownOpen = true;
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not filter the column list.");
+            }
+        }
+
         private static int MatchColumn(List<string> names, string needle)
         {
             for (int i = 0; i < names.Count; i++) if (string.Equals(names[i], needle, StringComparison.OrdinalIgnoreCase)) return i;
@@ -592,6 +629,7 @@ namespace MSSQLTool.Results
             }
         }
         /// <summary>Finds the first matching cell and walks the caret to it (row and column).</summary>
+        /// <summary>Collects every match and steps through them, so repeated clicks walk all hits.</summary>
         private void FindValue()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -603,41 +641,51 @@ namespace MSSQLTool.Results
                 string needle = (valueBox.Text ?? string.Empty).Trim();
                 if (needle.Length == 0) { foundText.Text = LocalizationManager.T("Type something to find."); return; }
 
-                int matchRow = -1, matchColumn = -1;
-                string matchText = null;
-                for (int row = 0; row < table.Rows.Count && matchRow < 0; row++)
-                    for (int column = 0; column < table.Columns.Count; column++)
+                // A new needle restarts the walk; the same needle advances to the next hit.
+                if (matches.Count == 0 || !string.Equals(lastNeedle, needle, StringComparison.Ordinal))
+                {
+                    lastNeedle = needle;
+                    matches.Clear();
+                    matchCursor = -1;
+                    for (int row = 0; row < table.Rows.Count; row++)
+                        for (int column = 0; column < table.Columns.Count; column++)
+                        {
+                            string text = Convert.ToString(table.Rows[row][column], CultureInfo.CurrentCulture) ?? string.Empty;
+                            if (text.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0)
+                                matches.Add(new object[] { row, column, text });
+                        }
+                }
+
+                if (matches.Count == 0)
+                {
+                    foundText.Text = LocalizationManager.Format("Nothing matches '{0}'.", needle);
+                    return;
+                }
+
+                matchCursor = (matchCursor + 1) % matches.Count;
+                object[] hit = matches[matchCursor];
+                int matchRow = (int)hit[0];
+                int matchColumn = (int)hit[1];
+                string matchText = Convert.ToString(hit[2], CultureInfo.CurrentCulture);
+
+                string where = LocalizationManager.Format("{0}/{1} - row {2}, column {3} ({4}): {5}",
+                    matchCursor + 1, matches.Count, matchRow + 1, matchColumn + 1,
+                    table.Columns[matchColumn].ColumnName, matchText);
+
+                if (TryFocusGrid(grid))
+                {
+                    int caretRow, caretColumn;
+                    if (TryGetCaret(grid, out caretRow, out caretColumn))
                     {
-                        string text = Convert.ToString(table.Rows[row][column], CultureInfo.CurrentCulture) ?? string.Empty;
-                        if (text.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                        matchRow = row;
-                        matchColumn = column;
-                        matchText = text;
-                        break;
+                        MoveCaret(grid, matchRow - caretRow, matchColumn - caretColumn);
+                        int finalRow, finalColumn;
+                        TryGetCaret(grid, out finalRow, out finalColumn);
+                        where += "  " + LocalizationManager.Format("caret at row {0}, column {1}.", finalRow + 1, finalColumn + 1);
                     }
-
-                if (matchRow < 0)
-                {
-                    foundText.Text = LocalizationManager.Format("Nothing matches \'{0}\'.", needle);
-                    return;
                 }
-
-                string where = LocalizationManager.Format("Row {0}, column {1} ({2}): {3}",
-                    matchRow + 1, matchColumn + 1, table.Columns[matchColumn].ColumnName, matchText);
-
-                if (!TryFocusGrid(grid))
+                else
                 {
-                    foundText.Text = where + "  " + LocalizationManager.T("Click a cell in the results first, then find again.");
-                    return;
-                }
-
-                int caretRow, caretColumn;
-                if (TryGetCaret(grid, out caretRow, out caretColumn))
-                {
-                    MoveCaret(grid, matchRow - caretRow, matchColumn - caretColumn);
-                    int finalRow, finalColumn;
-                    TryGetCaret(grid, out finalRow, out finalColumn);
-                    where += "  " + LocalizationManager.Format("caret at row {0}, column {1}.", finalRow + 1, finalColumn + 1);
+                    where += "  " + LocalizationManager.T("Click a cell in the results first, then find again.");
                 }
 
                 foundText.Text = where;

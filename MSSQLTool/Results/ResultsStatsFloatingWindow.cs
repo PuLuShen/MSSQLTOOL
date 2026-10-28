@@ -55,6 +55,31 @@ namespace MSSQLTool.Results
             Closed += (_, __) => content.Dispose();
         }
 
+        /// <summary>Shows the panel (creating it when needed) without stealing the focus.</summary>
+        internal static void ShowOrFocus()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                if (Current != null)
+                {
+                    if (!Current.IsVisible) Current.Show();
+                    Current.RefreshContent();
+                    return;
+                }
+
+                var window = new ResultsStatsFloatingWindow();
+                Current = window;
+                window.ShowActivated = false;
+                window.Show();
+                window.RefreshContent();
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Info("Could not show the statistics panel: " + ex.Message);
+            }
+        }
+
         /// <summary>Repaints the numbers, used when the window is shown from the toolbar.</summary>
         public void RefreshContent() => content.Refresh();
 

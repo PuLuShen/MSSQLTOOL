@@ -77,6 +77,14 @@ namespace MSSQLTool.Results
                 // Right click rebuilds the sub-menu from the columns of the result set that is showing.
                 control.MouseUp += (_, e) =>
                 {
+                    if (e.Button == MouseButtons.Left)
+                    {
+                        try { ResultsStatsFloatingWindow.ShowOrFocus(); } catch (Exception ex) { Log(ex); }
+                    }
+                };
+
+                control.MouseUp += (_, e) =>
+                {
                     if (e.Button != MouseButtons.Right) return;
                     try { InstallMenu(grid); } catch (Exception ex) { Log(ex); }
                 };
