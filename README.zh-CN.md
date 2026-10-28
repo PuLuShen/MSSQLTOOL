@@ -64,6 +64,10 @@ https://github.com/PuLuShen/MSSQLTOOL/wiki
 
 <img src="pics/3.png" width="520" alt="SSMS 工具菜单中的 MSSQL Tool 命令">
 
+**结果集统计**——在结果网格中选中单元格，即可看到数量、合计、平均、最小、最大、去重；同一面板还能定位列、查找值和固定列。
+
+<img src="pics/4.png" width="820" alt="MSSQL Tool 结果集统计面板与结果网格">
+
 ## 功能
 
 ### SQL 编辑

@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.IO;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -118,6 +119,22 @@ namespace MSSQLTool
         {
             LoggingSetup.Apply(AppPaths.LogsFolder);
             _logger = LogManager.GetCurrentClassLogger();
+        }
+
+        /// <summary>
+        /// Logs the first-chance STG_E_FILEREADYEXISTS exception with its full stack, so a native
+        /// New Query collision can be traced even though SSMS handles the exception itself.
+        /// </summary>
+        private static void OnFirstChanceException(object sender, FirstChanceExceptionEventArgs e)
+        {
+            try
+            {
+                if (e?.Exception != null && e.Exception.HResult == unchecked((int)0x80030050))
+                    _logger?.Error(e.Exception, "First-chance STG_E_FILEREADYEXISTS");
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private static void EnqueueDataForProcessing(QueryHistoryEntry data)
@@ -345,6 +362,7 @@ namespace MSSQLTool
 
             LocalizationManager.Initialize();
             InitializeLogging();
+            AppDomain.CurrentDomain.FirstChanceException += OnFirstChanceException;
 
             try
             {
@@ -394,11 +412,8 @@ namespace MSSQLTool
                 EnvDTE80.Events2 events = (EnvDTE80.Events2)application.Events;
                 _windowEvents = events.WindowEvents;
 
-                _windowEvents.WindowCreated += new _dispWindowEvents_WindowCreatedEventHandler(WindowCreated_Event);
                 _windowEvents.WindowActivated += new _dispWindowEvents_WindowActivatedEventHandler(WindowActivated_Event);
                 _windowEvents.WindowClosing += new _dispWindowEvents_WindowClosingEventHandler(WindowClosing_Event);
-
-                StartActiveWindowConnectionMonitor();
 
                 // "File.ConnectObjectExplorer"
                 // "Query.Connect"
@@ -471,6 +486,7 @@ namespace MSSQLTool
         {
             if (disposing)
             {
+                AppDomain.CurrentDomain.FirstChanceException -= OnFirstChanceException;
                 foreach (KeypressCommandFilter filter in _commandFilters.ToArray())
                     filter.Dispose();
                 _commandFilters.Clear();
@@ -479,7 +495,6 @@ namespace MSSQLTool
                 _connectionColorRetryTimer?.Stop();
                 if (_windowEvents != null)
                 {
-                    _windowEvents.WindowCreated -= WindowCreated_Event;
                     _windowEvents.WindowActivated -= WindowActivated_Event;
                     _windowEvents.WindowClosing -= WindowClosing_Event;
                     _windowEvents = null;
@@ -729,15 +744,6 @@ namespace MSSQLTool
             ThreadHelper.ThrowIfNotOnUIThread();
             if (!IsDocumentWindow(window)) return;
 
-            try
-            {
-                EnsureStatisticsExecutionHookForActiveWindow("window-activated");
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "Failed to reattach statistics handler during window activation.");
-            }
-
             // The editor command filter owns completion as well as optional snippets,
             // so it must be attached independently of the snippet setting.
             try
@@ -759,17 +765,6 @@ namespace MSSQLTool
             catch (Exception ex)
             {
                 _logger.Error(ex, "An exception occurred");
-            }
-
-            // Apply connection-based status-bar coloring through SSMS's native API.
-            try
-            {
-                TryApplyConnectionColorForWindow(window);
-                ScheduleActiveWindowConnectionColorRefresh();
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "An exception occurred applying connection color");
             }
         }
 
@@ -811,51 +806,6 @@ namespace MSSQLTool
             catch (Exception ex)
             {
                 _logger.Error(ex, "An exception occurred in WindowClosing_Event");
-            }
-        }
-
-        private void WindowCreated_Event(EnvDTE.Window Window)
-        {
-            // WindowCreated fires while SSMS is still constructing the window (and, after a crash,
-            // while it replays every auto-recovered tab).  Touching Window.Object at that moment can
-            // re-enter the shell's document creation.  Let the shell finish first, then hook the
-            // results control on the dispatcher; non-document windows do not own a results grid.
-            if (!ThreadHelper.CheckAccess()) return;
-            if (!IsDocumentWindow(Window)) return;
-
-            try
-            {
-                var dispatcher = System.Windows.Application.Current?.Dispatcher;
-                if (dispatcher == null)
-                {
-                    HandleWindowCreated(Window);
-                    return;
-                }
-
-                dispatcher.BeginInvoke(new Action(() => HandleWindowCreated(Window)),
-                    System.Windows.Threading.DispatcherPriority.Background);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "An exception occurred");
-            }
-        }
-
-        private void HandleWindowCreated(EnvDTE.Window Window)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-
-            // Do not touch Window.Object while the shell is still creating the window: that is what
-            // made the temporary SQLQuery*.sql file be created twice after an AutoRecover replay.
-            // The results/statistics hook is attached on activation and before execution instead.
-            try
-            {
-                TryApplyConnectionColorForWindow(Window);
-                ScheduleActiveWindowConnectionColorRefresh();
-            }
-            catch (Exception ex) 
-            {
-                _logger.Error(ex, "An exception occurred");
             }
         }
 
@@ -1380,6 +1330,7 @@ namespace MSSQLTool
 
             try
             {
+                TryApplyConnectionColorForWindow(ServiceCache.ExtensibilityModel?.ActiveWindow);
                 EnsureStatisticsExecutionHookForActiveWindow("query-execute-before");
 
                 if (!StatisticsSummaryStore.IsWindowOpen())

@@ -65,6 +65,10 @@ https://github.com/PuLuShen/MSSQLTOOL/wiki
 
 <img src="pics/3.png" width="520" alt="MSSQL Tool commands in the SSMS Tools menu">
 
+**Result statistics** - select cells in the result grid to see count, sum, average, min, max and distinct; the same panel can locate a column, find a value and freeze columns.
+
+<img src="pics/4.png" width="820" alt="MSSQL Tool result statistics panel beside a result grid">
+
 ## Features
 
 ### SQL editing

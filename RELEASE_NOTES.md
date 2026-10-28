@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.377
+
+### 中文
+
+- **继续修复「新建查询」报 `已经存在 (STG_E_FILEREADYEXISTS)`**：5.376 已移除 `Window.Object`，但窗口创建/激活时仍会做连接颜色和统计钩子，会通过 `ServiceCache` 访问活动文档。现在这些操作不再在窗口创建/激活时执行；连接颜色改到执行查询前，统计钩子也在执行前挂接。窗口激活只保留 `SVsTextManager.GetActiveView` 的补全过滤器。
+- 首次机会异常会记录 `STG_E_FILEREADYEXISTS` 的完整堆栈到日志，若仍复现可直接定位到具体调用方。
+
+### English
+
+- **Continue fixing "already exists (STG_E_FILEREADYEXISTS)" on New Query**: 5.376 removed `Window.Object`, but window creation/activation still applied connection colour and the statistics hook, which reach the active document through `ServiceCache`. Those no longer run during window creation/activation; colour and statistics are applied before query execution, and activation only attaches the completion filter through `SVsTextManager.GetActiveView`.
+- First-chance `STG_E_FILEREADYEXISTS` exceptions now log their full stack, so a remaining occurrence can be traced to its caller.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.377.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.377.vsix` asset below, then restart SSMS.
+
 ## 5.376
 
 ### 中文
