@@ -346,9 +346,6 @@ namespace MSSQLTool
             LocalizationManager.Initialize();
             InitializeLogging();
 
-            bool previousSessionAbnormal = RecoveredQueryService.PreviousSessionWasAbnormal();
-            RecoveredQueryService.MarkSessionStarted();
-
             try
             {
                 await FormatQueryCommand.InitializeAsync(this);
@@ -375,26 +372,6 @@ namespace MSSQLTool
                 await QueryTemplateWindowCommand.InitializeAsync(this);
 
                 UpdateChecker.ScheduleCheck(this, SettingsManager.GetEnableUpdateChecks());
-
-                if (previousSessionAbnormal)
-                {
-                    // SSMS did not write AutoRecoverDat before the crash.  Let the shell finish
-                    // opening its windows, then offer the snapshots it left under BackupFiles.
-                    _ = this.JoinableTaskFactory.RunAsync(async () =>
-                    {
-                        try
-                        {
-                            await Task.Delay(TimeSpan.FromSeconds(3), this.DisposalToken);
-                            await this.JoinableTaskFactory.SwitchToMainThreadAsync(this.DisposalToken);
-                            RecoveredQueryService.OfferRecoveryIfNeeded();
-                        }
-                        catch (OperationCanceledException) { }
-                        catch (Exception ex)
-                        {
-                            _logger?.Error(ex, "Could not offer the auto-recovered queries.");
-                        }
-                    });
-                }
 
             }
             catch (Exception ex)
@@ -494,7 +471,6 @@ namespace MSSQLTool
         {
             if (disposing)
             {
-                RecoveredQueryService.MarkSessionEnded();
                 foreach (KeypressCommandFilter filter in _commandFilters.ToArray())
                     filter.Dispose();
                 _commandFilters.Clear();

@@ -97,42 +97,6 @@ namespace MSSQLTool
         }
 
         /// <summary>
-        /// Opens the newest query snapshots SSMS wrote under BackupFiles.  Useful after an abnormal
-        /// exit where the shell did not create AutoRecoverDat entries of its own.
-        /// </summary>
-        private void RecoveredQueries_Click(object sender, System.Windows.RoutedEventArgs e)
-        {
-            var files = RecoveredQueryService.FindRecentRecoveredFiles();
-            if (files.Count == 0)
-            {
-                System.Windows.MessageBox.Show(
-                    LocalizationManager.T("No auto-recovered query files were found."),
-                    LocalizationManager.T("Recovered queries"),
-                    System.Windows.MessageBoxButton.OK,
-                    System.Windows.MessageBoxImage.Information);
-                return;
-            }
-
-            var answer = System.Windows.MessageBox.Show(
-                LocalizationManager.Format(
-                    "MSSQL Tool found {0} auto-recovered query file(s) from the previous session. Open them for editing?",
-                    files.Count),
-                LocalizationManager.T("Recovered queries"),
-                System.Windows.MessageBoxButton.YesNo,
-                System.Windows.MessageBoxImage.Question);
-            if (answer != System.Windows.MessageBoxResult.Yes) return;
-
-            int opened = RecoveredQueryService.OpenFiles(files);
-            System.Windows.MessageBox.Show(
-                opened == 0
-                    ? LocalizationManager.T("Could not open the auto-recovered queries. See the log for details.")
-                    : LocalizationManager.Format("Opened {0} auto-recovered query file(s).", opened),
-                LocalizationManager.T("Recovered queries"),
-                System.Windows.MessageBoxButton.OK,
-                opened == 0 ? System.Windows.MessageBoxImage.Warning : System.Windows.MessageBoxImage.Information);
-        }
-
-        /// <summary>
         /// Pulls the JSONL history written by earlier versions into the SQLite database so the
         /// switch of storage does not hide records the user already had.
         /// </summary>
