@@ -535,6 +535,8 @@ namespace MSSQLTool
             ["MSSQL Tool found {0} auto-recovered query file(s) from the previous session. Open them for editing?"] = "检测到上次异常退出时自动保存的 {0} 个查询，是否打开继续编辑？",
             ["Recovered queries"] = "自动恢复的查询",
             ["Could not open the auto-recovered queries. See the log for details."] = "无法打开自动保存的查询，详情见日志。",
+            ["No auto-recovered query files were found."] = "没有找到可恢复的自动保存查询。",
+            ["Opened {0} auto-recovered query file(s)."] = "已打开 {0} 个自动保存的查询。",
             ["No result grid is available to export. Run a query that returns a result set first."] = "没有可导出的结果网格，请先运行一个返回结果集的查询。",
             ["Export as INSERT Statements"] = "导出为 INSERT 语句",
             ["Select a table, view, or stored procedure name in the editor first."] = "请先在编辑器中选中表、视图或存储过程的名称。",
