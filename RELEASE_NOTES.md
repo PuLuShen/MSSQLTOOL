@@ -10,15 +10,15 @@
 
 ### 中文
 
-- **异常退出后仍能找回历史查询**：SSMS 有时来不及写 `AutoRecoverDat`，扩展启动时会检查上次会话是否异常结束；若 SSMS 自己没有可恢复的数据，就从 `BackupFiles` 里找出最近 7 天的 `Recovered-*` / `~AutoRecover*`（最多 10 个），询问后逐个在新查询窗口中打开，方便继续编辑。查询历史窗口也新增「自动恢复的查询」按钮，可随时手动打开这些快照。
+- **异常退出后仍能找回历史查询**：SSMS 有时来不及写 `AutoRecoverDat`，扩展启动时会检查上次会话是否异常结束；若 SSMS 自己没有可恢复的数据，就只取**最近一次**自动保存批次，并按查询文件去重（同一个查询只打开一次），在新查询窗口中还原这些窗口，避免打开一串同一语句的快照。查询历史窗口也新增「自动恢复的查询」按钮，可随时手动打开这些快照。
 - **面板输入框的 Delete 真正可用**：SSMS 会在 WPF 之前把 Delete 翻译成编辑器命令；现在面板使用低层键盘钩子，在定位列/查找值输入框获得焦点时自行删除字符（支持 Delete、Backspace、Ctrl+Delete/Backspace），不再删到 SQL 编辑器。
-- **模板语句可直接编辑**：打开模板浏览器后显式激活窗口并把焦点交给预览编辑器；点击预览也会重新激活，解决从工具栏打开后输入不进去的问题。停靠版模板窗口的预览也改为可编辑，并提供 Save / Ctrl+S 保存。
+- **模板语句可直接编辑**：模板浏览器的预览和停靠版模板窗口都改为可编辑，Delete/Backspace/Enter 由专门的键盘守卫写回编辑器，不再落到 SQL 编辑器；停靠版另提供 Save / Ctrl+S。
 
 ### English
 
-- **Recover historical queries after an abnormal exit**: when SSMS did not write `AutoRecoverDat`, the extension checks the previous-session marker and offers the newest `Recovered-*` / `~AutoRecover*` files from `BackupFiles` (last 7 days, up to 10), opening the chosen ones in new query windows. The Query History window also has a **Recovered queries** button to open them at any time.
+- **Recover historical queries after an abnormal exit**: when SSMS did not write `AutoRecoverDat`, the extension takes only the newest recovery batch and keeps one window per query file, so the same statement is not opened many times. The Query History window also has a **Recovered queries** button to open them at any time.
 - **Delete works in the panel inputs**: SSMS translates Delete into an editor command before WPF sees it. A low-level hook now performs Delete/Backspace (including Ctrl-word variants) inside the focused locate/find box instead of letting the key reach the SQL editor.
-- **Template statements are editable**: the template picker now activates itself and focuses the preview editor when opened, and a click on the preview takes the keyboard back from the shell. The docked template window's preview is editable too, with Save / Ctrl+S.
+- **Template statements are editable**: the template picker preview and the docked template window are editable. A keyboard guard writes Delete/Backspace/Enter back into the preview instead of letting them reach the SQL editor; the docked window also has Save / Ctrl+S.
 
 ### 安装 / Install
 

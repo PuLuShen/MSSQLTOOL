@@ -34,6 +34,7 @@ namespace MSSQLTool
         public QueryTemplateWindowControl()
         {
             InitializeComponent();
+            TemplateEditorKeyGuard.Attach(PreviewEditor);
             themeController = new ToolWindowThemeController(this, ApplyThemeBrushResources);
             TryLoadSqlHighlighting();
             SetActionState(null);
@@ -64,6 +65,7 @@ namespace MSSQLTool
 
         private void Control_Loaded(object sender, RoutedEventArgs e)
         {
+            TemplateEditorKeyGuard.Attach(PreviewEditor);
             Subscribe();
             QueryTemplateLibrary.Instance.Refresh();
             RefreshView();
@@ -72,6 +74,7 @@ namespace MSSQLTool
 
         private void Control_Unloaded(object sender, RoutedEventArgs e)
         {
+            TemplateEditorKeyGuard.Detach(PreviewEditor);
             Unsubscribe();
         }
 

@@ -46,6 +46,7 @@ namespace MSSQLTool
                 try { Activate(); PreviewEditor.Focus(); }
                 catch (Exception) { }
             };
+            TemplateEditorKeyGuard.Attach(PreviewEditor);
             SetActionState();
         }
 
@@ -98,6 +99,7 @@ namespace MSSQLTool
 
         private void Window_Closed(object sender, EventArgs e)
         {
+            TemplateEditorKeyGuard.Detach(PreviewEditor);
             if (subscribed)
             {
                 QueryTemplateLibrary.Instance.Changed -= Library_Changed;

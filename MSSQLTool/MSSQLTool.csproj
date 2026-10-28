@@ -130,6 +130,7 @@
     <Compile Include="Modules\DatabaseIdentifier.cs" />
     <Compile Include="Modules\QueryHistoryPrivacy.cs" />
     <Compile Include="Modules\RecoveredQueryService.cs" />
+    <Compile Include="Modules\TemplateEditorKeyGuard.cs" />
     <Compile Include="Modules\QueryHistorySqliteStore.cs" />
     <Compile Include="UpdateChecker.cs" />
     <Compile Include="UpdateInfoBar.cs" />

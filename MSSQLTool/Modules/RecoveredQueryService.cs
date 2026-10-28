@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Microsoft.SqlServer.Management.UI.VSIntegration;
 using Microsoft.SqlServer.Management.UI.VSIntegration.Editors;
 using Microsoft.VisualStudio.Shell;
@@ -131,19 +132,28 @@ namespace MSSQLTool
                 if (!Directory.Exists(root)) return result;
 
                 DateTime cutoff = DateTime.UtcNow - MaxAge;
-                result = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                var candidates = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
                     .Where(IsRecoveredSnapshot)
-                    .Where(path =>
-                    {
-                        try { return File.GetLastWriteTimeUtc(path) >= cutoff; }
-                        catch (Exception) { return false; }
-                    })
-                    .OrderByDescending(path =>
-                    {
-                        try { return File.GetLastWriteTimeUtc(path); }
-                        catch (Exception) { return DateTime.MinValue; }
-                    })
+                    .Select(path => new { Path = path, Time = SafeLastWriteTime(path) })
+                    .Where(x => x.Time >= cutoff)
+                    .ToList();
+                if (candidates.Count == 0) return result;
+
+                // SSMS writes one snapshot per open statement on every auto-recover tick.  Opening
+                // every snapshot would open the same query many times, so take only the newest
+                // recovery batch, and inside it only the newest snapshot of each document.
+                string latestBatch = candidates
+                    .GroupBy(x => SnapshotBatchKey(x.Path))
+                    .OrderByDescending(group => group.Max(x => x.Time))
+                    .First().Key;
+
+                result = candidates
+                    .Where(x => string.Equals(SnapshotBatchKey(x.Path), latestBatch, StringComparison.OrdinalIgnoreCase))
+                    .GroupBy(x => DocumentKey(x.Path))
+                    .Select(group => group.OrderByDescending(x => x.Time).First())
+                    .OrderByDescending(x => x.Time)
                     .Take(MaxFiles)
+                    .Select(x => x.Path)
                     .ToList();
             }
             catch (Exception ex)
@@ -161,6 +171,31 @@ namespace MSSQLTool
 
             return name.StartsWith("Recovered-", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("~AutoRecover", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static DateTime SafeLastWriteTime(string path)
+        {
+            try { return File.GetLastWriteTimeUtc(path); }
+            catch (Exception) { return DateTime.MinValue; }
+        }
+
+        /// <summary>"Recovered-10月-28-2026-0925下午" groups the snapshots of one recovery tick.</summary>
+        private static string SnapshotBatchKey(string path)
+        {
+            string name = Path.GetFileName(path) ?? string.Empty;
+            if (!name.StartsWith("Recovered-", StringComparison.OrdinalIgnoreCase)) return "~AutoRecover";
+
+            int dot = name.IndexOf('.', "Recovered-".Length);
+            return dot > 0 ? name.Substring(0, dot) : name;
+        }
+
+        /// <summary>"Recovered-...SQLQuery1.sql0" and "~AutoRecover.SQLQuery1.sql" are the same tab.</summary>
+        private static string DocumentKey(string path)
+        {
+            string name = Path.GetFileName(path) ?? string.Empty;
+            int dot = name.IndexOf('.');
+            string document = dot >= 0 && dot + 1 < name.Length ? name.Substring(dot + 1) : name;
+            return Regex.Replace(document, @"\.sql\d*$", ".sql", RegexOptions.IgnoreCase).ToLowerInvariant();
         }
 
         private static bool HasNativeAutoRecoverData()
