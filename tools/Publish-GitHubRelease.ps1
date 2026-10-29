@@ -93,8 +93,17 @@ function Invoke-GitHubApi {
 
     $parameters = @{ Method = $Method; Uri = $Uri; Headers = $headers }
     if ($null -ne $Body) {
-        $parameters.Body = $Body
-        $parameters.ContentType = $ContentType
+        if ($Body -is [string]) {
+            # Windows PowerShell 5.1 encodes a string body as ISO-8859-1 when the content type is
+            # application/json, which turned every Chinese release note into "?".  Send explicit
+            # UTF-8 bytes so GitHub stores the text exactly as it is in RELEASE_NOTES.md.
+            $parameters.Body = [System.Text.Encoding]::UTF8.GetBytes($Body)
+            $parameters.ContentType = 'application/json; charset=utf-8'
+        }
+        else {
+            $parameters.Body = $Body
+            $parameters.ContentType = $ContentType
+        }
     }
 
     try {
