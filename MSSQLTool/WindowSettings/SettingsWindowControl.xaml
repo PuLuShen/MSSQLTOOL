@@ -254,7 +254,7 @@
                     <CheckBox x:Name="ResultsPanelAutoShow"
                               Content="Show the result statistics panel when I click the result grid"
                               Margin="0,4"/>
-                    <TextBlock Text="When this is off, the toolbar button and the result grid context menu can still open the panel."
+                    <TextBlock Text="When this is off, you can still open the panel with the [Result panel] toolbar button."
                                TextWrapping="Wrap" Opacity="0.8" Margin="0,6,0,0"/>
                     <Button Content="Save" Click="Button_SaveResultsPanel_Click"
                             Style="{DynamicResource PrimaryButtonStyle}"

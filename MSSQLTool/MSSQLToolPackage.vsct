@@ -137,9 +137,9 @@
         <Icon guid="guidResultsStats" id="bmpResultsStats" />
         <CommandFlag>IconAndText</CommandFlag>
         <Strings>
-          <ButtonText>结果集统计</ButtonText>
+          <ButtonText>结果集面板</ButtonText>
           <LocCanonicalName>MSSQLTool.ResultsPanel</LocCanonicalName>
-          <ToolTipText>显示结果集统计面板（选中单元格即可看到数量、合计、平均、最小、最大、去重）</ToolTipText>
+          <ToolTipText>显示结果集面板（选中单元格即可看到数量、合计、平均、最小、最大、去重）</ToolTipText>
         </Strings>
       </Button>
 

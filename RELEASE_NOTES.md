@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.382
+
+### 中文
+
+- 工具栏按钮改名为 **结果集面板**。
+- 设置页说明改为：**关闭后仍可通过工具栏按钮【结果集面板】打开面板。**
+- 保存成功提示「修改已保存 / 设置已保存」已加入中文本地化（之前只显示英文）。
+
+### English
+
+- Renamed the toolbar button to **Result panel**.
+- The settings note now reads: **When this is off, you can still open the panel with the [Result panel] toolbar button.**
+- The save-success messages "The change has been saved" / "Setting saved" are now localized too (they previously stayed in English).
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.382.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.382.vsix` asset below, then restart SSMS.
+
 ## 5.381
 
 ### 中文
