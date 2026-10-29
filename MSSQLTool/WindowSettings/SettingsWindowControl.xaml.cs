@@ -170,6 +170,7 @@ as select 1;
             CompletionAdditionalKeywords.Text = completionSettings.additionalKeywords;
                 CompletionDelay.Text = completionSettings.delayMilliseconds.ToString();
                 CompletionMaximumItems.Text = completionSettings.maximumItems.ToString();
+                ResultsPanelAutoShow.IsChecked = completionSettings.resultsPanelAutoShow;
 
                 // Code Format page: the whole profile is loaded from a single FormatterOptions instance.
                 formatOptions = SettingsManager.GetFormatterOptions();
@@ -230,6 +231,20 @@ as select 1;
             }
 
             Completion.SqlMetadataCache.InvalidateAll();
+
+            SavedMessage();
+        }
+
+        private void Button_SaveResultsPanel_Click(object sender, RoutedEventArgs e)
+        {
+            var settings = SettingsManager.GetSqlCompletionSettings();
+            settings.resultsPanelAutoShow = ResultsPanelAutoShow.IsChecked.GetValueOrDefault();
+            if (!SettingsManager.SaveSqlCompletionSettings(settings))
+            {
+                LocalizedMessageBox.Show("The result panel setting could not be saved.",
+                    "Result panel", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
 
             SavedMessage();
         }
@@ -332,6 +347,7 @@ as select 1;
             CompletionJoinRules.Text = defaults.joinColumnRules;
             CompletionDelay.Text = defaults.delayMilliseconds.ToString();
             CompletionMaximumItems.Text = defaults.maximumItems.ToString();
+            ResultsPanelAutoShow.IsChecked = defaults.resultsPanelAutoShow;
             SettingsManager.SaveSqlCompletionSettings(defaults);
             Completion.SqlMetadataCache.InvalidateAll();
         }

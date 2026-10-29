@@ -79,7 +79,15 @@ namespace MSSQLTool.Results
                 {
                     if (e.Button == MouseButtons.Left)
                     {
-                        try { ResultsStatsFloatingWindow.ShowOrFocus(); } catch (Exception ex) { Log(ex); }
+                        try
+                        {
+                            var settings = SettingsManager.GetSqlCompletionSettings();
+                            // Keep the old behaviour by default; the new setting lets users who
+                            // dislike the automatic panel turn it off.
+                            if (settings == null || settings.resultsPanelAutoShow)
+                                ResultsStatsFloatingWindow.ShowOrFocus();
+                        }
+                        catch (Exception ex) { Log(ex); }
                     }
                 };
 

@@ -6,6 +6,21 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.380
+
+### 中文
+
+- **新增设置开关「点击结果集时自动显示统计面板」**：设置 → **结果集面板**，默认开启以保持原有行为；关闭后左键点击结果网格不再自动弹出面板，工具栏按钮和结果集右键菜单仍可打开。
+
+### English
+
+- **New setting "Show the result statistics panel when I click the result grid"**: Settings → **Result panel**. It is on by default to keep the existing behaviour; when off, a left click on the result grid no longer opens the panel, while the toolbar button and the grid context menu still do.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.380.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.380.vsix` asset below, then restart SSMS.
+
 ## 5.379
 
 ### 中文

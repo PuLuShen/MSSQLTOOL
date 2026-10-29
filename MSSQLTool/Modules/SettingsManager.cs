@@ -438,6 +438,8 @@ ORDER BY sd.[name];
             public string resultsPanelPosition = string.Empty;
             /// <summary>Last size of the result statistics panel ("width,height").</summary>
             public string resultsPanelSize = string.Empty;
+            /// <summary>Show the statistics panel automatically when the result grid is clicked.</summary>
+            public bool resultsPanelAutoShow = true;
             public int delayMilliseconds = 120;
             public int maximumItems = 200;
         }

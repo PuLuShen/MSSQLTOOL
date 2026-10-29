@@ -248,9 +248,19 @@
                 </StackPanel>
             </TabItem>
 
-
-
-
+            <TabItem Header="Result panel">
+                <StackPanel Margin="16" MaxWidth="620" HorizontalAlignment="Left">
+                    <TextBlock Text="Result statistics panel" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <CheckBox x:Name="ResultsPanelAutoShow"
+                              Content="Show the result statistics panel when I click the result grid"
+                              Margin="0,4"/>
+                    <TextBlock Text="When this is off, the toolbar button and the result grid context menu can still open the panel."
+                               TextWrapping="Wrap" Opacity="0.8" Margin="0,6,0,0"/>
+                    <Button Content="Save" Click="Button_SaveResultsPanel_Click"
+                            Style="{DynamicResource PrimaryButtonStyle}"
+                            Width="90" HorizontalAlignment="Left" Margin="0,14,0,0"/>
+                </StackPanel>
+            </TabItem>
 
             <TabItem Header="Code Format">
                 <Grid Margin="5">
