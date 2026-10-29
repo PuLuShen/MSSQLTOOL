@@ -29,6 +29,9 @@
             <Button x:Name="DeleteButton" Content="Delete" Padding="10,3" Margin="6,0,0,0" Click="DeleteButton_Click" />
             <Button x:Name="TagsButton" Content="Tags…" Padding="10,3" Margin="6,0,0,0" Click="TagsButton_Click"
                     ToolTip="Edit the tags of the selected template. Then search by a tag, or type #tag." />
+            <Button x:Name="FavoriteButton" Content="Add to frequently used" Padding="10,3" Margin="6,0,0,0"
+                    Click="FavoriteButton_Click"
+                    ToolTip="Pin or unpin the selected statement in the Frequently used folder" />
             <Border Width="1" Height="20" Background="{DynamicResource ToolThemeBorderBrush}" Margin="10,0,4,0" />
             <Button Content="Open folder" Padding="10,3" Click="OpenFolderButton_Click" />
             <Button Content="Refresh" Padding="10,3" Margin="6,0,0,0" Click="RefreshButton_Click" />

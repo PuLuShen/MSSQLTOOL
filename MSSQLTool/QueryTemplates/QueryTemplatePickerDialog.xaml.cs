@@ -133,8 +133,6 @@ namespace MSSQLTool
             QueryTemplateTreeNode match = null;
             if (selectedNode != null)
                 match = FindByRelative(nodes, selectedNode.RelativePath, selectedNode.IsFolder);
-            if (match == null)
-                match = FindFirstLeaf(nodes);
 
             TemplateTree.ItemsSource = nodes;
 
@@ -179,38 +177,8 @@ namespace MSSQLTool
                 InsertSorted(string.IsNullOrEmpty(parentPath) ? rootNodes : folderNodes[parentPath].Children, node);
             };
 
-            // The last ten templates, always at the top: the picker opens on this list, which is what
-            // "recent" means for a template menu.  Only when the user is not searching.
-            if (upper.Length == 0)
-            {
-                List<QueryTemplateItem> recentItems = QueryTemplateLibrary.Instance.Snapshot()
-                    .Where(i => i.LastUsedUtc.HasValue)
-                    .OrderByDescending(i => i.LastUsedUtc.Value)
-                    .Take(10).ToList();
-                if (recentItems.Count > 0)
-                {
-                    var recentNode = new QueryTemplateTreeNode
-                    {
-                        Name = LocalizationManager.T("Recent (10)"),
-                        RelativePath = string.Empty,
-                        IsFolder = true,
-                        IsExpanded = true
-                    };
-                    foreach (QueryTemplateItem item in recentItems)
-                    {
-                        recentNode.Children.Add(new QueryTemplateTreeNode
-                        {
-                            Name = item.Name,
-                            RelativePath = item.RelativePath,
-                            FullPath = item.FullPath,
-                            IsFavorite = item.IsFavorite,
-                            Tags = item.Tags
-                        });
-                    }
-                    rootNodes.Insert(0, recentNode);
-                }
-            }
-
+            // The last ten templates and the Frequently used folder are inserted at the very top
+            // after the real tree has been built (a search does not show them).
             foreach (string folder in QueryTemplateLibrary.Instance.SnapshotFolderPaths())
                 ensureFolder(folder);
 
@@ -229,9 +197,62 @@ namespace MSSQLTool
                 InsertSorted(string.IsNullOrEmpty(item.Category) ? rootNodes : folderNodes[item.Category].Children, node);
             }
 
-            if (upper.Length > 0) PruneToMatches(rootNodes, upper);
-            ApplyExpandPolicy(rootNodes);
+            if (upper.Length == 0)
+            {
+                List<QueryTemplateItem> all = QueryTemplateLibrary.Instance.Snapshot().ToList();
+
+                var recentNode = new QueryTemplateTreeNode
+                {
+                    Name = LocalizationManager.T("Recent (10)"),
+                    RelativePath = "__recent__",
+                    IsFolder = true,
+                    IsVirtual = true,
+                    IsExpanded = true
+                };
+                foreach (QueryTemplateItem item in all
+                    .Where(i => i.LastUsedUtc.HasValue)
+                    .OrderByDescending(i => i.LastUsedUtc.Value)
+                    .Take(10))
+                {
+                    recentNode.Children.Add(CreateTemplateNode(item));
+                }
+                rootNodes.Insert(0, recentNode);
+
+                var favoriteNode = new QueryTemplateTreeNode
+                {
+                    Name = LocalizationManager.T("Frequently used"),
+                    RelativePath = "__favorites__",
+                    IsFolder = true,
+                    IsVirtual = true,
+                    IsExpanded = true
+                };
+                foreach (QueryTemplateItem item in all
+                    .Where(i => i.IsFavorite)
+                    .OrderBy(i => i.Name, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    favoriteNode.Children.Add(CreateTemplateNode(item));
+                }
+                rootNodes.Insert(Math.Min(1, rootNodes.Count), favoriteNode);
+            }
+            else
+            {
+                PruneToMatches(rootNodes, upper);
+            }
+
             return rootNodes;
+        }
+
+        private static QueryTemplateTreeNode CreateTemplateNode(QueryTemplateItem item)
+        {
+            return new QueryTemplateTreeNode
+            {
+                Name = item.Name,
+                RelativePath = item.RelativePath,
+                FullPath = item.FullPath,
+                IsFolder = false,
+                IsFavorite = item.IsFavorite,
+                Tags = item.Tags
+            };
         }
 
         private static void InsertSorted(ObservableCollection<QueryTemplateTreeNode> collection, QueryTemplateTreeNode node)
@@ -466,13 +487,17 @@ namespace MSSQLTool
         private void SetActionState()
         {
             bool isFile = selectedNode != null && !selectedNode.IsFolder;
-            bool hasSelection = selectedNode != null;
+            bool hasSelection = selectedNode != null && !selectedNode.IsVirtual;
             InsertButton.IsEnabled = isFile;
             NewQueryButton.IsEnabled = isFile;
             SaveButton.IsEnabled = isFile
                 && !string.Equals(PreviewEditor.Text, originalPreviewText, StringComparison.Ordinal);
             RenameButton.IsEnabled = hasSelection;
             DeleteButton.IsEnabled = hasSelection;
+            FavoriteButton.IsEnabled = isFile;
+            FavoriteButton.Content = selectedNode?.IsFavorite == true
+                ? LocalizationManager.T("Remove from frequently used")
+                : LocalizationManager.T("Add to frequently used");
         }
 
         // ------------------------------------------------------------------
@@ -583,9 +608,23 @@ namespace MSSQLTool
         }
 
         /// <summary>Edits the "tags:" header of the selected template and refreshes the tree.</summary>
-        private void TagsButton_Click(object sender, RoutedEventArgs e)
+        private void FavoriteButton_Click(object sender, RoutedEventArgs e)
         {
-            QueryTemplateTreeNode node = TemplateTree.SelectedItem as QueryTemplateTreeNode;
+            if (selectedNode == null || selectedNode.IsFolder) return;
+
+            QueryTemplateItem item = FindTemplateItem(selectedNode.RelativePath);
+            if (item == null) return;
+
+            bool favorite = QueryTemplateLibrary.Instance.ToggleFavorite(item);
+            StatusText.Text = LocalizationManager.T(favorite
+                ? "Added to frequently used."
+                : "Removed from frequently used.");
+            RefreshTree();
+            SelectRelative(item.RelativePath);
+        }
+
+        private void TagsButton_Click(object sender, RoutedEventArgs e)
+        {            QueryTemplateTreeNode node = TemplateTree.SelectedItem as QueryTemplateTreeNode;
             QueryTemplateItem item = node == null || node.IsFolder ? null : FindTemplateItem(node.RelativePath);
             if (item == null)
             {
@@ -661,7 +700,7 @@ namespace MSSQLTool
         /// <summary>Category that receives new items: the selected folder, the selected file's folder, or the root.</summary>
         private string GetTargetCategoryPath()
         {
-            if (selectedNode == null) return string.Empty;
+            if (selectedNode == null || selectedNode.IsVirtual) return string.Empty;
             if (selectedNode.IsFolder) return selectedNode.RelativePath;
             return Path.GetDirectoryName(selectedNode.RelativePath) ?? string.Empty;
         }
@@ -814,9 +853,11 @@ namespace MSSQLTool
         public string FullPath { get; set; }
         public bool IsFolder { get; set; }
         public bool IsFavorite { get; set; }
+        /// <summary>True for the synthetic Recent / Frequently used folders.</summary>
+        public bool IsVirtual { get; set; }
         /// <summary>Tags shown next to the name and used by the search box.</summary>
         public string Tags { get; set; } = string.Empty;
-        public bool IsExpanded { get; set; } = true;
+        public bool IsExpanded { get; set; }
         public bool IsSelected { get; set; }
         public ObservableCollection<QueryTemplateTreeNode> Children { get; } = new ObservableCollection<QueryTemplateTreeNode>();
 

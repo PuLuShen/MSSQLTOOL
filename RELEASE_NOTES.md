@@ -6,6 +6,27 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.383
+
+### 中文
+
+- **模板「在新查询中打开」改为直接打开模板文件**：使用 SSMS 的 `ItemOperations.OpenFile`，因此在查询窗口里修改后保存会直接写回模板文件，不再创建临时新文件。
+- **模板树默认折叠**：打开模板页面时，左侧真实目录全部关闭；只有顶部的「最近 10 条」和「常用」默认展开。
+- **新增「常用」目录**：位于「最近 10 条」下方，可把选中语句固定/取消固定；工具栏新增「添加到常用 / 从常用移除」按钮，状态随选中项变化。
+- 模板相关新增按钮、提示均已中英文本地化。
+
+### English
+
+- **Open template in new query now opens the template file itself** through SSMS `ItemOperations.OpenFile`, so editing and saving the query window writes back to the template instead of creating a temporary copy.
+- **The template tree starts collapsed**: real folders are closed by default; only the top "Recent (10)" and "Frequently used" folders are expanded.
+- **New "Frequently used" folder** below Recent; pin/unpin the selected statement with the toolbar button (label changes to Add/Remove from frequently used).
+- All new template buttons, status text and prompts are localized in Chinese and English.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.383.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.383.vsix` asset below, then restart SSMS.
+
 ## 5.382
 
 ### 中文

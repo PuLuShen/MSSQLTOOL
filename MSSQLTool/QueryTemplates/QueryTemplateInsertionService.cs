@@ -15,8 +15,32 @@ namespace MSSQLTool
         public static void InsertFile(string fullPath, bool forceNewQuery)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+            if (forceNewQuery)
+            {
+                OpenFile(fullPath);
+                return;
+            }
+
             string content = QueryTemplateLibrary.Instance.ReadContent(fullPath);
-            InsertText(content, forceNewQuery);
+            InsertText(content, false);
+            QueryTemplateLibrary.Instance.RecordUsed(fullPath);
+        }
+
+        /// <summary>
+        /// Opens the template file itself in an SSMS query window, so Save writes back to the
+        /// template instead of creating a throw-away copy in a new unnamed query.
+        /// </summary>
+        public static void OpenFile(string fullPath)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (string.IsNullOrWhiteSpace(fullPath) || !File.Exists(fullPath))
+                throw new FileNotFoundException("Template file is unavailable.", fullPath);
+
+            DTE dte = Package.GetGlobalService(typeof(DTE)) as DTE;
+            if (dte == null) throw new InvalidOperationException("SSMS editor automation is unavailable.");
+
+            dte.ItemOperations.OpenFile(fullPath);
+            try { dte.ActiveDocument?.Activate(); } catch (Exception) { }
             QueryTemplateLibrary.Instance.RecordUsed(fullPath);
         }
 
