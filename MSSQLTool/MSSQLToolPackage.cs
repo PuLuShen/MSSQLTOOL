@@ -389,6 +389,7 @@ namespace MSSQLTool
                 await SelectCurrentStatementCommand.InitializeAsync(this);
                 await ToggleBlockCommentCommand.InitializeAsync(this);
                 await QueryTemplateWindowCommand.InitializeAsync(this);
+                await MSSQLTool.Results.ResultsPanelCommand.InitializeAsync(this);
 
                 UpdateChecker.ScheduleCheck(this, SettingsManager.GetEnableUpdateChecks());
 

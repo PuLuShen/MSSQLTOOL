@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.381
+
+### 中文
+
+- **修复工具栏「结果集统计」按钮不打开面板**：该按钮的命令处理器之前没有注册；现在重新注册，无论「点击结果集自动显示」开关是否开启，工具栏按钮都能打开面板。
+- **移除结果集右键菜单扩展**：不再接管/重建结果网格的右键菜单，保留 SSMS 原生菜单；自动显示只由左键点击和工具栏按钮触发。
+- 新增设置页的所有提示与说明均使用中英文本地化，包括保存失败提示。
+
+### English
+
+- **Fix the toolbar Result statistics button**: its command handler was not registered; it is now registered, so the toolbar button opens the panel whether or not automatic click-to-show is enabled.
+- **Remove the result-grid context-menu extension**: the native SSMS grid menu is left untouched; the panel is opened only by the left-click popup and the toolbar button.
+- All new settings labels and prompts are localized in Chinese and English, including the save-failure message.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.381.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.381.vsix` asset below, then restart SSMS.
+
 ## 5.380
 
 ### 中文

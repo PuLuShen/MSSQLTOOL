@@ -20,7 +20,6 @@ namespace MSSQLTool.Results
             this.package = package ?? throw new ArgumentNullException(nameof(package));
             if (commandService == null) throw new ArgumentNullException(nameof(commandService));
             commandService.AddCommand(new MenuCommand(Execute, new CommandID(CommandSet, CommandId)));
-            commandService.AddCommand(new MenuCommand(TogglePanel, new CommandID(CommandSet, TogglePanelCommandId)));
         }
 
         public static ResultsToolsCommand Instance { get; private set; }

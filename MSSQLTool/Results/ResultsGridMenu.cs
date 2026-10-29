@@ -74,7 +74,6 @@ namespace MSSQLTool.Results
                 var control = grid as Control;
                 if (control == null) return;
 
-                // Right click rebuilds the sub-menu from the columns of the result set that is showing.
                 control.MouseUp += (_, e) =>
                 {
                     if (e.Button == MouseButtons.Left)
@@ -91,39 +90,10 @@ namespace MSSQLTool.Results
                     }
                 };
 
-                control.MouseUp += (_, e) =>
-                {
-                    if (e.Button != MouseButtons.Right) return;
-                    try { InstallMenu(grid); } catch (Exception ex) { Log(ex); }
-                };
-
-                // SSMS creates (and may replace) its menu at right-click time, so the strip is null here and
-                // becomes the native menu only later. Hooking the change events is the reliable way to add
-                // our item to whatever menu the grid ends up showing.
-                control.ContextMenuStripChanged += (_, __) =>
-                {
-                    try { InstallMenu(grid); } catch (Exception ex) { Log(ex); }
-                };
-                control.ContextMenuChanged += (_, __) =>
-                {
-                    try { InstallMenu(grid); } catch (Exception ex) { Log(ex); }
-                };
-
-                // SSMS may build its menu only when it is first shown; try again shortly after the click.
-                control.MouseDown += (_, e) =>
-                {
-                    if (e.Button != MouseButtons.Right) return;
-                    try
-                    {
-                        control.BeginInvoke((Action)(() => { try { InstallMenu(grid); } catch (Exception ex) { Log(ex); } }));
-                    }
-                    catch (Exception)
-                    {
-                    }
-                };
-
-                InstallMenu(grid);
-                MSSQLToolPackage._logger?.Info("Results grid menu: jump-to-column installed on a results grid.");
+                // The native results grid context menu is left alone.  Extending it was not
+                // reliable on this SSMS build, so the panel is only reachable from the toolbar,
+                // the left-click popup and its own command.
+                MSSQLToolPackage._logger?.Info("Results grid menu: left-click panel hook installed on a results grid.");
             }
             catch (Exception ex)
             {
