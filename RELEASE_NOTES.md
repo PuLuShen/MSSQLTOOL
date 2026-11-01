@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.394
+
+### 中文
+
+- **修复没有连接服务器时下拉框仍显示 3 个「未连接」**：移除了「已知服务器」历史兜底；快速搜索现在只显示 Object Explorer 当前实际存在的服务器根节点。没有连接时列表为空。
+- 之前记录的 `(not connected)` 历史服务器不会再出现在下拉框里。
+
+### English
+
+- **Fix three "not connected" entries appearing when no server is connected**: removed the known-server history fallback; Quick Search now only lists Object Explorer's current roots. With no connections the list is empty.
+- Previously recorded `(not connected)` hosts no longer appear in the picker.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.394.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.394.vsix` asset below, then restart SSMS.
+
 ## 5.393
 
 ### 中文

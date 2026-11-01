@@ -168,26 +168,11 @@ namespace MSSQLTool
                 if (servers.Count < 2)
                     AddServersFromObjectExplorerTree(servers, preferredServer);
 
-                // Servers this extension has talked to before are only a fallback when Object
-                // Explorer did not provide any roots.  Adding them alongside friendly root
-                // captions produced five entries for two connections.
-                if (servers.Count == 0)
-                {
-                    foreach (string known in SettingsManager.GetKnownCompletionServers())
-                    {
-                        if (string.IsNullOrWhiteSpace(known)) continue;
-                        if (servers.Exists(s => string.Equals(s.ServerName, known, StringComparison.OrdinalIgnoreCase))) continue;
-
-                        servers.Add(new ObjectExplorerServer
-                        {
-                            ServerName = known,
-                            DisplayName = known + " " + LocalizationManager.T("(not connected)"),
-                            IsConnected = false
-                        });
-                    }
-                }
-
-                servers.Sort((left, right) => string.Compare(left.ServerName, right.ServerName, StringComparison.OrdinalIgnoreCase));
+                // Only report servers that are actually present in Object Explorer.  The old
+                // "known servers" history kept disconnected hosts in the picker, which made it
+                // look like three servers were connected when none were.
+                if (servers.Count > 0)
+                    servers.Sort((left, right) => string.Compare(left.ServerName, right.ServerName, StringComparison.OrdinalIgnoreCase));
             }
             catch (Exception ex)
             {
