@@ -6,6 +6,27 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.384
+
+### 中文
+
+- **语言设置现在会同步菜单和工具栏**：VSCT 里的命令文字是构建时固定的中文，新增 `ShellLocalization` 在启动后和切换语言后重写 MSSQL Tool 的菜单/工具栏标题与提示。
+- **新增语言**：繁體中文、日本語、한국어、Deutsch、Français、Español（连同简体中文、English 共 8 种）。
+- 繁體中文复用简体词典并自动转换为繁体；其他新语言覆盖菜单、工具栏、设置主界面、常用按钮和提示，未覆盖的细节回退英文。
+- 切换语言会立即刷新所有已打开的本插件窗口，并同时刷新工具栏/菜单文字。
+
+### English
+
+- **The language setting now updates menus and toolbars**: VSCT captions are fixed at build time, so `ShellLocalization` rewrites MSSQL Tool's menu/toolbar captions and tooltips after startup and after a language change.
+- **New languages**: Traditional Chinese, Japanese, Korean, German, French and Spanish (8 languages including Simplified Chinese and English).
+- Traditional Chinese reuses the Simplified dictionary and converts it; the other new languages cover menus, toolbars, the main settings pages, common buttons and prompts, with English fallback for not-yet-translated details.
+- Switching language immediately refreshes every open extension window and the shell menus/toolbars.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.384.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.384.vsix` asset below, then restart SSMS.
+
 ## 5.383
 
 ### 中文

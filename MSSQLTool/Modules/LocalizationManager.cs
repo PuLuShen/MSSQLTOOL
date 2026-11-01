@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -17,7 +19,19 @@ namespace MSSQLTool
     internal static class LocalizationManager
     {
         public const string ChineseLanguage = "zh-CN";
+        public const string TraditionalChineseLanguage = "zh-TW";
         public const string EnglishLanguage = "en-US";
+        public const string JapaneseLanguage = "ja-JP";
+        public const string KoreanLanguage = "ko-KR";
+        public const string GermanLanguage = "de-DE";
+        public const string FrenchLanguage = "fr-FR";
+        public const string SpanishLanguage = "es-ES";
+
+        public static readonly string[] SupportedLanguages =
+        {
+            ChineseLanguage, TraditionalChineseLanguage, EnglishLanguage,
+            JapaneseLanguage, KoreanLanguage, GermanLanguage, FrenchLanguage, SpanishLanguage
+        };
 
         private sealed class OriginalValues
         {
@@ -40,8 +54,9 @@ namespace MSSQLTool
             ["MSSQL Tool - Settings"] = "MSSQL Tool - 设置",
             ["About"] = "关于", ["Tools"] = "工具",
             ["Language"] = "语言", ["Interface language:"] = "界面语言：",
-            ["Simplified Chinese"] = "简体中文", ["English"] = "English",
-            ["The language setting applies immediately to MSSQL Tool windows. Toolbar command labels use the package default language."] = "语言设置会立即应用到 MSSQL Tool 窗口。工具栏命令标签使用扩展包的默认语言。",
+            ["Simplified Chinese"] = "简体中文", ["Traditional Chinese"] = "繁体中文", ["English"] = "English",
+            ["日本語"] = "日本語", ["한국어"] = "한국어", ["Deutsch"] = "Deutsch", ["Français"] = "Français", ["Español"] = "Español",
+            ["The language setting applies immediately to MSSQL Tool windows and menu/toolbar labels."] = "语言设置会立即应用到 MSSQL Tool 窗口以及菜单/工具栏标签。",
             ["Apply"] = "应用", ["Save"] = "保存", ["Cancel"] = "取消", ["Close"] = "关闭",
             ["OK"] = "确定", ["Yes"] = "是", ["No"] = "否", ["Edit"] = "编辑",
             ["Delete"] = "删除", ["Remove"] = "移除", ["Refresh"] = "刷新",
@@ -845,8 +860,139 @@ namespace MSSQLTool
             ["More than one Excel column is mapped to the same destination column: {0}. Give every Excel column its own destination column."] = "有多个 Excel 列映射到了同一个目标列：{0}。请为每个 Excel 列选择各自的目标列。",
         };
 
+        // Core UI strings for the additional languages.  Anything not listed falls back to the
+        // English key, so adding a language never leaves the UI blank.
+        private static readonly Dictionary<string, Dictionary<string, string>> OtherUiTexts =
+            new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                [JapaneseLanguage] = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["Language"] = "言語", ["Interface language:"] = "表示言語：", ["Apply"] = "適用",
+                    ["Simplified Chinese"] = "簡体字中国語", ["Traditional Chinese"] = "繁体字中国語", ["English"] = "英語",
+                    ["The language setting applies immediately to MSSQL Tool windows and menu/toolbar labels."] = "言語設定は MSSQL Tool のウィンドウとメニュー/ツールバーにすぐに適用されます。",
+                    ["Save"] = "保存", ["Settings"] = "設定", ["Storage"] = "保存先", ["Keyboard shortcuts"] = "キーボード ショートカット",
+                    ["SQL Completion"] = "SQL 入力候補", ["Result panel"] = "結果パネル", ["Code Format"] = "コード書式",
+                    ["Connection Colors"] = "接続の色", ["Updates"] = "更新", ["Diagnostics"] = "診断",
+                    ["OpenAI - ChatGPT integration"] = "OpenAI - ChatGPT 連携",
+                    ["Result statistics panel"] = "結果セット統計パネル",
+                    ["Show the result statistics panel when I click the result grid"] = "結果グリッドをクリックしたときに結果セット統計パネルを表示する",
+                    ["When this is off, you can still open the panel with the [Result panel] toolbar button."] = "オフでも、ツールバーの [結果パネル] ボタンからパネルを開けます。",
+                    ["The result panel setting could not be saved."] = "結果パネルの設定を保存できませんでした。",
+                    ["The change has been saved"] = "変更を保存しました", ["Setting saved"] = "設定を保存しました",
+                    ["Recent (10)"] = "最近 (10)", ["Frequently used"] = "よく使う",
+                    ["Add to frequently used"] = "よく使うに追加", ["Remove from frequently used"] = "よく使うから削除",
+                    ["Added to frequently used."] = "よく使うに追加しました。", ["Removed from frequently used."] = "よく使うから削除しました。",
+                    ["Query Templates"] = "クエリ テンプレート", ["Insert"] = "挿入", ["Open in new query"] = "新しいクエリで開く",
+                    ["Close"] = "閉じる", ["Refresh"] = "更新", ["Options"] = "オプション", ["Tags…"] = "タグ…",
+                    ["New category"] = "新しいカテゴリ", ["New statement"] = "新しいステートメント", ["Rename"] = "名前の変更",
+                    ["Delete"] = "削除", ["Open folder"] = "フォルダーを開く", ["Search:"] = "検索：",
+                    ["Previous"] = "前へ", ["Next"] = "次へ", ["Copy SQL"] = "SQL をコピー", ["Wrap lines"] = "折り返し"
+                },
+                [KoreanLanguage] = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["Language"] = "언어", ["Interface language:"] = "인터페이스 언어:", ["Apply"] = "적용",
+                    ["Simplified Chinese"] = "중국어(간체)", ["Traditional Chinese"] = "중국어(번체)", ["English"] = "영어",
+                    ["The language setting applies immediately to MSSQL Tool windows and menu/toolbar labels."] = "언어 설정은 MSSQL Tool 창과 메뉴/도구 모음 레이블에 즉시 적용됩니다.",
+                    ["Save"] = "저장", ["Settings"] = "설정", ["Storage"] = "저장소", ["Keyboard shortcuts"] = "키보드 단축키",
+                    ["SQL Completion"] = "SQL 완성", ["Result panel"] = "결과 패널", ["Code Format"] = "코드 서식",
+                    ["Connection Colors"] = "연결 색", ["Updates"] = "업데이트", ["Diagnostics"] = "진단",
+                    ["OpenAI - ChatGPT integration"] = "OpenAI - ChatGPT 통합",
+                    ["Result statistics panel"] = "결과 집합 통계 패널",
+                    ["Show the result statistics panel when I click the result grid"] = "결과 표를 클릭하면 결과 집합 통계 패널 표시",
+                    ["When this is off, you can still open the panel with the [Result panel] toolbar button."] = "꺼져 있어도 도구 모음의 [결과 패널] 버튼으로 패널을 열 수 있습니다.",
+                    ["The result panel setting could not be saved."] = "결과 패널 설정을 저장하지 못했습니다.",
+                    ["The change has been saved"] = "변경 사항이 저장되었습니다", ["Setting saved"] = "설정이 저장되었습니다",
+                    ["Recent (10)"] = "최근 (10)", ["Frequently used"] = "자주 사용",
+                    ["Add to frequently used"] = "자주 사용에 추가", ["Remove from frequently used"] = "자주 사용에서 제거",
+                    ["Added to frequently used."] = "자주 사용에 추가했습니다.", ["Removed from frequently used."] = "자주 사용에서 제거했습니다.",
+                    ["Query Templates"] = "쿼리 템플릿", ["Insert"] = "삽입", ["Open in new query"] = "새 쿼리에서 열기",
+                    ["Close"] = "닫기", ["Refresh"] = "새로 고침", ["Options"] = "옵션", ["Tags…"] = "태그…",
+                    ["New category"] = "새 범주", ["New statement"] = "새 문", ["Rename"] = "이름 바꾸기",
+                    ["Delete"] = "삭제", ["Open folder"] = "폴더 열기", ["Search:"] = "검색:",
+                    ["Previous"] = "이전", ["Next"] = "다음", ["Copy SQL"] = "SQL 복사", ["Wrap lines"] = "줄 바꿈"
+                },
+                [GermanLanguage] = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["Language"] = "Sprache", ["Interface language:"] = "Oberflächensprache:", ["Apply"] = "Anwenden",
+                    ["Simplified Chinese"] = "Vereinfachtes Chinesisch", ["Traditional Chinese"] = "Traditionelles Chinesisch", ["English"] = "Englisch",
+                    ["The language setting applies immediately to MSSQL Tool windows and menu/toolbar labels."] = "Die Spracheinstellung gilt sofort für MSSQL Tool-Fenster sowie Menü- und Symbolleistenbeschriftungen.",
+                    ["Save"] = "Speichern", ["Settings"] = "Einstellungen", ["Storage"] = "Speicher", ["Keyboard shortcuts"] = "Tastenkombinationen",
+                    ["SQL Completion"] = "SQL-Vervollständigung", ["Result panel"] = "Ergebnisbereich", ["Code Format"] = "Codeformat",
+                    ["Connection Colors"] = "Verbindungsfarben", ["Updates"] = "Updates", ["Diagnostics"] = "Diagnose",
+                    ["OpenAI - ChatGPT integration"] = "OpenAI - ChatGPT-Integration",
+                    ["Result statistics panel"] = "Ergebnisstatistik",
+                    ["Show the result statistics panel when I click the result grid"] = "Ergebnisstatistik beim Klick auf das Ergebnisraster anzeigen",
+                    ["When this is off, you can still open the panel with the [Result panel] toolbar button."] = "Wenn dies deaktiviert ist, lässt sich der Bereich weiterhin über die Symbolleisten-Schaltfläche [Ergebnisbereich] öffnen.",
+                    ["The result panel setting could not be saved."] = "Die Einstellung für den Ergebnisbereich konnte nicht gespeichert werden.",
+                    ["The change has been saved"] = "Die Änderung wurde gespeichert", ["Setting saved"] = "Einstellung gespeichert",
+                    ["Recent (10)"] = "Zuletzt (10)", ["Frequently used"] = "Häufig verwendet",
+                    ["Add to frequently used"] = "Zu häufig verwendet hinzufügen", ["Remove from frequently used"] = "Aus häufig verwendet entfernen",
+                    ["Added to frequently used."] = "Zu häufig verwendet hinzugefügt.", ["Removed from frequently used."] = "Aus häufig verwendet entfernt.",
+                    ["Query Templates"] = "Abfragevorlagen", ["Insert"] = "Einfügen", ["Open in new query"] = "In neuer Abfrage öffnen",
+                    ["Close"] = "Schließen", ["Refresh"] = "Aktualisieren", ["Options"] = "Optionen", ["Tags…"] = "Tags…",
+                    ["New category"] = "Neue Kategorie", ["New statement"] = "Neue Anweisung", ["Rename"] = "Umbenennen",
+                    ["Delete"] = "Löschen", ["Open folder"] = "Ordner öffnen", ["Search:"] = "Suchen:",
+                    ["Previous"] = "Zurück", ["Next"] = "Weiter", ["Copy SQL"] = "SQL kopieren", ["Wrap lines"] = "Zeilen umbrechen"
+                },
+                [FrenchLanguage] = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["Language"] = "Langue", ["Interface language:"] = "Langue de l'interface :", ["Apply"] = "Appliquer",
+                    ["Simplified Chinese"] = "Chinois simplifié", ["Traditional Chinese"] = "Chinois traditionnel", ["English"] = "Anglais",
+                    ["The language setting applies immediately to MSSQL Tool windows and menu/toolbar labels."] = "Le paramètre de langue s'applique immédiatement aux fenêtres MSSQL Tool et aux libellés des menus/barres d'outils.",
+                    ["Save"] = "Enregistrer", ["Settings"] = "Paramètres", ["Storage"] = "Stockage", ["Keyboard shortcuts"] = "Raccourcis clavier",
+                    ["SQL Completion"] = "Complétion SQL", ["Result panel"] = "Panneau de résultats", ["Code Format"] = "Format du code",
+                    ["Connection Colors"] = "Couleurs de connexion", ["Updates"] = "Mises à jour", ["Diagnostics"] = "Diagnostics",
+                    ["OpenAI - ChatGPT integration"] = "Intégration OpenAI - ChatGPT",
+                    ["Result statistics panel"] = "Statistiques du jeu de résultats",
+                    ["Show the result statistics panel when I click the result grid"] = "Afficher les statistiques lorsque je clique sur la grille de résultats",
+                    ["When this is off, you can still open the panel with the [Result panel] toolbar button."] = "Lorsque cette option est désactivée, le panneau reste accessible via le bouton [Panneau de résultats] de la barre d'outils.",
+                    ["The result panel setting could not be saved."] = "Le paramètre du panneau de résultats n'a pas pu être enregistré.",
+                    ["The change has been saved"] = "La modification a été enregistrée", ["Setting saved"] = "Paramètre enregistré",
+                    ["Recent (10)"] = "Récents (10)", ["Frequently used"] = "Fréquemment utilisés",
+                    ["Add to frequently used"] = "Ajouter aux fréquemment utilisés", ["Remove from frequently used"] = "Retirer des fréquemment utilisés",
+                    ["Added to frequently used."] = "Ajouté aux fréquemment utilisés.", ["Removed from frequently used."] = "Retiré des fréquemment utilisés.",
+                    ["Query Templates"] = "Modèles de requête", ["Insert"] = "Insérer", ["Open in new query"] = "Ouvrir dans une nouvelle requête",
+                    ["Close"] = "Fermer", ["Refresh"] = "Actualiser", ["Options"] = "Options", ["Tags…"] = "Étiquettes…",
+                    ["New category"] = "Nouvelle catégorie", ["New statement"] = "Nouvelle instruction", ["Rename"] = "Renommer",
+                    ["Delete"] = "Supprimer", ["Open folder"] = "Ouvrir le dossier", ["Search:"] = "Rechercher :",
+                    ["Previous"] = "Précédent", ["Next"] = "Suivant", ["Copy SQL"] = "Copier le SQL", ["Wrap lines"] = "Retour à la ligne"
+                },
+                [SpanishLanguage] = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["Language"] = "Idioma", ["Interface language:"] = "Idioma de la interfaz:", ["Apply"] = "Aplicar",
+                    ["Simplified Chinese"] = "Chino simplificado", ["Traditional Chinese"] = "Chino tradicional", ["English"] = "Inglés",
+                    ["The language setting applies immediately to MSSQL Tool windows and menu/toolbar labels."] = "La configuración de idioma se aplica inmediatamente a las ventanas de MSSQL Tool y a las etiquetas de menús/barras de herramientas.",
+                    ["Save"] = "Guardar", ["Settings"] = "Configuración", ["Storage"] = "Almacenamiento", ["Keyboard shortcuts"] = "Atajos de teclado",
+                    ["SQL Completion"] = "Finalización SQL", ["Result panel"] = "Panel de resultados", ["Code Format"] = "Formato de código",
+                    ["Connection Colors"] = "Colores de conexión", ["Updates"] = "Actualizaciones", ["Diagnostics"] = "Diagnóstico",
+                    ["OpenAI - ChatGPT integration"] = "Integración OpenAI - ChatGPT",
+                    ["Result statistics panel"] = "Estadísticas del conjunto de resultados",
+                    ["Show the result statistics panel when I click the result grid"] = "Mostrar el panel de estadísticas al hacer clic en la cuadrícula de resultados",
+                    ["When this is off, you can still open the panel with the [Result panel] toolbar button."] = "Si está desactivado, aún puede abrir el panel con el botón [Panel de resultados] de la barra de herramientas.",
+                    ["The result panel setting could not be saved."] = "No se pudo guardar la configuración del panel de resultados.",
+                    ["The change has been saved"] = "El cambio se ha guardado", ["Setting saved"] = "Configuración guardada",
+                    ["Recent (10)"] = "Recientes (10)", ["Frequently used"] = "Usados con frecuencia",
+                    ["Add to frequently used"] = "Añadir a usados con frecuencia", ["Remove from frequently used"] = "Quitar de usados con frecuencia",
+                    ["Added to frequently used."] = "Añadido a usados con frecuencia.", ["Removed from frequently used."] = "Quitado de usados con frecuencia.",
+                    ["Query Templates"] = "Plantillas de consulta", ["Insert"] = "Insertar", ["Open in new query"] = "Abrir en nueva consulta",
+                    ["Close"] = "Cerrar", ["Refresh"] = "Actualizar", ["Options"] = "Opciones", ["Tags…"] = "Etiquetas…",
+                    ["New category"] = "Nueva categoría", ["New statement"] = "Nueva instrucción", ["Rename"] = "Cambiar nombre",
+                    ["Delete"] = "Eliminar", ["Open folder"] = "Abrir carpeta", ["Search:"] = "Buscar:",
+                    ["Previous"] = "Anterior", ["Next"] = "Siguiente", ["Copy SQL"] = "Copiar SQL", ["Wrap lines"] = "Ajustar líneas"
+                }
+            };
+
         public static string CurrentLanguage { get; private set; } = ChineseLanguage;
         public static bool IsChinese => CurrentLanguage.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+
+        public static string NormalizeLanguage(string language)
+        {
+            if (string.IsNullOrWhiteSpace(language)) return ChineseLanguage;
+            foreach (string supported in SupportedLanguages)
+                if (string.Equals(supported, language.Trim(), StringComparison.OrdinalIgnoreCase))
+                    return supported;
+            return ChineseLanguage;
+        }
 
         public static void Initialize()
         {
@@ -880,9 +1026,7 @@ namespace MSSQLTool
 
         public static void SetLanguage(string language, bool persist = true)
         {
-            CurrentLanguage = string.Equals(language, EnglishLanguage, StringComparison.OrdinalIgnoreCase)
-                ? EnglishLanguage
-                : ChineseLanguage;
+            CurrentLanguage = NormalizeLanguage(language);
             var culture = CultureInfo.GetCultureInfo(CurrentLanguage);
             Thread.CurrentThread.CurrentUICulture = culture;
             CultureInfo.DefaultThreadCurrentUICulture = culture;
@@ -890,18 +1034,73 @@ namespace MSSQLTool
             {
                 SettingsManager.SaveUiLanguage(CurrentLanguage);
             }
+            ApplyOpenWindows();
+        }
+
+        private static void ApplyOpenWindows()
+        {
+            try
+            {
+                if (System.Windows.Application.Current == null) return;
+                foreach (Window window in System.Windows.Application.Current.Windows)
+                {
+                    if (window != null && IsExtensionUiType(window.GetType())) Apply(window);
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         public static string T(string text)
         {
-            if (string.IsNullOrEmpty(text) || !IsChinese)
+            if (string.IsNullOrEmpty(text) || CurrentLanguage == EnglishLanguage)
             {
                 return text;
             }
 
-            if (Chinese.TryGetValue(text, out string translated)) return translated;
-            return TranslateDynamic(text);
+            if (CurrentLanguage == ChineseLanguage)
+            {
+                if (Chinese.TryGetValue(text, out string chinese)) return chinese;
+                return TranslateDynamic(text);
+            }
+
+            if (CurrentLanguage == TraditionalChineseLanguage)
+            {
+                if (Chinese.TryGetValue(text, out string chinese)) return ToTraditional(chinese);
+                return text;
+            }
+
+            if (OtherUiTexts.TryGetValue(CurrentLanguage, out var strings)
+                && strings.TryGetValue(text, out string translated))
+            {
+                return translated;
+            }
+
+            // New languages fall back to the English source for strings that are not translated yet.
+            return text;
         }
+
+        private static string ToTraditional(string text)
+        {
+            try
+            {
+                var buffer = new StringBuilder(text.Length * 2 + 16);
+                int length = LCMapStringEx("zh-TW", LcmapTraditionalChinese, text, text.Length,
+                    buffer, buffer.Capacity, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+                return length > 0 ? buffer.ToString(0, length) : text;
+            }
+            catch (Exception)
+            {
+                return text;
+            }
+        }
+
+        private const uint LcmapTraditionalChinese = 0x04000000;
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern int LCMapStringEx(string locale, uint flags, string source, int sourceLength,
+            StringBuilder destination, int destinationLength, IntPtr version, IntPtr reserved, IntPtr parameter);
 
         /// <summary>
         /// True when <paramref name="text"/> has an entry in the Chinese dictionary.  The entry may
@@ -1015,7 +1214,7 @@ namespace MSSQLTool
                 original = current;
                 originals.Values[property] = original;
             }
-            string localized = IsChinese ? T(original) : original;
+            string localized = CurrentLanguage == EnglishLanguage ? original : T(original);
             // Assigning even an identical value replaces a WPF Binding with a local
             // value. Avoid doing that for untranslated or already-localized text.
             if (!string.Equals(current, localized, StringComparison.Ordinal))

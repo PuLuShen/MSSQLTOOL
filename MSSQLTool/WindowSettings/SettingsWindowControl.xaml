@@ -127,11 +127,17 @@
                     <TextBlock Text="Interface language:" Margin="0,0,0,8" />
                     <ComboBox x:Name="UiLanguageSelector" Width="220" HorizontalAlignment="Left" SelectedValuePath="Tag">
                         <ComboBoxItem Content="Simplified Chinese" Tag="zh-CN" />
+                        <ComboBoxItem Content="Traditional Chinese" Tag="zh-TW" />
                         <ComboBoxItem Content="English" Tag="en-US" />
+                        <ComboBoxItem Content="日本語" Tag="ja-JP" />
+                        <ComboBoxItem Content="한국어" Tag="ko-KR" />
+                        <ComboBoxItem Content="Deutsch" Tag="de-DE" />
+                        <ComboBoxItem Content="Français" Tag="fr-FR" />
+                        <ComboBoxItem Content="Español" Tag="es-ES" />
                     </ComboBox>
                     <Button Content="Apply" Width="90" HorizontalAlignment="Left" Margin="0,12,0,0"
                             Click="Button_ApplyLanguage_Click" />
-                    <TextBlock Text="The language setting applies immediately to MSSQL Tool windows. Toolbar command labels use the package default language."
+                    <TextBlock Text="The language setting applies immediately to MSSQL Tool windows and menu/toolbar labels."
                                TextWrapping="Wrap" Margin="0,10,0,0" />
                 </StackPanel>
             </TabItem>

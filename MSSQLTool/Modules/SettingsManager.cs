@@ -446,10 +446,7 @@ ORDER BY sd.[name];
 
         public static string GetUiLanguage()
         {
-            string language = GetRegisterValue("UiLanguage");
-            return string.Equals(language, LocalizationManager.EnglishLanguage, StringComparison.OrdinalIgnoreCase)
-                ? LocalizationManager.EnglishLanguage
-                : LocalizationManager.ChineseLanguage;
+            return LocalizationManager.NormalizeLanguage(GetRegisterValue("UiLanguage"));
         }
 
         public static bool SaveUiLanguage(string language)

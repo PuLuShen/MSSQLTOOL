@@ -431,6 +431,26 @@ namespace MSSQLTool
                 CommandBar commandBar = m_plugin.AddCommandBar("MSSQL Tool", MsoBarPosition.msoBarTop);
                 m_commandRegistry = new CommandRegistry(m_plugin, commandBar, new Guid(PackageGuidString), new Guid(PackageGuidGroup));
 
+                // VSCT captions are fixed at package build time.  Rewrite our menu/toolbar labels
+                // after the command bars exist so the chosen UI language also applies to the shell.
+                ShellLocalization.Apply();
+                try
+                {
+                    var shellTimer = new System.Windows.Threading.DispatcherTimer
+                    {
+                        Interval = TimeSpan.FromSeconds(1)
+                    };
+                    shellTimer.Tick += (_, __) =>
+                    {
+                        shellTimer.Stop();
+                        try { ShellLocalization.Apply(); } catch (Exception) { }
+                    };
+                    shellTimer.Start();
+                }
+                catch (Exception)
+                {
+                }
+
                 //---------------------------------------------------------------------------
                 // Legacy snippet folder load: the dictionary has no other reader in
                 // the extension, so keep it off the startup path.

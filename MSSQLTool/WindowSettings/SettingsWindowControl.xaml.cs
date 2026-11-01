@@ -145,6 +145,7 @@ as select 1;
             string language = UiLanguageSelector.SelectedValue as string;
             LocalizationManager.SetLanguage(language);
             LocalizationManager.Apply(this);
+            ShellLocalization.Apply();
         }
 
         private void LoadSavedSettings()
