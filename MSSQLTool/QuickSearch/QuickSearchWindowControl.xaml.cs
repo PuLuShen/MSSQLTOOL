@@ -200,11 +200,12 @@ namespace MSSQLTool
         {
             try
             {
-                List<ScriptFactoryAccess.ObjectExplorerServer> servers = ScriptFactoryAccess.GetObjectExplorerServers();
-
                 string activeServer = selectedServer;
                 if (string.IsNullOrWhiteSpace(activeServer))
                     activeServer = ScriptFactoryAccess.GetCurrentConnectionInfoFromObjectExplorer()?.ServerName;
+
+                List<ScriptFactoryAccess.ObjectExplorerServer> servers =
+                    ScriptFactoryAccess.GetObjectExplorerServers(activeServer);
 
                 if (!string.IsNullOrWhiteSpace(activeServer)
                     && !servers.Exists(s => string.Equals(s.ServerName, activeServer, StringComparison.OrdinalIgnoreCase)))

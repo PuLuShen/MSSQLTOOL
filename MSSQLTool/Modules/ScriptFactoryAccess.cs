@@ -125,7 +125,7 @@ namespace MSSQLTool
         /// Every server connected in Object Explorer, so the user can pick the search target instead
         /// of having to select the right node in the tree first.
         /// </summary>
-        public static List<ObjectExplorerServer> GetObjectExplorerServers()
+        public static List<ObjectExplorerServer> GetObjectExplorerServers(string preferredServer = null)
         {
             var servers = new List<ObjectExplorerServer>();
             try
@@ -163,7 +163,10 @@ namespace MSSQLTool
                 // hierarchy instead: the selected node's root contains one top-level node per
                 // connected server.
                 if (servers.Count < 2)
-                    AddServersFromObjectExplorerHierarchy(servers);
+                    AddServersFromObjectExplorerHierarchy(servers, preferredServer);
+
+                if (servers.Count < 2)
+                    AddServersFromObjectExplorerTree(servers, preferredServer);
 
                 // Servers this extension has talked to before stay in the list even while they are not
                 // connected, marked as unavailable, so switching back to a server without reconnecting
@@ -195,18 +198,33 @@ namespace MSSQLTool
         /// Fallback for SSMS builds where IObjectExplorerNavigationService is not proffered: the
         /// selected node's hierarchy root has one child per server shown in Object Explorer.
         /// </summary>
-        private static void AddServersFromObjectExplorerHierarchy(List<ObjectExplorerServer> servers)
+        private static void AddServersFromObjectExplorerHierarchy(List<ObjectExplorerServer> servers, string preferredServer)
         {
             try
             {
                 var oeService = ServiceCache.ServiceProvider.GetService(typeof(IObjectExplorerService)) as IObjectExplorerService;
-                if (oeService == null) return;
+                if (oeService == null)
+                {
+                    QuickSearchWindowControl.Log("Object Explorer hierarchy fallback: IObjectExplorerService is unavailable.");
+                    return;
+                }
 
                 INodeInformation selected = GetSelectedNode(oeService);
+                if (selected == null && !string.IsNullOrWhiteSpace(preferredServer))
+                {
+                    try { selected = oeService.FindNode($"Server[@Name='{preferredServer}']"); }
+                    catch (Exception) { }
+                }
+                if (selected == null)
+                {
+                    QuickSearchWindowControl.Log("Object Explorer hierarchy fallback: no selected server node");
+                    return;
+                }
+
                 HierarchyTreeNode root = selected?.Hierarchy?.Root;
                 if (root == null)
                 {
-                    QuickSearchWindowControl.Log("Object Explorer hierarchy fallback: no root node available.");
+                    QuickSearchWindowControl.Log("Object Explorer hierarchy fallback: selected node has no hierarchy root.");
                     return;
                 }
 
@@ -219,6 +237,7 @@ namespace MSSQLTool
                 {
                     var hierarchy = child as HierarchyTreeNode;
                     if (hierarchy == null) continue;
+                    QuickSearchWindowControl.Log($"Object Explorer hierarchy child: text='{child.Text}' path='{hierarchy.FullPath}' level={hierarchy.Level}");
 
                     string serverName = NodeServerNameFromPath(hierarchy.FullPath);
                     if (string.IsNullOrWhiteSpace(serverName)
@@ -252,6 +271,42 @@ namespace MSSQLTool
         {
             Match match = Regex.Match(path ?? string.Empty, @"Server\[@Name='(.*?)'\]");
             return match.Success ? match.Groups[1].Value : null;
+        }
+
+        /// <summary>
+        /// Final fallback: read the actual Object Explorer TreeView.  This works even when neither
+        /// the navigation service nor the managed hierarchy exposes the other connections.
+        /// </summary>
+        private static void AddServersFromObjectExplorerTree(List<ObjectExplorerServer> servers, string preferredServer)
+        {
+            try
+            {
+                List<string> names = ObjectExplorerTreeReader.ReadServerNames(preferredServer);
+                QuickSearchWindowControl.Log($"Object Explorer TreeView fallback found {names.Count} root item(s).");
+                bool trustedRootList = names.Count >= 2
+                    && (string.IsNullOrWhiteSpace(preferredServer)
+                        || names.Exists(n => string.Equals(n, preferredServer, StringComparison.OrdinalIgnoreCase)));
+                foreach (string name in names)
+                {
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    if (servers.Exists(s => string.Equals(s.ServerName, name, StringComparison.OrdinalIgnoreCase))) continue;
+
+                    // Only keep items that Object Explorer can resolve as a server; folder nodes
+                    // such as "Databases" are not valid search targets.  When the root also
+                    // contains the active server we trust the list and keep every root item.
+                    if (!trustedRootList && GetConnectionInfoFromObjectExplorerServer(name) == null) continue;
+                    servers.Add(new ObjectExplorerServer
+                    {
+                        ServerName = name,
+                        DisplayName = name,
+                        IsConnected = true
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Object Explorer", "Could not read the Object Explorer TreeView", ex);
+            }
         }
 
         /// <summary>

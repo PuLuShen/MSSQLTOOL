@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.386
+
+### 中文
+
+- **继续修复服务器下拉只显示一个**：5.385 的托管树兜底在部分 SSMS 22 上仍无法取得根节点；新增原生 `SysTreeView32` 读取兜底，直接从 Object Explorer 根节点读取所有服务器，再逐个用 `FindNode` 校验。
+- 诊断日志新增：`Object Explorer hierarchy fallback` 分支、根节点子项、`Object Explorer TreeView fallback found N root item(s)`，便于确认实际读取结果。
+
+### English
+
+- **Further fix for the server picker showing one entry**: the managed hierarchy fallback can still lack a root on some SSMS 22 builds; added a native `SysTreeView32` reader that reads the Object Explorer roots directly and validates each name with `FindNode`.
+- New diagnostic log lines cover the hierarchy branches, root children and the TreeView root count.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.386.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.386.vsix` asset below, then restart SSMS.
+
 ## 5.385
 
 ### 中文
