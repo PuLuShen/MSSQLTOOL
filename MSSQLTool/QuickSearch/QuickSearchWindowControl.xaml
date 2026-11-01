@@ -37,7 +37,6 @@
     <Grid Background="{DynamicResource ToolThemeBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -70,256 +69,273 @@
             </Grid>
         </Border>
 
-        <!-- Toolbar: server, search term, matching options and object types, in aligned rows. -->
-        <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="10,10,10,0">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <Grid Grid.Row="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*" MinWidth="200"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Style="{StaticResource FieldLabelStyle}" Text="Server:"/>
-                    <ComboBox Grid.Column="1"
-                              x:Name="ComboBox_Server"
-                              Height="24"
-                              VerticalContentAlignment="Center"
-                              HorizontalAlignment="Left"
-                              MinWidth="260"
-                              SelectionChanged="ComboBox_Server_SelectionChanged"
-                              ToolTip="Every server currently connected in Object Explorer. Pick one to search it."/>
-                    <TextBlock Grid.Column="2"
-                               x:Name="Label_ConnectionDescription"
-                               Margin="12,0,0,0"
-                               VerticalAlignment="Center"
-                               Opacity="0.85"
-                               Text="No connection selected"/>
-                </Grid>
-
-                <Grid Grid.Row="1" x:Name="SearchInputsGrid" Margin="0,8,0,0" IsEnabled="False">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*" MinWidth="160"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Style="{StaticResource FieldLabelStyle}" Text="Search for:"/>
-                    <!-- A plain TextBox: an editable ComboBox only accepts typing while its inner text box has
-                         the keyboard focus, which is what made this field look dead. -->
-                    <TextBox Grid.Column="1"
-                             x:Name="TextBox_SearchText"
-                             Height="24"
-                             VerticalContentAlignment="Center"
-                             ToolTip="Up/Down recall recent searches. Enter searches, Ctrl+Enter searches every database, Esc clears."
-                             KeyDown="TextBox_SearchText_KeyDown"/>
-                    <Button Grid.Column="2"
-                            x:Name="Button_SearchHistory"
-                            Content="▾"
-                            Width="26"
-                            Height="24"
-                            Margin="2,0,10,0"
-                            Click="Button_SearchHistory_Click"
-                            ToolTip="Recent searches"/>
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="Button_Search" Content="Search" Width="90" Height="26" Click="Button_Search_Click" Style="{DynamicResource PrimaryButtonStyle}"/>
-                        <Button x:Name="Button_CopyResults" Content="Copy results" Width="110" Height="26" Margin="8,0,0,0" Click="Button_CopyResults_Click"
-                                ToolTip="Copy every result row as text (database, type, schema, object, location, match preview)."/>
-                    </StackPanel>
-                </Grid>
-
-                <Grid Grid.Row="2" x:Name="SearchScopeGrid" Margin="0,8,0,0" IsEnabled="False">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Style="{StaticResource FieldLabelStyle}" Text="Match options:"/>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <CheckBox x:Name="CheckBox_WholeWord" Content="Match whole words only" Margin="0,0,14,0"
-                                  Checked="CheckBox_WholeWord_Checked"
-                                  ToolTip="The term must match a whole identifier word. Combined with fuzzy matching, every word of the term must match a distinct word of the identifier."/>
-                        <CheckBox x:Name="CheckBox_UseWildcards" Content="Use wildcards" Margin="0,0,14,0"
-                                  Checked="CheckBox_UseWildcards_Checked"
-                                  ToolTip="SQL LIKE wildcards: % for any text, _ for a single character. Cannot be combined with fuzzy matching."/>
-                        <CheckBox x:Name="CheckBox_Fuzzy" Content="Fuzzy match" IsChecked="True"
-                                  Checked="CheckBox_Fuzzy_Checked"
-                                  ToolTip="Tolerates typos and separator differences, so uspGetOrd also finds usp_GetOrder. Cannot be combined with wildcards."/>
-                    </StackPanel>
-                    <TextBlock Grid.Column="3"
-                               x:Name="TextBlock_KeyboardHint"
-                               Margin="16,0,0,0"
-                               VerticalAlignment="Center"
-                               FontSize="11"
-                               Opacity="0.7"
-                               TextWrapping="NoWrap"
-                               TextTrimming="CharacterEllipsis"
-                               Text="Enter: search | Ctrl+Enter: search all databases | Esc: clear | Ctrl+Down: jump to results"/>
-                </Grid>
-
-                <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
-                    <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Object types:"/>
-                    <CheckBox x:Name="CheckBox_StoredProcedures" Content="Stored Procedures" IsChecked="True" Margin="0,0,14,0" VerticalAlignment="Center"/>
-                    <CheckBox x:Name="CheckBox_Views" Content="Views" IsChecked="True" Margin="0,0,14,0" VerticalAlignment="Center"/>
-                    <CheckBox x:Name="CheckBox_Functions" Content="Functions" IsChecked="True" Margin="0,0,14,0" VerticalAlignment="Center"/>
-                    <CheckBox x:Name="CheckBox_Tables" Content="Tables" IsChecked="True" Margin="0,0,14,0" VerticalAlignment="Center"/>
-                    <CheckBox x:Name="CheckBox_AgentJobSteps" Content="SQL Agent Jobs" IsChecked="True" VerticalAlignment="Center"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <!-- Content: results and preview on the left, the database scope card on the right. -->
-        <Grid Grid.Row="2" Margin="10,10,10,0">
+        <!-- Main content: target selection on the left, conditions above a results/preview split on the right. -->
+        <Grid Grid.Row="1" Margin="10,10,10,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="360"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="330" MinWidth="260"/>
+                <ColumnDefinition Width="*" MinWidth="480"/>
             </Grid.ColumnDefinitions>
 
-            <Grid Grid.Column="0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" MinHeight="80"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="170" MinHeight="80"/>
-                </Grid.RowDefinitions>
-
-                <Border Grid.Row="0" Style="{StaticResource CardStyle}" Padding="1">
-                    <DataGrid x:Name="DataGrid_SearchResults"
-                              Style="{DynamicResource ToolThemedDataGridStyle}"
-                              AutoGenerateColumns="False"
-                              IsReadOnly="True"
-                              SelectionMode="Single"
-                              SelectionUnit="FullRow"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              RowHeaderWidth="0"
-                              HeadersVisibility="Column"
-                              BorderThickness="0"
-                              AlternatingRowBackground="{DynamicResource ToolThemeGridAlternateRowBrush}"
-                              SelectionChanged="DataGrid_SearchResults_SelectionChanged">
-                        <DataGrid.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Copy selected result" Click="MenuItem_CopySelectedResult_Click"/>
-                                <MenuItem Header="Copy all results" Click="MenuItem_CopyAllResults_Click"/>
-                            </ContextMenu>
-                        </DataGrid.ContextMenu>
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="110"/>
-                            <DataGridTextColumn Header="Type" Binding="{Binding ObjectType}" Width="130"/>
-                            <DataGridTextColumn Header="Schema" Binding="{Binding SchemaName}" Width="100"/>
-                            <DataGridTextColumn Header="Object" Binding="{Binding ObjectName}" Width="200"/>
-                            <DataGridTextColumn Header="Location" Binding="{Binding MatchLocation}" Width="110"/>
-                            <DataGridTextColumn Header="Match Preview" Binding="{Binding MatchPreview}" Width="*" MinWidth="160" FontFamily="Cascadia Mono, Consolas"/>
-                            <DataGridTemplateColumn Header="Script" Width="80">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Button Content="Script" Click="Button_ScriptResult_Click" Padding="8,1" Margin="2"/>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Border>
-
-                <!-- Draggable divider so the definition preview can be given as much room as wanted. -->
-                <GridSplitter Grid.Row="1"
-                              Height="6"
-                              HorizontalAlignment="Stretch"
-                              Background="Transparent"
-                              ResizeDirection="Rows"
-                              ResizeBehavior="PreviousAndNext"
-                              ShowsPreview="True"/>
-
-                <Border Grid.Row="2" Style="{StaticResource CardStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Style="{StaticResource CardCaptionStyle}" Text="Definition preview"/>
-                        <avalonedit:TextEditor Grid.Row="1"
-                                               x:Name="SqlEditor"
-                                               ShowLineNumbers="True"
-                                               FontFamily="Cascadia Mono, Consolas"
-                                               FontSize="12"
-                                               Background="{DynamicResource ToolThemeBackgroundBrush}"
-                                               Foreground="{DynamicResource ToolThemeForegroundBrush}"
-                                               IsReadOnly="True" />
-                    </Grid>
-                </Border>
-            </Grid>
-
-            <!-- The database scope card stretches with the window, so nothing is clipped.  It follows
-                 the scope rows: both stay disabled until a target has been adopted. -->
-            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Width="300" Margin="10,0,0,0"
-                    IsEnabled="{Binding IsEnabled, ElementName=SearchScopeGrid}">
-                <Grid x:Name="DatabaseScopePanel">
+            <!-- Left: server and database target. -->
+            <Border Grid.Column="0" Style="{StaticResource CardStyle}">
+                <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Style="{StaticResource CardCaptionStyle}" Text="Databases"/>
+                    <TextBlock Grid.Row="0" Style="{StaticResource CardCaptionStyle}" Text="Server and database"/>
 
-                    <Grid Grid.Row="1">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <ComboBox Grid.Column="0"
-                                  x:Name="ComboBox_DatabaseMode"
-                                  Height="24"
-                                  VerticalContentAlignment="Center"
-                                  SelectionChanged="ComboBox_DatabaseMode_SelectionChanged"/>
-                        <Button Grid.Column="1"
-                                x:Name="Button_RefreshDatabases"
-                                Content="Refresh"
-                                Margin="6,0,0,0"
-                                Padding="8,2"
-                                Click="Button_RefreshDatabases_Click"
-                                ToolTip="Reload the database list and states from the server."/>
+                    <ComboBox Grid.Row="1"
+                              x:Name="ComboBox_Server"
+                              Height="24"
+                              VerticalContentAlignment="Center"
+                              HorizontalAlignment="Stretch"
+                              SelectionChanged="ComboBox_Server_SelectionChanged"
+                              ToolTip="Every server currently connected in Object Explorer. Pick one to search it."/>
+
+                    <TextBlock Grid.Row="2"
+                               x:Name="Label_ConnectionDescription"
+                               Margin="0,5,0,0"
+                               TextWrapping="Wrap"
+                               Opacity="0.85"
+                               Text="No connection selected"/>
+
+                    <Border Grid.Row="3"
+                            Height="1"
+                            Background="{DynamicResource ToolThemeSubtleBorderBrush}"
+                            Margin="0,8"/>
+
+                    <Grid Grid.Row="4" x:Name="DatabaseScopePanel"
+                          IsEnabled="{Binding IsEnabled, ElementName=SearchScopeGrid}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Style="{StaticResource CardCaptionStyle}" Text="Databases"/>
+
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox Grid.Column="0"
+                                      x:Name="ComboBox_DatabaseMode"
+                                      Height="24"
+                                      VerticalContentAlignment="Center"
+                                      SelectionChanged="ComboBox_DatabaseMode_SelectionChanged"/>
+                            <Button Grid.Column="1"
+                                    x:Name="Button_RefreshDatabases"
+                                    Content="Refresh"
+                                    Margin="6,0,0,0"
+                                    Padding="8,2"
+                                    Click="Button_RefreshDatabases_Click"
+                                    ToolTip="Reload the database list and states from the server."/>
+                        </Grid>
+
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,6">
+                            <Button x:Name="Button_CheckAllDatabases" Content="Check all" Padding="8,2" Click="Button_CheckAllDatabases_Click"/>
+                            <Button x:Name="Button_UncheckAllDatabases" Content="Uncheck all" Margin="6,0,0,0" Padding="8,2" Click="Button_UncheckAllDatabases_Click"/>
+                            <TextBlock x:Name="TextBlock_DatabaseSummary" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="11" Opacity="0.75" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+
+                        <Border Grid.Row="3" BorderBrush="{DynamicResource ToolThemeSubtleBorderBrush}" BorderThickness="1" CornerRadius="2">
+                            <ListBox x:Name="ListBox_Databases"
+                                     MinHeight="90"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     HorizontalContentAlignment="Stretch"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <!-- Click (not Checked) so only real user interaction switches the
+                                             scope to "specific databases"; container generation and the
+                                             check all / uncheck all buttons must not trigger it. -->
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  IsEnabled="{Binding CanBeSearched}"
+                                                  Content="{Binding DisplayName}"
+                                                  Margin="2,1"
+                                                  Click="DatabaseCheckBox_Click"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
                     </Grid>
-
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,6">
-                        <Button x:Name="Button_CheckAllDatabases" Content="Check all" Padding="8,2" Click="Button_CheckAllDatabases_Click"/>
-                        <Button x:Name="Button_UncheckAllDatabases" Content="Uncheck all" Margin="6,0,0,0" Padding="8,2" Click="Button_UncheckAllDatabases_Click"/>
-                        <TextBlock x:Name="TextBlock_DatabaseSummary" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="11" Opacity="0.75"/>
-                    </StackPanel>
-
-                    <Border Grid.Row="3" BorderBrush="{DynamicResource ToolThemeSubtleBorderBrush}" BorderThickness="1" CornerRadius="2">
-                        <ListBox x:Name="ListBox_Databases"
-                                 MinHeight="90"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 HorizontalContentAlignment="Stretch"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <!-- Click (not Checked) so only real user interaction switches the
-                                         scope to "specific databases"; container generation and the
-                                         check all / uncheck all buttons must not trigger it. -->
-                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                              IsEnabled="{Binding CanBeSearched}"
-                                              Content="{Binding DisplayName}"
-                                              Margin="2,1"
-                                              Click="DatabaseCheckBox_Click"/>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </Border>
                 </Grid>
             </Border>
+
+            <!-- Right: conditions at the top, then results and linked preview side by side. -->
+            <Grid Grid.Column="1" Margin="10,0,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*" MinHeight="160"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Style="{StaticResource CardStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Style="{StaticResource CardCaptionStyle}" Text="Search conditions"/>
+
+                        <Grid Grid.Row="1" x:Name="SearchInputsGrid" IsEnabled="False">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*" MinWidth="160"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Style="{StaticResource FieldLabelStyle}" Text="Search for:"/>
+                            <!-- A plain TextBox: an editable ComboBox only accepts typing while its inner text box has
+                                 the keyboard focus, which is what made this field look dead. -->
+                            <TextBox Grid.Column="1"
+                                     x:Name="TextBox_SearchText"
+                                     Height="24"
+                                     VerticalContentAlignment="Center"
+                                     ToolTip="Up/Down recall recent searches. Enter searches, Ctrl+Enter searches every database, Esc clears."
+                                     KeyDown="TextBox_SearchText_KeyDown"/>
+                            <Button Grid.Column="2"
+                                    x:Name="Button_SearchHistory"
+                                    Content="▾"
+                                    Width="26"
+                                    Height="24"
+                                    Margin="2,0,10,0"
+                                    Click="Button_SearchHistory_Click"
+                                    ToolTip="Recent searches"/>
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="Button_Search" Content="Search" Width="90" Height="26" Click="Button_Search_Click" Style="{DynamicResource PrimaryButtonStyle}"/>
+                                <Button x:Name="Button_CopyResults" Content="Copy results" Width="110" Height="26" Margin="8,0,0,0" Click="Button_CopyResults_Click"
+                                        ToolTip="Copy every result row as text (database, type, schema, object, location, match preview)."/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Grid.Row="2" x:Name="SearchScopeGrid" Margin="0,8,0,0" IsEnabled="False">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Style="{StaticResource FieldLabelStyle}" Text="Match options:"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <CheckBox x:Name="CheckBox_WholeWord" Content="Match whole words only" Margin="0,0,14,0"
+                                          Checked="CheckBox_WholeWord_Checked"
+                                          ToolTip="The term must match a whole identifier word. Combined with fuzzy matching, every word of the term must match a distinct word of the identifier."/>
+                                <CheckBox x:Name="CheckBox_UseWildcards" Content="Use wildcards" Margin="0,0,14,0"
+                                          Checked="CheckBox_UseWildcards_Checked"
+                                          ToolTip="SQL LIKE wildcards: % for any text, _ for a single character. Cannot be combined with fuzzy matching."/>
+                                <CheckBox x:Name="CheckBox_Fuzzy" Content="Fuzzy match" IsChecked="True"
+                                          Checked="CheckBox_Fuzzy_Checked"
+                                          ToolTip="Tolerates typos and separator differences, so uspGetOrd also finds usp_GetOrder. Cannot be combined with wildcards."/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2"
+                                       x:Name="TextBlock_KeyboardHint"
+                                       Margin="16,0,0,0"
+                                       VerticalAlignment="Center"
+                                       FontSize="11"
+                                       Opacity="0.7"
+                                       TextWrapping="NoWrap"
+                                       TextTrimming="CharacterEllipsis"
+                                       Text="Enter: search | Ctrl+Enter: search all databases | Esc: clear | Ctrl+Down: jump to results"/>
+                        </Grid>
+
+                        <WrapPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Object types:"/>
+                            <CheckBox x:Name="CheckBox_StoredProcedures" Content="Stored Procedures" IsChecked="True" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                            <CheckBox x:Name="CheckBox_Views" Content="Views" IsChecked="True" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                            <CheckBox x:Name="CheckBox_Functions" Content="Functions" IsChecked="True" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                            <CheckBox x:Name="CheckBox_Tables" Content="Tables" IsChecked="True" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                            <CheckBox x:Name="CheckBox_AgentJobSteps" Content="SQL Agent Jobs" IsChecked="True" VerticalAlignment="Center"/>
+                        </WrapPanel>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="260"/>
+                        <ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*" MinWidth="240"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Style="{StaticResource CardStyle}" Padding="1">
+                        <DataGrid x:Name="DataGrid_SearchResults"
+                                  Style="{DynamicResource ToolThemedDataGridStyle}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  SelectionMode="Single"
+                                  SelectionUnit="FullRow"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  RowHeaderWidth="0"
+                                  HeadersVisibility="Column"
+                                  BorderThickness="0"
+                                  AlternatingRowBackground="{DynamicResource ToolThemeGridAlternateRowBrush}"
+                                  SelectionChanged="DataGrid_SearchResults_SelectionChanged">
+                            <DataGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy selected result" Click="MenuItem_CopySelectedResult_Click"/>
+                                    <MenuItem Header="Copy all results" Click="MenuItem_CopyAllResults_Click"/>
+                                </ContextMenu>
+                            </DataGrid.ContextMenu>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="110"/>
+                                <DataGridTextColumn Header="Type" Binding="{Binding ObjectType}" Width="130"/>
+                                <DataGridTextColumn Header="Schema" Binding="{Binding SchemaName}" Width="100"/>
+                                <DataGridTextColumn Header="Object" Binding="{Binding ObjectName}" Width="200"/>
+                                <DataGridTextColumn Header="Location" Binding="{Binding MatchLocation}" Width="110"/>
+                                <DataGridTextColumn Header="Match Preview" Binding="{Binding MatchPreview}" Width="*" MinWidth="160" FontFamily="Cascadia Mono, Consolas"/>
+                                <DataGridTemplateColumn Header="Script" Width="80">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="Script" Click="Button_ScriptResult_Click" Padding="8,1" Margin="2"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <!-- Draggable divider so the definition preview can be given as much room as wanted. -->
+                    <GridSplitter Grid.Column="1"
+                                  Width="6"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"
+                                  Background="Transparent"
+                                  ResizeDirection="Columns"
+                                  ResizeBehavior="PreviousAndNext"
+                                  ShowsPreview="True"/>
+
+                    <Border Grid.Column="2" Style="{StaticResource CardStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Style="{StaticResource CardCaptionStyle}" Text="Definition preview"/>
+                            <avalonedit:TextEditor Grid.Row="1"
+                                                   x:Name="SqlEditor"
+                                                   ShowLineNumbers="True"
+                                                   FontFamily="Cascadia Mono, Consolas"
+                                                   FontSize="12"
+                                                   Background="{DynamicResource ToolThemeBackgroundBrush}"
+                                                   Foreground="{DynamicResource ToolThemeForegroundBrush}"
+                                                   IsReadOnly="True" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
         </Grid>
 
-        <Border Grid.Row="3"
+        <Border Grid.Row="2"
                 BorderBrush="{DynamicResource ToolThemeSubtleBorderBrush}"
                 BorderThickness="0,1,0,0"
                 Margin="0,10,0,0"

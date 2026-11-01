@@ -158,6 +158,13 @@ namespace MSSQLTool
                     }
                 }
 
+                // Some SSMS 22 builds do not expose IObjectExplorerNavigationService at all (the
+                // navigation service is unavailable in the log).  Walk the Object Explorer tree
+                // hierarchy instead: the selected node's root contains one top-level node per
+                // connected server.
+                if (servers.Count < 2)
+                    AddServersFromObjectExplorerHierarchy(servers);
+
                 // Servers this extension has talked to before stay in the list even while they are not
                 // connected, marked as unavailable, so switching back to a server without reconnecting
                 // Object Explorer is still possible.
@@ -182,6 +189,69 @@ namespace MSSQLTool
             }
 
             return servers;
+        }
+
+        /// <summary>
+        /// Fallback for SSMS builds where IObjectExplorerNavigationService is not proffered: the
+        /// selected node's hierarchy root has one child per server shown in Object Explorer.
+        /// </summary>
+        private static void AddServersFromObjectExplorerHierarchy(List<ObjectExplorerServer> servers)
+        {
+            try
+            {
+                var oeService = ServiceCache.ServiceProvider.GetService(typeof(IObjectExplorerService)) as IObjectExplorerService;
+                if (oeService == null) return;
+
+                INodeInformation selected = GetSelectedNode(oeService);
+                HierarchyTreeNode root = selected?.Hierarchy?.Root;
+                if (root == null)
+                {
+                    QuickSearchWindowControl.Log("Object Explorer hierarchy fallback: no root node available.");
+                    return;
+                }
+
+                try { root.Expand(); } catch (Exception) { }
+                try { root.EnumerateChildren(); } catch (Exception) { }
+
+                QuickSearchWindowControl.Log($"Object Explorer hierarchy fallback: root has {root.Nodes.Count} child node(s).");
+
+                foreach (System.Windows.Forms.TreeNode child in root.Nodes)
+                {
+                    var hierarchy = child as HierarchyTreeNode;
+                    if (hierarchy == null) continue;
+
+                    string serverName = NodeServerNameFromPath(hierarchy.FullPath);
+                    if (string.IsNullOrWhiteSpace(serverName)
+                        && hierarchy.Level == 0
+                        && !string.IsNullOrWhiteSpace(hierarchy.Text)
+                        && !string.Equals(hierarchy.Text, "Databases", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(hierarchy.Text, LocalizationManager.T("Databases"), StringComparison.OrdinalIgnoreCase))
+                    {
+                        serverName = hierarchy.Text.Trim();
+                    }
+                    if (string.IsNullOrWhiteSpace(serverName)) continue;
+                    if (servers.Exists(s => string.Equals(s.ServerName, serverName, StringComparison.OrdinalIgnoreCase))) continue;
+
+                    servers.Add(new ObjectExplorerServer
+                    {
+                        ServerName = serverName,
+                        DisplayName = string.IsNullOrWhiteSpace(child.Text) ? serverName : child.Text,
+                        IsConnected = true
+                    });
+                }
+
+                QuickSearchWindowControl.Log($"Object Explorer hierarchy fallback found {servers.Count} server(s).");
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Object Explorer", "Could not walk the Object Explorer hierarchy", ex);
+            }
+        }
+
+        private static string NodeServerNameFromPath(string path)
+        {
+            Match match = Regex.Match(path ?? string.Empty, @"Server\[@Name='(.*?)'\]");
+            return match.Success ? match.Groups[1].Value : null;
         }
 
         /// <summary>

@@ -666,6 +666,8 @@ namespace MSSQLTool
             ["Specific databases"] = "指定数据库",
             ["Fuzzy match"] = "模糊匹配",
             ["Databases"] = "数据库",
+            ["Server and database"] = "服务器和数据库",
+            ["Search conditions"] = "搜索条件",
             ["Copy results"] = "复制结果",
             ["Copy selected result"] = "复制所选结果",
             ["Copy all results"] = "复制全部结果",

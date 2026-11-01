@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.385
+
+### 中文
+
+- **快速搜索布局重排**：左侧固定为服务器与数据库选择；右侧上方是搜索条件，下方左侧为结果表格、右侧为联动的定义预览脚本，中间可拖动调整宽度。
+- **修复服务器下拉只有一个选项**：当 SSMS 不提供 `IObjectExplorerNavigationService` 时，改为遍历 Object Explorer 的树根节点，列出所有已连接的服务器；仍保留当前服务器和本插件已知服务器作为兜底。
+
+### English
+
+- **Quick Search layout redesign**: server/database selection is now a left sidebar; the right side has the search conditions on top and a results/preview split below, with a draggable divider.
+- **Fix the server picker showing only one option**: when SSMS does not expose `IObjectExplorerNavigationService`, walk the Object Explorer hierarchy root to list every connected server; the active server and known servers remain as fallbacks.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.385.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.385.vsix` asset below, then restart SSMS.
+
 ## 5.384
 
 ### 中文
