@@ -99,7 +99,6 @@ namespace MSSQLTool
                 foreach (RootItem item in ReadRootItems(tree))
                 {
                     SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
-                    SetFocus(tree);
                     try { System.Windows.Forms.Application.DoEvents(); } catch (Exception) { }
 
                     try
@@ -174,8 +173,6 @@ namespace MSSQLTool
                     if (!exact && selectedServerName == null) continue;
 
                     SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
-                    SetFocus(tree);
-                    try { System.Windows.Forms.Application.DoEvents(); } catch (Exception) { }
 
                     bool matches = exact;
                     if (!matches && selectedServerName != null)

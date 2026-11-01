@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.391
+
+### 中文
+
+- **修复点击快速搜索闪退**：5.390 在刷新服务器列表时会逐个选中 Object Explorer 根节点并调用 `Application.DoEvents()`，造成重入/交互卡死。5.391 取消了列表加载阶段的节点探测、焦点切换和消息泵。
+- **服务器下拉直接显示 Object Explorer 的全部根节点**（好友好名称，如「宝庆」「珠宝厂」「老凤祥银楼」），不再只显示已知服务器列表的 2 条。
+- 切换服务器时仍会按节点名称选中对应根节点并复用其实时连接。
+
+### English
+
+- **Fix the Quick Search crash**: 5.390 selected Object Explorer roots while refreshing the list and pumped `Application.DoEvents()`, causing re-entrancy. 5.391 removes root probing, focus changes and message pumping during list load.
+- **The picker now lists every Object Explorer root caption** (for example 宝庆 / 珠宝厂 / 老凤祥银楼) instead of only the two known servers.
+- Switching still selects the matching root and reuses its live connection.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.391.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.391.vsix` asset below, then restart SSMS.
+
 ## 5.390
 
 ### 中文

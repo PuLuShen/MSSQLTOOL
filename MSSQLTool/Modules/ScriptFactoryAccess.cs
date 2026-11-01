@@ -281,44 +281,22 @@ namespace MSSQLTool
         {
             try
             {
-                List<string> resolved = ObjectExplorerTreeReader.ResolveServers(
-                    () => GetCurrentConnectionInfoFromObjectExplorer()?.ServerName);
-                if (resolved.Count > 0)
+                List<string> names = ObjectExplorerTreeReader.ReadServerNames(preferredServer);
+                QuickSearchWindowControl.Log($"Object Explorer TreeView fallback found {names.Count} root item(s): {string.Join(" | ", names)}");
+                if (names.Count > 0)
                 {
-                    QuickSearchWindowControl.Log($"Object Explorer TreeView resolved {resolved.Count} server(s).");
-                    foreach (string serverName in resolved)
+                    foreach (string name in names)
                     {
-                        if (servers.Exists(s => string.Equals(s.ServerName, serverName, StringComparison.OrdinalIgnoreCase))) continue;
+                        if (string.IsNullOrWhiteSpace(name)) continue;
+                        if (servers.Exists(s => string.Equals(s.ServerName, name, StringComparison.OrdinalIgnoreCase))) continue;
                         servers.Add(new ObjectExplorerServer
                         {
-                            ServerName = serverName,
-                            DisplayName = serverName,
+                            ServerName = name,
+                            DisplayName = name,
                             IsConnected = true
                         });
                     }
                     return;
-                }
-
-                List<string> names = ObjectExplorerTreeReader.ReadServerNames(preferredServer);
-                QuickSearchWindowControl.Log($"Object Explorer TreeView fallback found {names.Count} root item(s): {string.Join(" | ", names)}");
-                bool trustedRootList = names.Count >= 2
-                    && (string.IsNullOrWhiteSpace(preferredServer)
-                        || names.Exists(n => string.Equals(n, preferredServer, StringComparison.OrdinalIgnoreCase)));
-                foreach (string name in names)
-                {
-                    if (string.IsNullOrWhiteSpace(name)) continue;
-                    if (servers.Exists(s => string.Equals(s.ServerName, name, StringComparison.OrdinalIgnoreCase))) continue;
-
-                    // Only keep items that Object Explorer can resolve as a server; folder nodes
-                    // such as "Databases" are not valid search targets.  When the root also
-                    // contains the active server we trust the list and keep every root item.
-                    if (!trustedRootList && GetConnectionInfoFromObjectExplorerServer(name) == null) continue;
-                    servers.Add(new ObjectExplorerServer
-                    {
-                        ServerName = name,
-                        DisplayName = name,
-                        IsConnected = true
-                    });
                 }
             }
             catch (Exception ex)
