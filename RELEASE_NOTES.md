@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.392
+
+### 中文
+
+- **修复 5.390 点击快速搜索闪退**：5.390 在刷新服务器列表时逐个选中 Object Explorer 根节点并调用了 `Application.DoEvents()`，造成重入。5.392 在列表加载阶段完全不做节点探测/选中/消息泵。
+- **服务器下拉列出 Object Explorer 的全部根节点**（例如「宝庆」「珠宝厂」「老凤祥银楼」3 个），不再受已知服务器列表只有 2 条的限制；当前主机名通过可编辑下拉框文本显示，不会额外插入重复项。
+- 只有用户真正选择某个服务器时才选中对应根节点并复用其连接。
+
+### English
+
+- **Fix the Quick Search crash introduced by 5.390**: 5.390 selected roots and pumped `Application.DoEvents()` while loading the list, causing re-entrancy. 5.392 performs no probing, selecting or message pumping during list load.
+- **The picker lists every Object Explorer root** (three entries in the reported case) instead of being limited to the two known servers; the current host is shown as editable text without adding a duplicate entry.
+- Roots are only selected after the user actually chooses a server.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.392.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.392.vsix` asset below, then restart SSMS.
+
 ## 5.391
 
 ### 中文

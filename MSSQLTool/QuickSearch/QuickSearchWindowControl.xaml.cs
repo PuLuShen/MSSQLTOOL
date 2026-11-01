@@ -207,8 +207,9 @@ namespace MSSQLTool
                 List<ScriptFactoryAccess.ObjectExplorerServer> servers =
                     ScriptFactoryAccess.GetObjectExplorerServers(activeServer);
 
-                if (!string.IsNullOrWhiteSpace(activeServer)
-                    && !servers.Exists(s => string.Equals(s.ServerName, activeServer, StringComparison.OrdinalIgnoreCase)))
+                bool activeInList = !string.IsNullOrWhiteSpace(activeServer)
+                    && servers.Exists(s => string.Equals(s.ServerName, activeServer, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(activeServer) && !activeInList && servers.Count == 0)
                 {
                     servers.Insert(0, new ScriptFactoryAccess.ObjectExplorerServer
                     {
@@ -226,6 +227,12 @@ namespace MSSQLTool
                     SelectServerInList(activeServer);
                     if (ComboBox_Server.SelectedItem == null && servers.Count == 1)
                         ComboBox_Server.SelectedIndex = 0;
+                    else if (ComboBox_Server.SelectedItem == null && !string.IsNullOrWhiteSpace(activeServer))
+                    {
+                        // Object Explorer roots use friendly captions; show the active host in the
+                        // editable text without adding a duplicate fourth entry to the list.
+                        ComboBox_Server.Text = activeServer;
+                    }
                 }
                 finally
                 {

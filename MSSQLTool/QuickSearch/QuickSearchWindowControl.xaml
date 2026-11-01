@@ -94,6 +94,7 @@
                               Height="24"
                               VerticalContentAlignment="Center"
                               HorizontalAlignment="Stretch"
+                              IsEditable="True"
                               SelectionChanged="ComboBox_Server_SelectionChanged"
                               ToolTip="Every server currently connected in Object Explorer. Pick one to search it."/>
 
