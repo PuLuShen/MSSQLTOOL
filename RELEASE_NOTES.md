@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.390
+
+### 中文
+
+- **修复只显示 2 个服务器（实际连接了 3 个）**：Object Explorer 根节点是友好名称，不能直接作为服务器名。现在刷新列表时逐个选中根节点，读取实际连接服务器名，全部加入下拉框，不再受已知服务器列表数量限制。
+- 新增日志 `Resolved Object Explorer root '...' -> server '...'`，可直接核对 3 个根节点与 3 个服务器。
+
+### English
+
+- **Fix only two servers showing when three are connected**: Object Explorer roots are friendly captions, not host names. The picker now selects every root, reads its live server name and adds all of them, instead of relying on the known-server list.
+- New log line `Resolved Object Explorer root '...' -> server '...'` shows the full mapping.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.390.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.390.vsix` asset below, then restart SSMS.
+
 ## 5.389
 
 ### 中文

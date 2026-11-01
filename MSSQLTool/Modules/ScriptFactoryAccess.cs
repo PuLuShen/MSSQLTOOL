@@ -281,6 +281,24 @@ namespace MSSQLTool
         {
             try
             {
+                List<string> resolved = ObjectExplorerTreeReader.ResolveServers(
+                    () => GetCurrentConnectionInfoFromObjectExplorer()?.ServerName);
+                if (resolved.Count > 0)
+                {
+                    QuickSearchWindowControl.Log($"Object Explorer TreeView resolved {resolved.Count} server(s).");
+                    foreach (string serverName in resolved)
+                    {
+                        if (servers.Exists(s => string.Equals(s.ServerName, serverName, StringComparison.OrdinalIgnoreCase))) continue;
+                        servers.Add(new ObjectExplorerServer
+                        {
+                            ServerName = serverName,
+                            DisplayName = serverName,
+                            IsConnected = true
+                        });
+                    }
+                    return;
+                }
+
                 List<string> names = ObjectExplorerTreeReader.ReadServerNames(preferredServer);
                 QuickSearchWindowControl.Log($"Object Explorer TreeView fallback found {names.Count} root item(s): {string.Join(" | ", names)}");
                 bool trustedRootList = names.Count >= 2

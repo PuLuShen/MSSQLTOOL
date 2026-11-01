@@ -57,6 +57,68 @@ namespace MSSQLTool
         /// the live connection (including credentials), which is the only reliable way to build a
         /// query connection when FindNode cannot resolve the display name.
         /// </summary>
+        /// <summary>
+        /// Resolves every Object Explorer root to its live server name by selecting each root in
+        /// turn.  Root captions are friendly names, so the caption alone cannot be used as a host.
+        /// </summary>
+        public static List<string> ResolveServers(Func<string> selectedServerName)
+        {
+            var result = new List<string>();
+            if (selectedServerName == null) return result;
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE;
+                if (dte != null)
+                {
+                    foreach (Window window in dte.Windows)
+                    {
+                        if (window == null || window.HWnd == IntPtr.Zero) continue;
+                        if (!LooksLikeObjectExplorer(window.Caption ?? string.Empty)) continue;
+                        ResolveFromWindow(window.HWnd, selectedServerName, result);
+                        if (result.Count > 0) return result;
+                    }
+                }
+
+                IntPtr mainWindow = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
+                if (mainWindow != IntPtr.Zero)
+                    ResolveFromWindow(mainWindow, selectedServerName, result);
+            }
+            catch (Exception ex)
+            {
+                QuickSearchWindowControl.Log("Object Explorer resolve-servers fallback failed: " + ex.Message);
+            }
+
+            return result;
+        }
+
+        private static void ResolveFromWindow(IntPtr window, Func<string> selectedServerName, List<string> result)
+        {
+            foreach (IntPtr tree in FindTreeViews(window))
+            {
+                foreach (RootItem item in ReadRootItems(tree))
+                {
+                    SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
+                    SetFocus(tree);
+                    try { System.Windows.Forms.Application.DoEvents(); } catch (Exception) { }
+
+                    try
+                    {
+                        string actual = selectedServerName();
+                        if (string.IsNullOrWhiteSpace(actual)) continue;
+                        if (!result.Exists(x => string.Equals(x, actual, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            result.Add(actual);
+                            QuickSearchWindowControl.Log($"Resolved Object Explorer root '{item.Text}' -> server '{actual}'.");
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+        }
+
         public static bool SelectServer(string serverName)
         {
             return SelectServer(serverName, null);
