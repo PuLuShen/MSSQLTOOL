@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.388
+
+### 中文
+
+- **修复服务器切换仍报「无法使用连接」**：在 `FindNode` 失败后，先检查 Object Explorer 当前选中的节点；如果它正是目标服务器，直接复用该节点的实时连接（日志显示这正是目标服务器的常见路径）。
+- 树节点选中兜底继续保留；新增日志会打印树根名称和实际选中的树节点文本，便于定位名称不一致。
+
+### English
+
+- **Fix the remaining "could not use the connection" error when switching servers**: after `FindNode` fails, check the currently selected Object Explorer node first; when it is the requested server, reuse that node's live connection.
+- The tree-selection fallback remains; new logs print the tree root names and the selected item text for diagnosing name mismatches.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.388.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.388.vsix` asset below, then restart SSMS.
+
 ## 5.387
 
 ### 中文

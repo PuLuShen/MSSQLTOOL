@@ -78,7 +78,7 @@ namespace MSSQLTool
                             if (!string.Equals(item.Text, serverName, StringComparison.OrdinalIgnoreCase)) continue;
                             SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
                             SetFocus(tree);
-                            QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}'.");
+                            QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}' (tree text '{item.Text}').");
                             return true;
                         }
                     }
@@ -94,7 +94,7 @@ namespace MSSQLTool
                             if (!string.Equals(item.Text, serverName, StringComparison.OrdinalIgnoreCase)) continue;
                             SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
                             SetFocus(tree);
-                            QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}'.");
+                            QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}' (tree text '{item.Text}').");
                             return true;
                         }
                     }

@@ -282,7 +282,7 @@ namespace MSSQLTool
             try
             {
                 List<string> names = ObjectExplorerTreeReader.ReadServerNames(preferredServer);
-                QuickSearchWindowControl.Log($"Object Explorer TreeView fallback found {names.Count} root item(s).");
+                QuickSearchWindowControl.Log($"Object Explorer TreeView fallback found {names.Count} root item(s): {string.Join(" | ", names)}");
                 bool trustedRootList = names.Count >= 2
                     && (string.IsNullOrWhiteSpace(preferredServer)
                         || names.Exists(n => string.Equals(n, preferredServer, StringComparison.OrdinalIgnoreCase)));
@@ -364,6 +364,20 @@ namespace MSSQLTool
                     INodeInformation selected = GetSelectedNode(oeService);
                     if (selected != null && string.Equals(NodeServerName(selected), serverName, StringComparison.OrdinalIgnoreCase))
                         node = selected;
+                }
+
+                if (node == null)
+                {
+                    // Fall back to the current Object Explorer selection.  Some servers have a
+                    // display name that FindNode cannot resolve, while the selected node still
+                    // carries a perfectly usable connection.
+                    ConnectionInfo current = GetCurrentConnectionInfoFromObjectExplorer();
+                    if (current != null
+                        && string.Equals(current.ServerName, serverName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        QuickSearchWindowControl.Log($"Resolved '{serverName}' from the current Object Explorer selection.");
+                        return current;
+                    }
                 }
 
                 if (node == null && allowSelection
