@@ -168,20 +168,23 @@ namespace MSSQLTool
                 if (servers.Count < 2)
                     AddServersFromObjectExplorerTree(servers, preferredServer);
 
-                // Servers this extension has talked to before stay in the list even while they are not
-                // connected, marked as unavailable, so switching back to a server without reconnecting
-                // Object Explorer is still possible.
-                foreach (string known in SettingsManager.GetKnownCompletionServers())
+                // Servers this extension has talked to before are only a fallback when Object
+                // Explorer did not provide any roots.  Adding them alongside friendly root
+                // captions produced five entries for two connections.
+                if (servers.Count == 0)
                 {
-                    if (string.IsNullOrWhiteSpace(known)) continue;
-                    if (servers.Exists(s => string.Equals(s.ServerName, known, StringComparison.OrdinalIgnoreCase))) continue;
-
-                    servers.Add(new ObjectExplorerServer
+                    foreach (string known in SettingsManager.GetKnownCompletionServers())
                     {
-                        ServerName = known,
-                        DisplayName = known + " " + LocalizationManager.T("(not connected)"),
-                        IsConnected = false
-                    });
+                        if (string.IsNullOrWhiteSpace(known)) continue;
+                        if (servers.Exists(s => string.Equals(s.ServerName, known, StringComparison.OrdinalIgnoreCase))) continue;
+
+                        servers.Add(new ObjectExplorerServer
+                        {
+                            ServerName = known,
+                            DisplayName = known + " " + LocalizationManager.T("(not connected)"),
+                            IsConnected = false
+                        });
+                    }
                 }
 
                 servers.Sort((left, right) => string.Compare(left.ServerName, right.ServerName, StringComparison.OrdinalIgnoreCase));

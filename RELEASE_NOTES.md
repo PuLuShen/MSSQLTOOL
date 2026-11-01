@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.393
+
+### 中文
+
+- **修复服务器下拉显示 5 个（实际连接 2 个）**：5.392 同时加入了 Object Explorer 的根节点和「已知服务器」列表，导致重复。现在只要 Object Explorer 提供了根节点，就不再追加已知服务器；当前主机仍显示在可编辑文本框中。
+- 下拉列表只展示 Object Explorer 的根节点（2 个根节点就是 2 项），不再出现重复的 IP/主机名条目。
+
+### English
+
+- **Fix the picker showing five servers for two connections**: 5.392 added both Object Explorer roots and the known-server list. Known servers are now only used when Object Explorer provides no roots; the active host stays in the editable text box.
+- The dropdown now contains only the Object Explorer roots (two roots = two items), without duplicate IP/host entries.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.393.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.393.vsix` asset below, then restart SSMS.
+
 ## 5.392
 
 ### 中文
