@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.389
+
+### 中文
+
+- **继续修复服务器切换报错**：日志显示 Object Explorer 根节点是友好名称（如「宝庆 (SQL Server 15.0 - sa)」），不是主机名；现在切换服务器时会逐个探测这些根节点，选中后比较实际连接服务器名，找到目标服务器并复用其连接（含凭据）。
+- 新增探测日志：`Probed Object Explorer item '...' -> server '...'`，可直接看到友好名称与实际服务器名的对应关系。
+
+### English
+
+- **Further fix for the server-switch error**: Object Explorer roots use friendly captions (for example "宝庆 (SQL Server 15.0 - sa)") rather than host names. Switching now probes each root, compares the selected node's actual server name, and reuses the matching connection (including credentials).
+- New log line `Probed Object Explorer item '...' -> server '...'` shows the caption-to-server mapping.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.389.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.389.vsix` asset below, then restart SSMS.
+
 ## 5.388
 
 ### 中文

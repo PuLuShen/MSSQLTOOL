@@ -59,6 +59,21 @@ namespace MSSQLTool
         /// </summary>
         public static bool SelectServer(string serverName)
         {
+            return SelectServer(serverName, null);
+        }
+
+        /// <summary>
+        /// Selects a root node by probing the selected node's live server name.  Object Explorer
+        /// root captions are friendly display names such as "宝庆 (SQL Server 15.0 - sa)" and do
+        /// not contain the host name used by the Quick Search picker.
+        /// </summary>
+        public static bool SelectServerByConnection(string serverName, Func<string> selectedServerName)
+        {
+            return SelectServer(serverName, selectedServerName);
+        }
+
+        private static bool SelectServer(string serverName, Func<string> selectedServerName)
+        {
             if (string.IsNullOrWhiteSpace(serverName)) return false;
             try
             {
@@ -70,39 +85,56 @@ namespace MSSQLTool
                 {
                     if (window == null || window.HWnd == IntPtr.Zero) continue;
                     if (!LooksLikeObjectExplorer(window.Caption ?? string.Empty)) continue;
-
-                    foreach (IntPtr tree in FindTreeViews(window.HWnd))
-                    {
-                        foreach (RootItem item in ReadRootItems(tree))
-                        {
-                            if (!string.Equals(item.Text, serverName, StringComparison.OrdinalIgnoreCase)) continue;
-                            SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
-                            SetFocus(tree);
-                            QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}' (tree text '{item.Text}').");
-                            return true;
-                        }
-                    }
+                    if (TrySelectInWindow(window.HWnd, serverName, selectedServerName)) return true;
                 }
 
                 IntPtr mainWindow = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
                 if (mainWindow != IntPtr.Zero)
                 {
-                    foreach (IntPtr tree in FindTreeViews(mainWindow))
-                    {
-                        foreach (RootItem item in ReadRootItems(tree))
-                        {
-                            if (!string.Equals(item.Text, serverName, StringComparison.OrdinalIgnoreCase)) continue;
-                            SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
-                            SetFocus(tree);
-                            QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}' (tree text '{item.Text}').");
-                            return true;
-                        }
-                    }
+                    if (TrySelectInWindow(mainWindow, serverName, selectedServerName)) return true;
                 }
             }
             catch (Exception ex)
             {
                 QuickSearchWindowControl.Log("Object Explorer select-server fallback failed: " + ex.Message);
+            }
+
+            return false;
+        }
+
+        private static bool TrySelectInWindow(IntPtr window, string serverName, Func<string> selectedServerName)
+        {
+            foreach (IntPtr tree in FindTreeViews(window))
+            {
+                foreach (RootItem item in ReadRootItems(tree))
+                {
+                    bool exact = string.Equals(item.Text, serverName, StringComparison.OrdinalIgnoreCase);
+                    if (!exact && selectedServerName == null) continue;
+
+                    SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
+                    SetFocus(tree);
+                    try { System.Windows.Forms.Application.DoEvents(); } catch (Exception) { }
+
+                    bool matches = exact;
+                    if (!matches && selectedServerName != null)
+                    {
+                        try
+                        {
+                            string actual = selectedServerName();
+                            QuickSearchWindowControl.Log($"Probed Object Explorer item '{item.Text}' -> server '{actual}'.");
+                            matches = string.Equals(actual, serverName, StringComparison.OrdinalIgnoreCase);
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
+                    if (matches)
+                    {
+                        QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}' (tree text '{item.Text}').");
+                        return true;
+                    }
+                }
             }
 
             return false;

@@ -380,11 +380,20 @@ namespace MSSQLTool
                     }
                 }
 
-                if (node == null && allowSelection
-                    && ObjectExplorerTreeReader.SelectServer(serverName))
+                if (node == null && allowSelection)
                 {
-                    INodeInformation selected = GetSelectedNode(oeService);
-                    if (selected != null) node = selected;
+                    bool selected = ObjectExplorerTreeReader.SelectServer(serverName);
+                    if (!selected)
+                    {
+                        selected = ObjectExplorerTreeReader.SelectServerByConnection(
+                            serverName, () => GetCurrentConnectionInfoFromObjectExplorer()?.ServerName);
+                    }
+
+                    if (selected)
+                    {
+                        INodeInformation selectedNode = GetSelectedNode(oeService);
+                        if (selectedNode != null) node = selectedNode;
+                    }
                 }
 
                 if (node == null) return null;
