@@ -1079,6 +1079,11 @@ namespace MSSQLTool
                 return translated;
             }
 
+            if (QuickSearchLocalization.TryGet(CurrentLanguage, text, out string quickSearch))
+            {
+                return quickSearch;
+            }
+
             // New languages fall back to the English source for strings that are not translated yet.
             return text;
         }

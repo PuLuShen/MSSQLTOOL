@@ -131,6 +131,7 @@
     <Compile Include="Modules\QueryHistoryPrivacy.cs" />
     <Compile Include="Modules\RecoveredTempFileService.cs" />
     <Compile Include="Modules\ObjectExplorerTreeReader.cs" />
+    <Compile Include="Modules\QuickSearchLocalization.cs" />
     <Compile Include="Modules\ShellLocalization.cs" />
     <Compile Include="Modules\TemplateEditorKeyGuard.cs" />
     <Compile Include="Modules\QueryHistorySqliteStore.cs" />

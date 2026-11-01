@@ -193,7 +193,6 @@ namespace MSSQLTool
                 var oeService = ServiceCache.ServiceProvider.GetService(typeof(IObjectExplorerService)) as IObjectExplorerService;
                 if (oeService == null)
                 {
-                    QuickSearchWindowControl.Log("Object Explorer hierarchy fallback: IObjectExplorerService is unavailable.");
                     return;
                 }
 
@@ -205,27 +204,22 @@ namespace MSSQLTool
                 }
                 if (selected == null)
                 {
-                    QuickSearchWindowControl.Log("Object Explorer hierarchy fallback: no selected server node");
                     return;
                 }
 
                 HierarchyTreeNode root = selected?.Hierarchy?.Root;
                 if (root == null)
                 {
-                    QuickSearchWindowControl.Log("Object Explorer hierarchy fallback: selected node has no hierarchy root.");
                     return;
                 }
 
                 try { root.Expand(); } catch (Exception) { }
                 try { root.EnumerateChildren(); } catch (Exception) { }
 
-                QuickSearchWindowControl.Log($"Object Explorer hierarchy fallback: root has {root.Nodes.Count} child node(s).");
-
                 foreach (System.Windows.Forms.TreeNode child in root.Nodes)
                 {
                     var hierarchy = child as HierarchyTreeNode;
                     if (hierarchy == null) continue;
-                    QuickSearchWindowControl.Log($"Object Explorer hierarchy child: text='{child.Text}' path='{hierarchy.FullPath}' level={hierarchy.Level}");
 
                     string serverName = NodeServerNameFromPath(hierarchy.FullPath);
                     if (string.IsNullOrWhiteSpace(serverName)
@@ -246,8 +240,6 @@ namespace MSSQLTool
                         IsConnected = true
                     });
                 }
-
-                QuickSearchWindowControl.Log($"Object Explorer hierarchy fallback found {servers.Count} server(s).");
             }
             catch (Exception ex)
             {
@@ -270,7 +262,6 @@ namespace MSSQLTool
             try
             {
                 List<string> names = ObjectExplorerTreeReader.ReadServerNames(preferredServer);
-                QuickSearchWindowControl.Log($"Object Explorer TreeView fallback found {names.Count} root item(s): {string.Join(" | ", names)}");
                 if (names.Count > 0)
                 {
                     foreach (string name in names)
@@ -359,7 +350,6 @@ namespace MSSQLTool
                     if (current != null
                         && string.Equals(current.ServerName, serverName, StringComparison.OrdinalIgnoreCase))
                     {
-                        QuickSearchWindowControl.Log($"Resolved '{serverName}' from the current Object Explorer selection.");
                         return current;
                     }
                 }

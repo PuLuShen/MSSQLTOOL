@@ -84,9 +84,8 @@ namespace MSSQLTool
                 if (mainWindow != IntPtr.Zero)
                     ResolveFromWindow(mainWindow, selectedServerName, result);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                QuickSearchWindowControl.Log("Object Explorer resolve-servers fallback failed: " + ex.Message);
             }
 
             return result;
@@ -108,7 +107,6 @@ namespace MSSQLTool
                         if (!result.Exists(x => string.Equals(x, actual, StringComparison.OrdinalIgnoreCase)))
                         {
                             result.Add(actual);
-                            QuickSearchWindowControl.Log($"Resolved Object Explorer root '{item.Text}' -> server '{actual}'.");
                         }
                     }
                     catch (Exception)
@@ -155,9 +153,8 @@ namespace MSSQLTool
                     if (TrySelectInWindow(mainWindow, serverName, selectedServerName)) return true;
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                QuickSearchWindowControl.Log("Object Explorer select-server fallback failed: " + ex.Message);
             }
 
             return false;
@@ -180,7 +177,6 @@ namespace MSSQLTool
                         try
                         {
                             string actual = selectedServerName();
-                            QuickSearchWindowControl.Log($"Probed Object Explorer item '{item.Text}' -> server '{actual}'.");
                             matches = string.Equals(actual, serverName, StringComparison.OrdinalIgnoreCase);
                         }
                         catch (Exception)
@@ -190,7 +186,6 @@ namespace MSSQLTool
 
                     if (matches)
                     {
-                        QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}' (tree text '{item.Text}').");
                         return true;
                     }
                 }
@@ -231,9 +226,8 @@ namespace MSSQLTool
                         names = ReadWindowServers(mainWindow, preferredServer);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                QuickSearchWindowControl.Log("Object Explorer TreeView fallback failed: " + ex.Message);
             }
 
             return names;

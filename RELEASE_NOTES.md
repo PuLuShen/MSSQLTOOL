@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.395
+
+### 中文
+
+- **快速搜索页面全部元素接入多语言**：左侧服务器/数据库、右上搜索条件、结果表格、定义预览、按钮、复选框、Tooltip、最近搜索、对象类型、状态栏和错误提示均按当前语言显示；新增日语、韩语、德语、法语、西班牙语词条，繁體中文沿用简体转换。
+- **移除服务器排障日志**：删除 `hierarchy fallback`、`TreeView fallback`、`Probed`、`Selected Object Explorer` 等临时诊断输出，只保留正常状态日志。
+
+### English
+
+- **The whole Quick Search page is localized**: server/database sidebar, conditions, result grid, definition preview, buttons, checkboxes, tooltips, recent searches, object types, status bar and error prompts all follow the selected language. Added Japanese, Korean, German, French and Spanish entries; Traditional Chinese uses the Simplified conversion.
+- **Removed server troubleshooting logs**: the temporary `hierarchy fallback`, `TreeView fallback`, `Probed` and `Selected Object Explorer` diagnostics are gone; normal status logging remains.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.395.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.395.vsix` asset below, then restart SSMS.
+
 ## 5.394
 
 ### 中文
