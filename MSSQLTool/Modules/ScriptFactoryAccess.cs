@@ -339,7 +339,7 @@ namespace MSSQLTool
         /// <summary>
         /// Connection (including the credentials Object Explorer holds) for a server it has open.
         /// </summary>
-        public static ConnectionInfo GetConnectionInfoFromObjectExplorerServer(string serverName, string database = null)
+        public static ConnectionInfo GetConnectionInfoFromObjectExplorerServer(string serverName, string database = null, bool allowSelection = false)
         {
             if (string.IsNullOrWhiteSpace(serverName)) return null;
 
@@ -364,6 +364,13 @@ namespace MSSQLTool
                     INodeInformation selected = GetSelectedNode(oeService);
                     if (selected != null && string.Equals(NodeServerName(selected), serverName, StringComparison.OrdinalIgnoreCase))
                         node = selected;
+                }
+
+                if (node == null && allowSelection
+                    && ObjectExplorerTreeReader.SelectServer(serverName))
+                {
+                    INodeInformation selected = GetSelectedNode(oeService);
+                    if (selected != null) node = selected;
                 }
 
                 if (node == null) return null;

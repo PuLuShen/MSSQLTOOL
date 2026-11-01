@@ -15,9 +15,11 @@ namespace MSSQLTool
     internal static class ObjectExplorerTreeReader
     {
         private const uint TvmGetNextItem = 0x110A;
+        private const uint TvmSelectItem = 0x110B;
         private const uint TvmGetItemW = 0x113E;
         private const int TvgnRoot = 0;
         private const int TvgnNext = 1;
+        private const int TvgnCaret = 9;
         private const uint TvifText = 0x0001;
         private const int TextBufferLength = 1024;
 
@@ -44,8 +46,67 @@ namespace MSSQLTool
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetFocus(IntPtr hWnd);
+
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+
+        /// <summary>
+        /// Selects a server node in Object Explorer.  The selected node's INodeInformation carries
+        /// the live connection (including credentials), which is the only reliable way to build a
+        /// query connection when FindNode cannot resolve the display name.
+        /// </summary>
+        public static bool SelectServer(string serverName)
+        {
+            if (string.IsNullOrWhiteSpace(serverName)) return false;
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE;
+                if (dte == null) return false;
+
+                foreach (Window window in dte.Windows)
+                {
+                    if (window == null || window.HWnd == IntPtr.Zero) continue;
+                    if (!LooksLikeObjectExplorer(window.Caption ?? string.Empty)) continue;
+
+                    foreach (IntPtr tree in FindTreeViews(window.HWnd))
+                    {
+                        foreach (RootItem item in ReadRootItems(tree))
+                        {
+                            if (!string.Equals(item.Text, serverName, StringComparison.OrdinalIgnoreCase)) continue;
+                            SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
+                            SetFocus(tree);
+                            QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}'.");
+                            return true;
+                        }
+                    }
+                }
+
+                IntPtr mainWindow = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
+                if (mainWindow != IntPtr.Zero)
+                {
+                    foreach (IntPtr tree in FindTreeViews(mainWindow))
+                    {
+                        foreach (RootItem item in ReadRootItems(tree))
+                        {
+                            if (!string.Equals(item.Text, serverName, StringComparison.OrdinalIgnoreCase)) continue;
+                            SendMessage(tree, TvmSelectItem, (IntPtr)TvgnCaret, item.Handle);
+                            SetFocus(tree);
+                            QuickSearchWindowControl.Log($"Selected Object Explorer server '{serverName}'.");
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                QuickSearchWindowControl.Log("Object Explorer select-server fallback failed: " + ex.Message);
+            }
+
+            return false;
+        }
 
         public static List<string> ReadServerNames(string preferredServer)
         {
@@ -89,6 +150,26 @@ namespace MSSQLTool
 
         private static List<string> ReadWindowServers(IntPtr window, string preferredServer)
         {
+            List<string> fallback = null;
+            foreach (IntPtr tree in FindTreeViews(window))
+            {
+                List<RootItem> items = ReadRootItems(tree);
+                if (items.Count == 0) continue;
+
+                var treeNames = new List<string>();
+                foreach (RootItem item in items) treeNames.Add(item.Text);
+
+                bool hasPreferred = string.IsNullOrWhiteSpace(preferredServer)
+                    || treeNames.Exists(n => string.Equals(n, preferredServer, StringComparison.OrdinalIgnoreCase));
+                if (hasPreferred) return treeNames;
+                if (fallback == null) fallback = treeNames;
+            }
+
+            return fallback ?? new List<string>();
+        }
+
+        private static List<IntPtr> FindTreeViews(IntPtr window)
+        {
             var trees = new List<IntPtr>();
             EnumChildWindows(window, (hWnd, _) =>
             {
@@ -100,20 +181,13 @@ namespace MSSQLTool
                     trees.Add(hWnd);
                 return true;
             }, IntPtr.Zero);
+            return trees;
+        }
 
-            List<string> fallback = null;
-            foreach (IntPtr tree in trees)
-            {
-                List<string> treeNames = ReadRootItems(tree);
-                if (treeNames.Count == 0) continue;
-
-                bool hasPreferred = string.IsNullOrWhiteSpace(preferredServer)
-                    || treeNames.Exists(n => string.Equals(n, preferredServer, StringComparison.OrdinalIgnoreCase));
-                if (hasPreferred) return treeNames;
-                if (fallback == null) fallback = treeNames;
-            }
-
-            return fallback ?? new List<string>();
+        private sealed class RootItem
+        {
+            public IntPtr Handle;
+            public string Text;
         }
 
         private static bool LooksLikeObjectExplorer(string caption)
@@ -129,17 +203,18 @@ namespace MSSQLTool
             return false;
         }
 
-        private static List<string> ReadRootItems(IntPtr tree)
+        private static List<RootItem> ReadRootItems(IntPtr tree)
         {
-            var names = new List<string>();
+            var items = new List<RootItem>();
             IntPtr item = SendMessage(tree, TvmGetNextItem, (IntPtr)TvgnRoot, IntPtr.Zero);
             while (item != IntPtr.Zero)
             {
                 string text = ReadItemText(tree, item);
-                if (!string.IsNullOrWhiteSpace(text)) names.Add(text.Trim());
+                if (!string.IsNullOrWhiteSpace(text))
+                    items.Add(new RootItem { Handle = item, Text = text.Trim() });
                 item = SendMessage(tree, TvmGetNextItem, (IntPtr)TvgnNext, item);
             }
-            return names;
+            return items;
         }
 
         private static string ReadItemText(IntPtr tree, IntPtr item)

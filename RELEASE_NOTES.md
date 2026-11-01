@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.387
+
+### 中文
+
+- **修复切换快速搜索服务器时报「无法使用连接」**：第二个服务器能从 Object Explorer 树中列出，但 `FindNode` 解析不到它的连接；现在切换时会在 Object Explorer 中选中对应服务器节点，再用该节点的实时连接（含凭据）建立查询连接。
+- 保留原有行为：如果当前已选中的就是目标服务器，直接使用现有连接，不改变对象资源管理器选择。
+
+### English
+
+- **Fix "could not use the connection" when switching the Quick Search server**: the second server could be listed from the Object Explorer tree, but `FindNode` could not resolve its connection. Switching now selects the matching Object Explorer server node and uses that node's live connection (including credentials).
+- The existing behaviour is kept when the target server is already the selected node.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.387.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.387.vsix` asset below, then restart SSMS.
+
 ## 5.386
 
 ### 中文

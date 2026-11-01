@@ -271,7 +271,7 @@ namespace MSSQLTool
             var server = ComboBox_Server.SelectedItem as ScriptFactoryAccess.ObjectExplorerServer;
             if (server == null) return;
 
-            var ci = ScriptFactoryAccess.GetConnectionInfoFromObjectExplorerServer(server.ServerName);
+            var ci = ScriptFactoryAccess.GetConnectionInfoFromObjectExplorerServer(server.ServerName, null, true);
             if (ci == null)
             {
                 LocalizedMessageBox.Show(
