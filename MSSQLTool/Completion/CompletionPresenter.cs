@@ -346,9 +346,11 @@ namespace MSSQLTool.Completion
         }
 
         /// <summary>
-        /// Resolves the top-left corner of the caret's line in screen coordinates together with
-        /// the editor's line height.  Returns false when the editor cannot report the caret, so
-        /// the caller can fall back to the Win32 caret.
+        /// Resolves the visual top-left corner of the caret in screen coordinates together with
+        /// the editor's line height.  Asking for the caret column (rather than column 0) is what
+        /// makes wrapped lines work: the returned point is the caret's actual wrapped row, not the
+        /// first screen row of the logical line.  Returns false when the editor cannot report the
+        /// caret, so the caller can fall back to the Win32 caret.
         /// </summary>
         private static bool TryGetCaretPlacement(IVsTextView textView, out Point caretTop, out int lineHeight)
         {
@@ -364,10 +366,11 @@ namespace MSSQLTool.Completion
                 if (textView.GetCaretPos(out int line, out int column) != VSConstants.S_OK)
                     return false;
 
-                // Column 0 anchors the popup to the start of the caret line, which keeps it from
-                // jumping horizontally while the caret moves inside that line.
+                // Use the caret's visual column.  With word wrap enabled SSMS can put the caret on
+                // a continuation row; column 0 would report the first row and the popup would then
+                // be placed over the caret.
                 Microsoft.VisualStudio.OLE.Interop.POINT[] points = new Microsoft.VisualStudio.OLE.Interop.POINT[1];
-                if (textView.GetPointOfLineColumn(line, 0, points) != VSConstants.S_OK)
+                if (textView.GetPointOfLineColumn(line, column, points) != VSConstants.S_OK)
                     return false;
 
                 int x = points[0].x;

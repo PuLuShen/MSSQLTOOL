@@ -13,13 +13,11 @@ namespace MSSQLTool.Completion
     }
 
     /// <summary>
-    /// Places the completion popup below the caret line so the text being typed stays visible.
-    ///
-    /// The popup is put on the side of the caret line that has more room, and its height is capped
-    /// to that room, which is what keeps the caret line uncovered. Merely clamping a tall popup
-    /// into the work area (the previous behaviour) pushed it back over the caret whenever the caret
-    /// sat low on the screen.  The layout is pure arithmetic so it can be verified independently of
-    /// the editor.
+    /// Places the completion popup on the side of the caret line that has more room.  Its left
+    /// edge starts at the caret and is only moved left when the preferred width would leave the
+    /// monitor's working area.  The height is capped to the chosen side, so the caret line stays
+    /// visible even when the caret sits low on the screen.  The layout is pure arithmetic so it can
+    /// be verified independently of the editor.
     /// </summary>
     internal static class CompletionPopupPlacement
     {
@@ -33,22 +31,24 @@ namespace MSSQLTool.Completion
         internal const int MinimumUsableWidth = 320;
 
         /// <summary>
-        /// Computes the popup geometry for a caret whose line starts at
-        /// <paramref name="caretLineTop"/> and is <paramref name="lineHeight"/> pixels tall.
+        /// Computes the popup geometry for a caret whose visual top-left is
+        /// <paramref name="caretPoint"/> and whose line is <paramref name="lineHeight"/> pixels tall.
         /// </summary>
         internal static CompletionPopupLayout Resolve(Rectangle workArea, Size preferred,
-            Size preferredMinimum, Point caretLineTop, int lineHeight)
+            Size preferredMinimum, Point caretPoint, int lineHeight)
         {
             int line = Math.Max(1, lineHeight);
 
-            // Preferred width, clamped to the work area.
+            // Preferred width, clamped to the work area.  A popup wider than the monitor is
+            // narrowed only when there is no other way to keep it inside the working area.
             int width = Math.Max(1, Math.Min(preferred.Width, workArea.Width));
             int minimumWidth = Math.Min(preferredMinimum.Width, width);
 
-            // Geometry of the two candidate sides.
-            int belowTop = caretLineTop.Y + line + Gap;
+            // Geometry of the two candidate sides.  caretPoint is the *visual* caret position, so
+            // this also works when SSMS wraps a long line onto several screen rows.
+            int belowTop = caretPoint.Y + line + Gap;
             int roomBelow = workArea.Bottom - belowTop;
-            int roomAbove = caretLineTop.Y - Gap - workArea.Top;
+            int roomAbove = caretPoint.Y - Gap - workArea.Top;
 
             bool placeBelow = roomBelow >= roomAbove;
             int room = Math.Max(0, placeBelow ? roomBelow : roomAbove);
@@ -61,13 +61,16 @@ namespace MSSQLTool.Completion
             int minimumHeight = Math.Min(preferredMinimum.Height, height);
             if (minimumHeight < MinimumUsableHeight) minimumHeight = Math.Min(MinimumUsableHeight, height);
 
-            int y = placeBelow ? belowTop : caretLineTop.Y - Gap - height;
+            int y = placeBelow ? belowTop : caretPoint.Y - Gap - height;
 
             // Keep the popup inside the work area. Because the height was capped to the available
             // room, this can no longer drag the popup across the caret line.
             y = Math.Max(workArea.Top, Math.Min(y, workArea.Bottom - height));
 
-            int x = Math.Max(workArea.Left, Math.Min(caretLineTop.X, workArea.Right - width));
+            // The left edge starts at the caret.  If the preferred width would cross the monitor's
+            // right edge, shift the whole popup left; the width is kept unless it cannot fit on the
+            // monitor at all.
+            int x = Math.Max(workArea.Left, Math.Min(caretPoint.X, workArea.Right - width));
 
             return new CompletionPopupLayout
             {

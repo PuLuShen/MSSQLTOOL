@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.396
+
+### 中文
+
+- **自动补全弹窗改为左边缘对齐光标**：不再锚定逻辑行第 0 列；横向优先保持光标 X 坐标，右侧空间不足时整体左移，不超出显示器工作区。
+- **兼容 SSMS 自动换行**：使用光标的实际视觉行列位置计算弹窗位置，换行后的续行不会再被弹窗压住；上下仍选择空间更大的一侧并限制高度。
+- 新增 3 项定位回归测试（光标对齐、视口右边界左移、换行续行）。
+
+### English
+
+- **The completion popup now starts at the caret** instead of logical column 0. It keeps the caret X when possible, shifts left at the monitor edge, and never leaves the working area.
+- **Word-wrap compatible**: the popup uses the caret's visual line/column, so a wrapped continuation row is not covered. Vertical placement still picks the side with more room and caps the height.
+- Added three placement regression tests (caret alignment, right-edge shift, wrapped row).
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.396.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.396.vsix` asset below, then restart SSMS.
+
 ## 5.395
 
 ### 中文
