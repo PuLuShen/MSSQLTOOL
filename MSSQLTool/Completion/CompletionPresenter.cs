@@ -20,7 +20,6 @@ namespace MSSQLTool.Completion
         [DllImport("user32.dll")] private static extern IntPtr GetFocus();
         [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref NativePoint point);
         [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
-        [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out NativeRect rect);
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 
@@ -289,7 +288,6 @@ namespace MSSQLTool.Completion
         private void PositionAndShow(IVsTextView textView)
         {
             IntPtr handle = textView.GetWindowHandle();
-            bool usedFallback = false;
 
             // The popup must sit on the line *below* the caret, so the caret stays visible while
             // typing. The editor's own APIs are asked first: they report the true caret line, the
@@ -298,7 +296,6 @@ namespace MSSQLTool.Completion
             // can be stale and would place the popup right on top of the caret.
             if (!TryGetCaretPlacement(textView, out Point caretTop, out int lineHeight))
             {
-                usedFallback = true;
                 NativePoint point;
                 IntPtr coordinateWindow = GetFocus();
                 if (coordinateWindow == IntPtr.Zero) coordinateWindow = handle;
@@ -306,12 +303,9 @@ namespace MSSQLTool.Completion
                 {
                     // No caret information at all: fall back to the top of the editor.
                     point = new NativePoint { X = 0, Y = 0 };
-                    PlacementLog("fallback GetCaretPos failed; using editor origin");
                 }
 
-                PlacementLog($"fallback coordinateWindow={coordinateWindow} clientCaret=({point.X},{point.Y})");
                 ClientToScreen(coordinateWindow, ref point);
-                PlacementLog($"fallback screenCaret=({point.X},{point.Y})");
                 caretTop = new Point(point.X, point.Y);
                 lineHeight = textLineHeight;
             }
@@ -334,11 +328,6 @@ namespace MSSQLTool.Completion
                 caretTop,
                 lineHeight);
 
-            PlacementLog($"position usedFallback={usedFallback} caret=({caretTop.X},{caretTop.Y}) " +
-                         $"lineHeight={lineHeight} screen=({area.Left},{area.Top},{area.Width},{area.Height}) " +
-                         $"preferred=({preferredWindowSize.Width},{preferredWindowSize.Height}) " +
-                         $"layout=({layout.Location.X},{layout.Location.Y},{layout.Size.Width},{layout.Size.Height})");
-
             window.MinimumSize = layout.MinimumSize;
             if (window.Width != layout.Size.Width) window.Width = layout.Size.Width;
             if (window.Height != layout.Size.Height) window.Height = layout.Size.Height;
@@ -354,20 +343,6 @@ namespace MSSQLTool.Completion
             // application switch.
             SetWindowPos(window.Handle, IntPtr.Zero, layout.Location.X, layout.Location.Y, 0, 0,
                 SwpNoSize | SwpNoActivate | SwpShowWindow);
-
-            PlacementLog($"shown bounds=({window.Bounds.Left},{window.Bounds.Top},{window.Bounds.Width},{window.Bounds.Height}) " +
-                         $"visible={window.Visible}");
-        }
-
-        private static void PlacementLog(string message)
-        {
-            try
-            {
-                MSSQLToolPackage._logger?.Info("COMPLETION-PLACEMENT " + message);
-            }
-            catch (Exception)
-            {
-            }
         }
 
         /// <summary>
@@ -386,82 +361,57 @@ namespace MSSQLTool.Completion
             try
             {
                 IntPtr editorHandle = textView.GetWindowHandle();
-                NativeRect editorRect = default;
-                bool hasEditorRect = GetWindowRect(editorHandle, out editorRect);
-                NativeRect clientRect = default;
-                bool hasClientRect = GetClientRect(editorHandle, out clientRect);
-                NativePoint clientOrigin = new NativePoint();
-                bool hasClientOrigin = ClientToScreen(editorHandle, ref clientOrigin);
-                NativePoint win32Caret = new NativePoint();
-                bool hasWin32Caret = GetCaretPos(out win32Caret);
-                IntPtr focus = GetFocus();
-                if (hasWin32Caret)
-                    ClientToScreen(focus == IntPtr.Zero ? editorHandle : focus, ref win32Caret);
 
                 if (textView.GetLineHeight(out int editorLineHeight) == VSConstants.S_OK && editorLineHeight > 0)
                     lineHeight = editorLineHeight;
 
                 if (textView.GetCaretPos(out int line, out int column) != VSConstants.S_OK)
-                {
-                    PlacementLog("editor caret unavailable");
                     return false;
-                }
 
                 // Use the caret's visual column.  With word wrap enabled SSMS can put the caret on
                 // a continuation row; column 0 would report the first row and the popup would then
                 // be placed over the caret.
                 Microsoft.VisualStudio.OLE.Interop.POINT[] points = new Microsoft.VisualStudio.OLE.Interop.POINT[1];
                 if (textView.GetPointOfLineColumn(line, column, points) != VSConstants.S_OK)
-                {
-                    PlacementLog($"GetPointOfLineColumn failed line={line} column={column}");
                     return false;
-                }
 
                 int x = points[0].x;
                 int y = points[0].y;
 
-                int lineStartX = 0, lineStartY = 0;
+                // GetPointOfLineColumn normally returns screen coordinates, but SSMS 22 returns
+                // client coordinates.  The caret point alone can fall inside both rectangles, so
+                // use the line's first column as the discriminator: in client coordinates it is
+                // left of the editor's screen rectangle.  Without this extra conversion the popup
+                // starts near the editor's left edge instead of at the caret.
                 bool hasLineStart = textView.GetPointOfLineColumn(line, 0, points) == VSConstants.S_OK;
-                if (hasLineStart)
+                int lineStartX = hasLineStart ? points[0].x : 0;
+                int lineStartY = hasLineStart ? points[0].y : 0;
+
+                bool convertClientCoordinates = false;
+                if (GetWindowRect(editorHandle, out NativeRect editorRect))
                 {
-                    lineStartX = points[0].x;
-                    lineStartY = points[0].y;
+                    bool insideWindow = x >= editorRect.Left - 8 && x <= editorRect.Right + 8
+                        && y >= editorRect.Top - 8 && y <= editorRect.Bottom + 8;
+                    bool lineStartOutsideWindow = hasLineStart
+                        && (lineStartX < editorRect.Left - 8 || lineStartY < editorRect.Top - 8);
+                    convertClientCoordinates = !insideWindow || lineStartOutsideWindow;
                 }
 
-                PlacementLog($"editor line={line} column={column} lineHeight={lineHeight} " +
-                             $"rawCaret=({x},{y}) rawLineStart=({lineStartX},{lineStartY}) hasLineStart={hasLineStart} " +
-                             $"editorRect={(hasEditorRect ? $"{editorRect.Left},{editorRect.Top},{editorRect.Right},{editorRect.Bottom}" : "n/a")} " +
-                             $"clientRect={(hasClientRect ? $"{clientRect.Left},{clientRect.Top},{clientRect.Right},{clientRect.Bottom}" : "n/a")} " +
-                             $"clientOrigin={(hasClientOrigin ? $"{clientOrigin.X},{clientOrigin.Y}" : "n/a")} " +
-                             $"win32Caret={(hasWin32Caret ? $"{win32Caret.X},{win32Caret.Y}" : "n/a")} focus={focus}");
-
-                // GetPointOfLineColumn is documented as screen coordinates, but hosts differ.
-                // Detect the convention by testing the point against the editor's window rect.
-                if (GetWindowRect(textView.GetWindowHandle(), out NativeRect checkRect))
+                if (convertClientCoordinates)
                 {
-                    bool insideWindow = x >= checkRect.Left - 8 && x <= checkRect.Right + 8
-                        && y >= checkRect.Top - 8 && y <= checkRect.Bottom + 8;
-                    PlacementLog($"coordinateDecision insideWindow={insideWindow} raw=({x},{y})");
-                    if (!insideWindow)
+                    NativePoint clientPoint = new NativePoint { X = x, Y = y };
+                    if (ClientToScreen(editorHandle, ref clientPoint))
                     {
-                        NativePoint clientPoint = new NativePoint { X = x, Y = y };
-                        IntPtr window = textView.GetWindowHandle();
-                        if (ClientToScreen(window, ref clientPoint))
-                        {
-                            x = clientPoint.X;
-                            y = clientPoint.Y;
-                            PlacementLog($"coordinateConverted=({x},{y})");
-                        }
+                        x = clientPoint.X;
+                        y = clientPoint.Y;
                     }
                 }
 
                 caretTop = new Point(x, y);
-                PlacementLog($"editor placement final=({x},{y})");
                 return true;
             }
             catch (Exception ex)
             {
-                PlacementLog("editor placement exception: " + ex.Message);
                 MSSQLToolPackage._logger?.Debug(ex, "The editor could not report the caret position; falling back to the Win32 caret.");
                 return false;
             }

@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.398
+
+### 中文
+
+- **修复补全弹窗位置偏低/遮挡光标**：诊断日志确认 SSMS 22 的 `GetPointOfLineColumn` 返回的是**客户区坐标**，但旧逻辑因该点也落在编辑器屏幕矩形内而误判为屏幕坐标，少加了编辑器左上角偏移。现在用同一行第 0 列坐标作为判别依据，确定是客户区坐标时统一转换到屏幕坐标。
+- 诊断日志 `COMPLETION-PLACEMENT` 已移除。
+
+### English
+
+- **Fix the completion popup being offset upward/covering the caret**: the diagnostics showed that SSMS 22's `GetPointOfLineColumn` returns **client coordinates**, but the old check also matched the editor's screen rectangle and skipped the conversion. The line's column-0 point now disambiguates the convention and the caret is converted consistently.
+- Removed the `COMPLETION-PLACEMENT` diagnostics.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.398.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.398.vsix` asset below, then restart SSMS.
+
 ## 5.397
 
 ### 中文
