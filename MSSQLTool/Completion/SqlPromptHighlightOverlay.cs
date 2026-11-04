@@ -174,7 +174,7 @@ namespace MSSQLTool.Completion
                     {
                         Width = right - left,
                         Height = lineHeight / dpi.DpiScaleY,
-                        Fill = new SolidColorBrush(Color.FromArgb(70, 128, 128, 128)),
+                        Fill = new SolidColorBrush(Color.FromArgb(100, 128, 128, 128)),
                         IsHitTestVisible = false,
                         RadiusX = 2,
                         RadiusY = 2

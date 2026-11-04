@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.404
+
+### 中文
+
+- **增强 DJLSH 高亮可见性**：5.403 日志确认 `DJLSH` 已经生成 3 个矩形（A 两次、B 一次），但非当前行的灰色背景透明度太低，看起来像没高亮。现在把灰色背景加深，A/B 三处都能明显看到。
+- `INSERT ... SELECT` 字面量和 `VALUES` 的位置配对保持。
+
+### English
+
+- **Make DJLSH highlighting visible**: the 5.403 logs confirmed three rectangles (A twice, B once), but the gray was too faint outside the current line. The background is now darker so all three occurrences are visible.
+- Positional pairing for `INSERT ... SELECT` literals and `VALUES` is unchanged.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.404.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.404.vsix` asset below, then restart SSMS.
+
 ## 5.403
 
 ### 中文
