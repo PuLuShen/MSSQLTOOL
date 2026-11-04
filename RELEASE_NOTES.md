@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.405
+
+### 中文
+
+- **按限定符区分同名列**：光标在 `B.DJLSH` 时只高亮 B 的 `DJLSH`，不再同时高亮 A 的；光标在 `A.DJLSH` 时只高亮 A 的两次引用。裸列名仍按同名关联。
+- 保留 `INSERT ... SELECT` / `VALUES` 的目标列与位置对应值高亮。
+
+### English
+
+- **Qualified columns are scoped by qualifier**: on `B.DJLSH` only B's `DJLSH` is highlighted; on `A.DJLSH` only A's two references are highlighted. Bare column names still relate by name.
+- `INSERT ... SELECT` / `VALUES` target-to-position value pairing remains.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.405.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.405.vsix` asset below, then restart SSMS.
+
 ## 5.404
 
 ### 中文

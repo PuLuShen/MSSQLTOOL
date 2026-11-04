@@ -53,7 +53,15 @@ namespace MSSQLTool.Completion
             int statementStart = statement?.StartOffset ?? 0;
             int statementEnd = statement != null ? statement.StartOffset + statement.FragmentLength : sql.Length;
 
-            if (current != null)
+            var visitor = new SemanticVisitor();
+            script?.Accept(visitor);
+
+            ColumnRef currentColumn = current == null
+                ? null
+                : visitor.Columns.FirstOrDefault(c => c.Start == current.Start);
+            bool qualifiedColumn = currentColumn != null && !string.IsNullOrWhiteSpace(currentColumn.Qualifier);
+
+            if (current != null && !qualifiedColumn)
             {
                 foreach (Token token in tokens)
                 {
@@ -64,9 +72,6 @@ namespace MSSQLTool.Completion
             }
 
             if (script == null) return spans;
-
-            var visitor = new SemanticVisitor();
-            script.Accept(visitor);
 
             if (current != null)
             {
@@ -94,9 +99,14 @@ namespace MSSQLTool.Completion
                 {
                     if (!InStatement(statementStart, statementEnd, column.Start)) continue;
                     if (!Matches(current, column.Name)) continue;
+                    if (qualifiedColumn
+                        && !string.Equals(column.Qualifier, currentColumn.Qualifier, StringComparison.OrdinalIgnoreCase))
+                        continue;
                     foreach (ColumnRef occurrence in visitor.Columns.Where(c =>
                         InStatement(statementStart, statementEnd, c.Start)
-                        && string.Equals(c.Name, column.Name, StringComparison.OrdinalIgnoreCase)))
+                        && string.Equals(c.Name, column.Name, StringComparison.OrdinalIgnoreCase)
+                        && (!qualifiedColumn
+                            || string.Equals(c.Qualifier, currentColumn.Qualifier, StringComparison.OrdinalIgnoreCase))))
                         Add(spans, occurrence.Start, occurrence.Length);
                 }
             }
@@ -115,9 +125,9 @@ namespace MSSQLTool.Completion
             string tokenText = current?.Text ?? "<literal>";
             string pairText = string.Join("; ", visitor.Pairs.Select(p => p.TargetName + "<-" + p.SourceName));
             MSSQLToolPackage._logger?.Info(
-                $"SQL-HIGHLIGHT token='{tokenText}' caret={caretOffset} statement=[{statementStart},{statementEnd}] " +
-                $"tables={visitor.Tables.Count} columns={visitor.Columns.Count} pairs={visitor.Pairs.Count} spans={spans.Count} " +
-                $"pairs=[{pairText}]");
+                $"SQL-HIGHLIGHT token='{tokenText}' qualifier='{currentColumn?.Qualifier}' caret={caretOffset} " +
+                $"statement=[{statementStart},{statementEnd}] tables={visitor.Tables.Count} columns={visitor.Columns.Count} " +
+                $"pairs={visitor.Pairs.Count} spans={spans.Count} pairs=[{pairText}]");
 
             return spans;
         }
