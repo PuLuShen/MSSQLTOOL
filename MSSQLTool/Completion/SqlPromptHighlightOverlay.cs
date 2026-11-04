@@ -29,6 +29,7 @@ namespace MSSQLTool.Completion
         private List<HighlightSpan> spans = new List<HighlightSpan>();
         private bool shown;
         private bool loggedRects;
+        private int lastRenderedLine = -1;
 
         public SqlPromptHighlightOverlay(IVsTextView textView, Func<bool> completionVisible)
         {
@@ -93,18 +94,21 @@ namespace MSSQLTool.Completion
                     lastCaret = caret;
                     spans = SqlPromptHighlightAnalyzer.Analyze(text, caret);
                     loggedRects = false;
-                    MSSQLToolPackage._logger?.Info($"SQL-HIGHLIGHT scan line={line} column={column} caret={caret} spans={spans.Count}");
+                    lastRenderedLine = -1;
+                    MSSQLToolPackage._logger?.Debug($"SQL-HIGHLIGHT scan line={line} column={column} caret={caret} spans={spans.Count}");
                     if (spans.Count == 0)
                     {
                         Hide();
                         return;
                     }
 
-                    MSSQLToolPackage._logger?.Info($"SQL-HIGHLIGHT showing {spans.Count} span(s) at line={line} column={column}");
+                    MSSQLToolPackage._logger?.Debug($"SQL-HIGHLIGHT showing {spans.Count} span(s) at line={line} column={column}");
                 }
 
                 if (spans.Count == 0) return;
+                if (line == lastRenderedLine && shown) return;
                 Render(text, line);
+                lastRenderedLine = line;
             }
             catch (Exception ex)
             {
@@ -183,7 +187,7 @@ namespace MSSQLTool.Completion
                     Canvas.SetTop(rectangle, top);
                     canvas.Children.Add(rectangle);
                     if (!loggedRects)
-                        MSSQLToolPackage._logger?.Info(
+                        MSSQLToolPackage._logger?.Debug(
                             $"SQL-HIGHLIGHT rect span={span.Start}:{span.Length} line={line} cols={from}-{to} " +
                             $"client=({start[0].x},{start[0].y})-({end[0].x},{end[0].y}) dip=({left},{top})-({right},{top + (lineHeight / dpi.DpiScaleY)})");
                 }
@@ -204,7 +208,7 @@ namespace MSSQLTool.Completion
                     SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow);
             }
 
-            MSSQLToolPackage._logger?.Info($"SQL-HIGHLIGHT render rects={canvas.Children.Count} bounds=({window.Left},{window.Top},{window.Width},{window.Height})");
+            MSSQLToolPackage._logger?.Debug($"SQL-HIGHLIGHT render rects={canvas.Children.Count} bounds=({window.Left},{window.Top},{window.Width},{window.Height})");
             loggedRects = true;
         }
 

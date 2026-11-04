@@ -124,7 +124,7 @@ namespace MSSQLTool.Completion
 
             string tokenText = current?.Text ?? "<literal>";
             string pairText = string.Join("; ", visitor.Pairs.Select(p => p.TargetName + "<-" + p.SourceName));
-            MSSQLToolPackage._logger?.Info(
+            MSSQLToolPackage._logger?.Debug(
                 $"SQL-HIGHLIGHT token='{tokenText}' qualifier='{currentColumn?.Qualifier}' caret={caretOffset} " +
                 $"statement=[{statementStart},{statementEnd}] tables={visitor.Tables.Count} columns={visitor.Columns.Count} " +
                 $"pairs={visitor.Pairs.Count} spans={spans.Count} pairs=[{pairText}]");

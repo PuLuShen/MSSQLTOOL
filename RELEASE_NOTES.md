@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.406
+
+### 中文
+
+- **修复 `SELECT *` 后补全只显示临时表列**：`FROM dbo.YGDAH` 在光标之后时，旧逻辑只解析光标前的语句，且临时表别名已存在，导致 `YGDAH` 不进入别名表。现在把语义后缀中的 FROM/JOIN 别名一起合并。
+- **降低高亮卡顿**：`SQL-HIGHLIGHT` / `COMPLETION-CONTEXT` 诊断从 Info 降为 Debug；高亮窗口在 spans 和光标行未变化时不再重复重建矩形。
+
+### English
+
+- **Fix `SELECT *` completion showing only temp-table columns** when `FROM dbo.YGDAH` is after the caret. FROM/JOIN aliases from the semantic suffix are now merged.
+- **Reduce highlight lag**: `SQL-HIGHLIGHT` / `COMPLETION-CONTEXT` diagnostics moved from Info to Debug; the overlay no longer rebuilds rectangles when spans and caret line are unchanged.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.406.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.406.vsix` asset below, then restart SSMS.
+
 ## 5.405
 
 ### 中文

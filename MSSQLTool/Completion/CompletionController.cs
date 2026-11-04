@@ -288,7 +288,7 @@ namespace MSSQLTool.Completion
                 string aliases = context?.Aliases == null
                     ? string.Empty
                     : string.Join(",", context.Aliases.Select(a => a.Key + "=" + a.Value));
-                MSSQLToolPackage._logger?.Info(
+                MSSQLToolPackage._logger?.Debug(
                     $"COMPLETION-CONTEXT kind={context?.Kind} prefix='{context?.Prefix}' line={context?.CaretLine} column={context?.CaretColumn} " +
                     $"aliases=[{aliases}] objects={objectCount} items={items?.Count ?? 0}");
             }

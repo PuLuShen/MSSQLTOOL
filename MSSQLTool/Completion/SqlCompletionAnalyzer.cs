@@ -109,6 +109,9 @@ namespace MSSQLTool.Completion
             // The statement's real FROM aliases still have to be merged in; the old Count==0 guard
             // meant "WHERE Y" after a temp-table statement only offered the temp table's columns.
             AddAliases(masked, context);
+            // The FROM clause can sit after the caret (SELECT * | FROM dbo.X).  Include the
+            // semantic suffix so aliases that have not been typed yet still resolve.
+            AddAliases(masked + suffix, context);
             if (context.Aliases.Count == 0) AddAliases(maskedSession, context);
             Match word = PrefixPattern.Match(statement);
             context.Prefix = Clean(word.Groups["prefix"].Value);
