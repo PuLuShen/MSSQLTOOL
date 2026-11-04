@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.399
+
+### 中文
+
+- **修复关闭 Object Explorer 后补全弹窗再次遮挡光标**：5.398 仍用「原始点是否在编辑器屏幕矩形内」判断坐标，编辑器左移后该判断失效。现在按 SSMS 22 的实际行为，将 `GetPointOfLineColumn` 返回的点统一从客户区转换到屏幕坐标，不再依赖窗口位置或行首位置。
+- 关闭/打开 Object Explorer、移动 SSMS 窗口都不再影响弹窗定位。
+
+### English
+
+- **Fix the popup covering the caret again after closing Object Explorer**: 5.398 still guessed the coordinate convention from the editor's screen rectangle, which became ambiguous when the editor moved left. SSMS 22 returns client coordinates, so the point is now always converted to screen coordinates.
+- Opening/closing Object Explorer or moving the SSMS window no longer changes the placement result.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.399.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.399.vsix` asset below, then restart SSMS.
+
 ## 5.398
 
 ### 中文

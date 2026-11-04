@@ -15,11 +15,9 @@ namespace MSSQLTool.Completion
     internal sealed class CompletionPresenter : IDisposable
     {
         [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X; public int Y; }
-        [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left; public int Top; public int Right; public int Bottom; }
         [DllImport("user32.dll")] private static extern bool GetCaretPos(out NativePoint point);
         [DllImport("user32.dll")] private static extern IntPtr GetFocus();
         [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref NativePoint point);
-        [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 
@@ -378,33 +376,16 @@ namespace MSSQLTool.Completion
                 int x = points[0].x;
                 int y = points[0].y;
 
-                // GetPointOfLineColumn normally returns screen coordinates, but SSMS 22 returns
-                // client coordinates.  The caret point alone can fall inside both rectangles, so
-                // use the line's first column as the discriminator: in client coordinates it is
-                // left of the editor's screen rectangle.  Without this extra conversion the popup
-                // starts near the editor's left edge instead of at the caret.
-                bool hasLineStart = textView.GetPointOfLineColumn(line, 0, points) == VSConstants.S_OK;
-                int lineStartX = hasLineStart ? points[0].x : 0;
-                int lineStartY = hasLineStart ? points[0].y : 0;
-
-                bool convertClientCoordinates = false;
-                if (GetWindowRect(editorHandle, out NativeRect editorRect))
+                // SSMS 22's editor returns this point in client coordinates (the diagnostic log
+                // showed raw (798,685) with the editor at screen (507,202), i.e. the real caret was
+                // (1305,887)).  Converting unconditionally is required: the old "is the raw point
+                // inside the editor rect?" heuristic was ambiguous once Object Explorer closed and
+                // the editor moved left, which put the popup over the caret.
+                NativePoint screenPoint = new NativePoint { X = x, Y = y };
+                if (ClientToScreen(editorHandle, ref screenPoint))
                 {
-                    bool insideWindow = x >= editorRect.Left - 8 && x <= editorRect.Right + 8
-                        && y >= editorRect.Top - 8 && y <= editorRect.Bottom + 8;
-                    bool lineStartOutsideWindow = hasLineStart
-                        && (lineStartX < editorRect.Left - 8 || lineStartY < editorRect.Top - 8);
-                    convertClientCoordinates = !insideWindow || lineStartOutsideWindow;
-                }
-
-                if (convertClientCoordinates)
-                {
-                    NativePoint clientPoint = new NativePoint { X = x, Y = y };
-                    if (ClientToScreen(editorHandle, ref clientPoint))
-                    {
-                        x = clientPoint.X;
-                        y = clientPoint.Y;
-                    }
+                    x = screenPoint.X;
+                    y = screenPoint.Y;
                 }
 
                 caretTop = new Point(x, y);
