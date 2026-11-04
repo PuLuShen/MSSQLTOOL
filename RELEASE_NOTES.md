@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.402
+
+### 中文
+
+- **高亮测试诊断**：高亮器改为按前台进程判断编辑器是否激活（不再要求焦点 HWND 是编辑器子窗口）；新增 `SQL-HIGHLIGHT scan` / `render` 日志，记录光标、span 数量、绘制矩形数和窗口 bounds。
+- 5.400 的关联高亮逻辑不变：同词、同列、表/别名引用、`INSERT ... SELECT` 成对列。
+
+### English
+
+- **Highlight diagnostics**: activation is now based on the foreground process instead of requiring the focus HWND to be a child of the editor. Added `SQL-HIGHLIGHT scan` / `render` logs for caret, span count, rectangle count and window bounds.
+- The 5.400 related-highlighting rules are unchanged.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.402.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.402.vsix` asset below, then restart SSMS.
+
 ## 5.401
 
 ### 中文

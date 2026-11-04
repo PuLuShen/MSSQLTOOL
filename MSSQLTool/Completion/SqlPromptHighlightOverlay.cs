@@ -58,8 +58,15 @@ namespace MSSQLTool.Completion
                 }
 
                 IntPtr editor = textView.GetWindowHandle();
-                IntPtr focus = GetFocus();
-                if (focus == IntPtr.Zero || (focus != editor && !IsChild(editor, focus)))
+                IntPtr foreground = GetForegroundWindow();
+                if (foreground == IntPtr.Zero)
+                {
+                    Hide();
+                    return;
+                }
+
+                GetWindowThreadProcessId(foreground, out uint foregroundProcess);
+                if (foregroundProcess != (uint)System.Diagnostics.Process.GetCurrentProcess().Id)
                 {
                     Hide();
                     return;
@@ -84,6 +91,7 @@ namespace MSSQLTool.Completion
                     lastText = text;
                     lastCaret = caret;
                     spans = SqlPromptHighlightAnalyzer.Analyze(text, caret);
+                    MSSQLToolPackage._logger?.Info($"SQL-HIGHLIGHT scan line={line} column={column} caret={caret} spans={spans.Count}");
                     if (spans.Count == 0)
                     {
                         Hide();
@@ -185,7 +193,12 @@ namespace MSSQLTool.Completion
             {
                 window.Show();
                 shown = true;
+                IntPtr handle = new WindowInteropHelper(window).Handle;
+                SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0,
+                    SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow);
             }
+
+            MSSQLToolPackage._logger?.Info($"SQL-HIGHLIGHT render rects={canvas.Children.Count} bounds=({window.Left},{window.Top},{window.Width},{window.Height})");
         }
 
         private void EnsureWindow()
@@ -296,12 +309,19 @@ namespace MSSQLTool.Completion
         private const int WsExTransparent = 0x00000020;
         private const int WsExNoActivate = 0x08000000;
         private const int WsExToolWindow = 0x00000080;
+        private const uint SwpNoSize = 0x0001;
+        private const uint SwpNoMove = 0x0002;
+        private const uint SwpNoActivate = 0x0010;
+        private const uint SwpShowWindow = 0x0040;
 
         [DllImport("user32.dll")]
-        private static extern IntPtr GetFocus();
+        private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 
         [DllImport("user32.dll")]
-        private static extern bool IsChild(IntPtr parent, IntPtr child);
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 
         [DllImport("user32.dll")]
         private static extern bool GetClientRect(IntPtr window, out NativeRect rect);
