@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.401
+
+### 中文
+
+- **修复 `WHERE` 补全只显示临时表列**：会话临时表会在语义模型之前加入别名表，旧代码只在别名为空时解析当前语句，导致 `FROM dbo.YGDAH` 的别名被跳过，`WHERE Y` 只拿到 `#CSTEMP` 的列。现在无条件合并当前语句的 FROM/JOIN 别名。
+- **Predicate 不再提供数据类型**：`WHERE/ON/HAVING` 的候选不再混入 `BINARY/GEOGRAPHY/...` 等类型；操作符仍保留但会被已输入前缀过滤。
+- 保留 `COMPLETION-CONTEXT` 和 `SQL-HIGHLIGHT` 测试日志。
+
+### English
+
+- **Fix `WHERE` completion only showing temp-table columns**: session temp tables were added before the semantic model, and the old code only parsed current aliases when the map was empty, so `FROM dbo.YGDAH` was skipped and `WHERE Y` only offered `#CSTEMP` columns. Current-statement FROM/JOIN aliases are now merged unconditionally.
+- **No data types in predicate lists**: `WHERE/ON/HAVING` no longer mixes in `BINARY/GEOGRAPHY/...`; operators remain but are filtered by the typed prefix.
+- The `COMPLETION-CONTEXT` and `SQL-HIGHLIGHT` test logs remain.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.401.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.401.vsix` asset below, then restart SSMS.
+
 ## 5.400
 
 ### 中文

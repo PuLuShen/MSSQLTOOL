@@ -105,10 +105,10 @@ namespace MSSQLTool.Completion
             context.SelectAliases.AddRange(semanticModel.SelectAliases);
             context.Diagnostics.AddRange(semanticModel.Diagnostics);
             context.HasParseErrors = semanticModel.HasParseErrors;
-            if (context.Aliases.Count == 0) AddAliases(masked, context);
-            // UPDATE a SET | FROM ygxxh a JOIN ygdab b ... declares its aliases *after* the caret, so the
-            // statement-scoped scan above cannot see them.  Fall back to the whole session text (before the
-            // caret plus the suffix the editor passes in) which is what resolves "a" and "a." there.
+            // Session-scoped temp tables are added above, so the alias map is already non-empty.
+            // The statement's real FROM aliases still have to be merged in; the old Count==0 guard
+            // meant "WHERE Y" after a temp-table statement only offered the temp table's columns.
+            AddAliases(masked, context);
             if (context.Aliases.Count == 0) AddAliases(maskedSession, context);
             Match word = PrefixPattern.Match(statement);
             context.Prefix = Clean(word.Groups["prefix"].Value);
@@ -657,9 +657,11 @@ namespace MSSQLTool.Completion
                 }
 
                 // Data types belong wherever an expression or a declaration can appear: DECLARE, CAST and
-                // CONVERT targets, column definitions.  Added once here so no context-specific branch can
-                // forget them, and skipped for member and data-source lists where a type makes no sense.
-                if (context.Kind != CompletionContextKind.Member && context.Kind != CompletionContextKind.DataSource)
+                // CONVERT targets, column definitions.  They do not belong in a WHERE/ON/HAVING
+                // predicate list.
+                if (context.Kind != CompletionContextKind.Member
+                    && context.Kind != CompletionContextKind.DataSource
+                    && context.Kind != CompletionContextKind.Predicate)
                     result.AddRange(DataTypes.Select(t => new CompletionItem { DisplayText = t, InsertText = t, Kind = CompletionItemKind.Type, Description = "data type", Score = 18 }));
             }
             finally { threadCompletionSettings = null; }
