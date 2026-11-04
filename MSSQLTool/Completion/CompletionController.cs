@@ -17,6 +17,7 @@ namespace MSSQLTool.Completion
         private readonly CompletionPresenter presenter = new CompletionPresenter();
         private readonly SynchronizationContext uiContext;
         private readonly System.Windows.Forms.Timer sessionMonitor;
+        private readonly SqlPromptHighlightOverlay highlightOverlay;
         private CancellationTokenSource requestCancellation;
         private CompletionContext currentContext;
         private int currentLine;
@@ -36,6 +37,7 @@ namespace MSSQLTool.Completion
             sessionMonitor = new System.Windows.Forms.Timer { Interval = 200 };
             sessionMonitor.Tick += (_, __) => { if (presenter.IsVisible && !IsCaretCurrent()) Dismiss(); };
             sessionMonitor.Start();
+            highlightOverlay = new SqlPromptHighlightOverlay(textView, () => presenter.IsVisible);
         }
 
         public event Action BeforePopupShown;
@@ -280,6 +282,20 @@ namespace MSSQLTool.Completion
 
         private void PostItems(CompletionContext context, List<CompletionItem> items, MetadataSnapshot metadata, CancellationToken token)
         {
+            try
+            {
+                int objectCount = metadata?.Objects?.Count ?? 0;
+                string aliases = context?.Aliases == null
+                    ? string.Empty
+                    : string.Join(",", context.Aliases.Select(a => a.Key + "=" + a.Value));
+                MSSQLToolPackage._logger?.Info(
+                    $"COMPLETION-CONTEXT kind={context?.Kind} prefix='{context?.Prefix}' line={context?.CaretLine} column={context?.CaretColumn} " +
+                    $"aliases=[{aliases}] objects={objectCount} items={items?.Count ?? 0}");
+            }
+            catch (Exception)
+            {
+            }
+
             uiContext.Post(_ =>
             {
                 // This callback runs on the UI thread from the message loop: anything that escapes
@@ -484,6 +500,7 @@ namespace MSSQLTool.Completion
             requestCancellation?.Dispose();
             sessionMonitor.Stop();
             sessionMonitor.Dispose();
+            highlightOverlay.Dispose();
             presenter.Dispose();
         }
     }

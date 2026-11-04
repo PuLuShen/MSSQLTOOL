@@ -251,6 +251,8 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Compile Include="Completion\CompletionController.cs" />
+    <Compile Include="Completion\SqlPromptHighlightAnalyzer.cs" />
+    <Compile Include="Completion\SqlPromptHighlightOverlay.cs" />
     <Compile Include="Completion\CompletionModels.cs" />
     <Compile Include="Completion\CompletionPopupPlacement.cs" />
     <Compile Include="Completion\CompletionPresenter.cs" />

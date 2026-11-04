@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.400
+
+### 中文
+
+- **测试版：SQL Prompt 风格关联高亮**：光标在标识符中时，用灰色背景高亮同一语句内的相关词；支持同名列、表/别名及其列引用、`INSERT ... SELECT` 目标列与来源列的成对高亮。
+- **补全上下文诊断日志**：新增 `COMPLETION-CONTEXT`，记录 `Kind`、`Prefix`、光标行列、别名、元数据对象数和候选数，用于分析 `WHERE y` 这类补全内容异常。
+- **高亮分析日志**：新增 `SQL-HIGHLIGHT`，记录当前词、语句范围、表/列/配对数量及配对名称。
+
+### English
+
+- **Test build: SQL Prompt-style related highlighting**: a gray background marks related words in the current statement; supports same-named columns, table/alias references, and paired `INSERT ... SELECT` target/source columns.
+- **Completion context diagnostics**: `COMPLETION-CONTEXT` logs kind, prefix, caret line/column, aliases, metadata object count and candidate count for the `WHERE y` issue.
+- **Highlight analyzer diagnostics**: `SQL-HIGHLIGHT` logs the current token, statement range, table/column/pair counts and pair names.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.400.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.400.vsix` asset below, then restart SSMS.
+
 ## 5.399
 
 ### 中文
