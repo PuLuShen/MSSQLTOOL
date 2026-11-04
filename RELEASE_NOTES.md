@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.397
+
+### 中文
+
+- **诊断版本，不改变定位行为**：为补全弹窗增加了 `COMPLETION-PLACEMENT` 日志，记录光标行列、编辑器 API 返回的原始坐标、第 0 列坐标、编辑器窗口/客户区/客户区原点、Win32 光标坐标、坐标转换判断、最终布局和窗口实际 Bounds。
+- 请在 18 行末尾按 Ctrl+Space 复现后把日志中所有 `COMPLETION-PLACEMENT` 行发回。
+
+### English
+
+- **Diagnostic build; placement behaviour is unchanged.** The completion popup now logs `COMPLETION-PLACEMENT` entries for the caret line/column, raw editor point, column-0 point, editor/client rectangles and origin, Win32 caret, coordinate conversion decision, layout and final window bounds.
+- Reproduce at the end of line 18 with Ctrl+Space, then send every `COMPLETION-PLACEMENT` line.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.397.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.397.vsix` asset below, then restart SSMS.
+
 ## 5.396
 
 ### 中文
