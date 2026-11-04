@@ -28,6 +28,7 @@ namespace MSSQLTool.Completion
         private int lastCaret = -1;
         private List<HighlightSpan> spans = new List<HighlightSpan>();
         private bool shown;
+        private bool loggedRects;
 
         public SqlPromptHighlightOverlay(IVsTextView textView, Func<bool> completionVisible)
         {
@@ -91,6 +92,7 @@ namespace MSSQLTool.Completion
                     lastText = text;
                     lastCaret = caret;
                     spans = SqlPromptHighlightAnalyzer.Analyze(text, caret);
+                    loggedRects = false;
                     MSSQLToolPackage._logger?.Info($"SQL-HIGHLIGHT scan line={line} column={column} caret={caret} spans={spans.Count}");
                     if (spans.Count == 0)
                     {
@@ -180,6 +182,10 @@ namespace MSSQLTool.Completion
                     Canvas.SetLeft(rectangle, left);
                     Canvas.SetTop(rectangle, top);
                     canvas.Children.Add(rectangle);
+                    if (!loggedRects)
+                        MSSQLToolPackage._logger?.Info(
+                            $"SQL-HIGHLIGHT rect span={span.Start}:{span.Length} line={line} cols={from}-{to} " +
+                            $"client=({start[0].x},{start[0].y})-({end[0].x},{end[0].y}) dip=({left},{top})-({right},{top + (lineHeight / dpi.DpiScaleY)})");
                 }
             }
 
@@ -199,6 +205,7 @@ namespace MSSQLTool.Completion
             }
 
             MSSQLToolPackage._logger?.Info($"SQL-HIGHLIGHT render rects={canvas.Children.Count} bounds=({window.Left},{window.Top},{window.Width},{window.Height})");
+            loggedRects = true;
         }
 
         private void EnsureWindow()

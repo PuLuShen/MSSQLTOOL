@@ -6,6 +6,23 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.403
+
+### 中文
+
+- **INSERT 列对应高亮扩展到字面量和 VALUES**：`INSERT INTO t(CS,CS2) SELECT '123','321'` 中，光标在目标列或对应值上会同时高亮目标列和该位置的字面量；`INSERT ... VALUES (...)` 同样按位置配对。
+- **高亮矩形诊断**：新增 `SQL-HIGHLIGHT rect` 日志，记录每个 span 的行、列、客户区坐标和 DIP 坐标，用于确认 `A.DJLSH` 与 `B.DJLSH` 是否都实际绘制。
+
+### English
+
+- **Column-pair highlighting now covers literals and VALUES**: for `INSERT INTO t(CS,CS2) SELECT '123','321'`, the target column and its positional literal are highlighted together; `INSERT ... VALUES (...)` is paired the same way.
+- **Rectangle diagnostics**: `SQL-HIGHLIGHT rect` logs each span's line, columns, client coordinates and DIP coordinates to verify both `A.DJLSH` and `B.DJLSH` rectangles are drawn.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.403.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.403.vsix` asset below, then restart SSMS.
+
 ## 5.402
 
 ### 中文

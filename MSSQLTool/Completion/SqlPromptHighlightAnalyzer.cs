@@ -37,7 +37,6 @@ namespace MSSQLTool.Completion
 
             Token current = tokens.LastOrDefault(t => t.Start <= caretOffset && caretOffset <= t.Start + t.Length)
                 ?? tokens.LastOrDefault(t => t.Start + t.Length == caretOffset);
-            if (current == null) return spans;
 
             TSqlScript script = null;
             try
@@ -54,11 +53,14 @@ namespace MSSQLTool.Completion
             int statementStart = statement?.StartOffset ?? 0;
             int statementEnd = statement != null ? statement.StartOffset + statement.FragmentLength : sql.Length;
 
-            foreach (Token token in tokens)
+            if (current != null)
             {
-                if (token.Start < statementStart || token.Start + token.Length > statementEnd) continue;
-                if (!string.Equals(token.Text, current.Text, StringComparison.OrdinalIgnoreCase)) continue;
-                Add(spans, token.Start, token.Length);
+                foreach (Token token in tokens)
+                {
+                    if (token.Start < statementStart || token.Start + token.Length > statementEnd) continue;
+                    if (!string.Equals(token.Text, current.Text, StringComparison.OrdinalIgnoreCase)) continue;
+                    Add(spans, token.Start, token.Length);
+                }
             }
 
             if (script == null) return spans;
@@ -66,34 +68,37 @@ namespace MSSQLTool.Completion
             var visitor = new SemanticVisitor();
             script.Accept(visitor);
 
-            foreach (TableRef table in visitor.Tables)
+            if (current != null)
             {
-                if (!InStatement(statementStart, statementEnd, table.NameStart)) continue;
-                if (!Matches(current, table.Name) && !Matches(current, table.Alias)) continue;
-                foreach (TableRef occurrence in visitor.Tables.Where(t =>
-                    InStatement(statementStart, statementEnd, t.NameStart)
-                    && (string.Equals(t.Name, table.Name, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(t.Alias, table.Alias, StringComparison.OrdinalIgnoreCase))))
+                foreach (TableRef table in visitor.Tables)
                 {
-                    Add(spans, occurrence.NameStart, occurrence.NameLength);
-                    if (occurrence.AliasLength > 0) Add(spans, occurrence.AliasStart, occurrence.AliasLength);
+                    if (!InStatement(statementStart, statementEnd, table.NameStart)) continue;
+                    if (!Matches(current, table.Name) && !Matches(current, table.Alias)) continue;
+                    foreach (TableRef occurrence in visitor.Tables.Where(t =>
+                        InStatement(statementStart, statementEnd, t.NameStart)
+                        && (string.Equals(t.Name, table.Name, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(t.Alias, table.Alias, StringComparison.OrdinalIgnoreCase))))
+                    {
+                        Add(spans, occurrence.NameStart, occurrence.NameLength);
+                        if (occurrence.AliasLength > 0) Add(spans, occurrence.AliasStart, occurrence.AliasLength);
+                    }
+
+                    foreach (ColumnRef column in visitor.Columns)
+                        if (InStatement(statementStart, statementEnd, column.Start)
+                            && (string.Equals(column.Qualifier, table.Alias, StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(column.Qualifier, table.Name, StringComparison.OrdinalIgnoreCase)))
+                            Add(spans, column.Start, column.Length);
                 }
 
                 foreach (ColumnRef column in visitor.Columns)
-                    if (InStatement(statementStart, statementEnd, column.Start)
-                        && (string.Equals(column.Qualifier, table.Alias, StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(column.Qualifier, table.Name, StringComparison.OrdinalIgnoreCase)))
-                        Add(spans, column.Start, column.Length);
-            }
-
-            foreach (ColumnRef column in visitor.Columns)
-            {
-                if (!InStatement(statementStart, statementEnd, column.Start)) continue;
-                if (!Matches(current, column.Name)) continue;
-                foreach (ColumnRef occurrence in visitor.Columns.Where(c =>
-                    InStatement(statementStart, statementEnd, c.Start)
-                    && string.Equals(c.Name, column.Name, StringComparison.OrdinalIgnoreCase)))
-                    Add(spans, occurrence.Start, occurrence.Length);
+                {
+                    if (!InStatement(statementStart, statementEnd, column.Start)) continue;
+                    if (!Matches(current, column.Name)) continue;
+                    foreach (ColumnRef occurrence in visitor.Columns.Where(c =>
+                        InStatement(statementStart, statementEnd, c.Start)
+                        && string.Equals(c.Name, column.Name, StringComparison.OrdinalIgnoreCase)))
+                        Add(spans, occurrence.Start, occurrence.Length);
+                }
             }
 
             foreach (ColumnPair pair in visitor.Pairs)
@@ -101,15 +106,16 @@ namespace MSSQLTool.Completion
                 if (!InStatement(statementStart, statementEnd, pair.TargetStart)) continue;
                 bool caretOnPair = Contains(pair.TargetStart, pair.TargetLength, caretOffset)
                     || Contains(pair.SourceStart, pair.SourceLength, caretOffset)
-                    || Matches(current, pair.TargetName) || Matches(current, pair.SourceName);
+                    || (current != null && (Matches(current, pair.TargetName) || Matches(current, pair.SourceName)));
                 if (!caretOnPair) continue;
                 Add(spans, pair.TargetStart, pair.TargetLength);
                 Add(spans, pair.SourceStart, pair.SourceLength);
             }
 
+            string tokenText = current?.Text ?? "<literal>";
             string pairText = string.Join("; ", visitor.Pairs.Select(p => p.TargetName + "<-" + p.SourceName));
             MSSQLToolPackage._logger?.Info(
-                $"SQL-HIGHLIGHT token='{current.Text}' caret={caretOffset} statement=[{statementStart},{statementEnd}] " +
+                $"SQL-HIGHLIGHT token='{tokenText}' caret={caretOffset} statement=[{statementStart},{statementEnd}] " +
                 $"tables={visitor.Tables.Count} columns={visitor.Columns.Count} pairs={visitor.Pairs.Count} spans={spans.Count} " +
                 $"pairs=[{pairText}]");
 
@@ -214,28 +220,50 @@ namespace MSSQLTool.Completion
             {
                 InsertSpecification spec = node.InsertSpecification;
                 if (spec?.Columns == null || spec.Columns.Count == 0) return;
-                var selectSource = spec.InsertSource as SelectInsertSource;
-                QuerySpecification query = FindQuery(selectSource?.Select);
-                if (query?.SelectElements == null) return;
 
-                for (int i = 0; i < spec.Columns.Count && i < query.SelectElements.Count; i++)
+                if (spec.InsertSource is SelectInsertSource selectSource)
                 {
-                    var targetRef = spec.Columns[i] as ColumnReferenceExpression;
-                    Identifier target = targetRef?.MultiPartIdentifier?.Identifiers.LastOrDefault();
-                    if (target == null) continue;
-                    var scalar = query.SelectElements[i] as SelectScalarExpression;
-                    Identifier source = (scalar?.Expression as ColumnReferenceExpression)?.MultiPartIdentifier?.Identifiers.LastOrDefault();
-                    if (source == null) continue;
-                    Pairs.Add(new ColumnPair
+                    QuerySpecification query = FindQuery(selectSource.Select);
+                    if (query?.SelectElements == null) return;
+                    for (int i = 0; i < spec.Columns.Count && i < query.SelectElements.Count; i++)
                     {
-                        TargetName = target.Value,
-                        TargetStart = target.StartOffset,
-                        TargetLength = target.FragmentLength,
-                        SourceName = source.Value,
-                        SourceStart = source.StartOffset,
-                        SourceLength = source.FragmentLength
-                    });
+                        var scalar = query.SelectElements[i] as SelectScalarExpression;
+                        if (scalar?.Expression == null) continue;
+                        AddPair(spec.Columns[i], scalar.Expression);
+                    }
+                    return;
                 }
+
+                if (spec.InsertSource is ValuesInsertSource valuesSource)
+                {
+                    RowValue row = valuesSource.RowValues?.FirstOrDefault();
+                    if (row?.ColumnValues == null) return;
+                    for (int i = 0; i < spec.Columns.Count && i < row.ColumnValues.Count; i++)
+                        AddPair(spec.Columns[i], row.ColumnValues[i]);
+                }
+            }
+
+            private void AddPair(ColumnReferenceExpression targetRef, ScalarExpression sourceExpression)
+            {
+                Identifier target = targetRef?.MultiPartIdentifier?.Identifiers.LastOrDefault();
+                if (target == null || sourceExpression == null) return;
+
+                var sourceColumn = sourceExpression as ColumnReferenceExpression;
+                Identifier sourceIdentifier = sourceColumn?.MultiPartIdentifier?.Identifiers.LastOrDefault();
+                int sourceStart = sourceIdentifier?.StartOffset ?? sourceExpression.StartOffset;
+                int sourceLength = sourceIdentifier?.FragmentLength ?? sourceExpression.FragmentLength;
+                if (sourceLength <= 0) return;
+
+                if (Pairs.Any(p => p.TargetStart == target.StartOffset && p.SourceStart == sourceStart)) return;
+                Pairs.Add(new ColumnPair
+                {
+                    TargetName = target.Value,
+                    TargetStart = target.StartOffset,
+                    TargetLength = target.FragmentLength,
+                    SourceName = sourceIdentifier?.Value,
+                    SourceStart = sourceStart,
+                    SourceLength = sourceLength
+                });
             }
 
             private static QuerySpecification FindQuery(QueryExpression expression)
