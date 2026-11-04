@@ -112,6 +112,7 @@ namespace MSSQLTool.Completion
             // The FROM clause can sit after the caret (SELECT * | FROM dbo.X).  Include the
             // semantic suffix so aliases that have not been typed yet still resolve.
             AddAliases(masked + suffix, context);
+            PruneAliasesToCurrentStatement(context, masked + suffix);
             if (context.Aliases.Count == 0) AddAliases(maskedSession, context);
             Match word = PrefixPattern.Match(statement);
             context.Prefix = Clean(word.Groups["prefix"].Value);
@@ -1471,6 +1472,33 @@ namespace MSSQLTool.Completion
             }
             return row[lengthB];
         }
+        /// <summary>
+        /// Session temp-table objects are kept in LocalObjects, but aliases from earlier statements
+        /// must not contribute columns to the current SELECT.  A key/value is kept only when the
+        /// current statement + semantic suffix actually mentions it.
+        /// </summary>
+        private static void PruneAliasesToCurrentStatement(CompletionContext context, string currentStatement)
+        {
+            if (context?.Aliases == null || context.Aliases.Count == 0) return;
+            foreach (string key in context.Aliases.Keys.ToList())
+            {
+                if (ContainsIdentifier(currentStatement, key)) continue;
+                string value = context.Aliases[key];
+                string tail = value?.Split('.').LastOrDefault();
+                if (!string.IsNullOrWhiteSpace(tail) && ContainsIdentifier(currentStatement, tail)) continue;
+                context.Aliases.Remove(key);
+            }
+        }
+
+        private static bool ContainsIdentifier(string text, string identifier)
+        {
+            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(identifier)) return false;
+            string value = Clean(identifier);
+            if (value.Length == 0) return false;
+            return Regex.IsMatch(text, @"(?<![\w@#$])" + Regex.Escape(value) + @"(?![\w@#$])",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+
         private static void AddAliases(string statement, CompletionContext context)
         {
             int caretDepth = GetDepth(statement, statement.Length);

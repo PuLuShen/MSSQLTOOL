@@ -6,6 +6,25 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.407
+
+### 中文
+
+- **修复 `SELECT *` 展开所有字段时混入其他表和临时表列**：会话临时表仍保留在本地对象列表中以供补全，但旧语句的别名会被裁剪，不再进入当前 SELECT 的列展开。
+- `SELECT *` 后只展开当前 `FROM`（如 `YGDAH`）的列。
+- 保留 5.406 的日志降级和渲染优化。
+
+### English
+
+- **Fix "expand all columns" after `SELECT *` pulling in other tables/temp tables**: session temp objects stay available as local objects, but aliases from earlier statements are pruned from the current SELECT.
+- Only the current `FROM` table's columns are expanded.
+- Keeps the 5.406 logging and render optimizations.
+
+### 安装 / Install
+
+关闭所有 SSMS 窗口，双击下方的 `MSSQLTool_SSMS22_5.407.vsix` 安装，然后重新启动 SSMS。
+Close all SSMS windows, double-click the `MSSQLTool_SSMS22_5.407.vsix` asset below, then restart SSMS.
+
 ## 5.406
 
 ### 中文
