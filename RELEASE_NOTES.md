@@ -6,6 +6,38 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.541
+
+### 中文
+
+- **结果集浮动面板改为「字段列表 + 结果网格」**
+  - 左侧新增**字段**列表：可按字段名或类型过滤，勾选框控制该列显示/隐藏，点击字段跳到对应列；列多时分批构建，宽结果集打开不再卡顿。
+  - 右侧直接显示结果集，保留按列筛选、排序、导出 CSV / JSON / INSERT 与复制统计；原来的「显示列…」按钮由字段列表取代。
+  - 新增**固定列**选择器：不固定，或固定最左侧 1～10 个可见列，向右滚动时保持可见。按 `Ctrl+Shift+F` 输入列名后，`F3` 跳到下一个匹配列（按名称、字段名或 SQL 类型匹配，隐藏列会先自动显示）。
+- **统计改为跟随选区**
+  - 选中一个单元格时统计该列，选中多个单元格时统计整个选区：非空、空值、去重、最长、合计、平均、最小、最大；单列扫描最多 10 万行，避免百万行结果集卡住面板。
+  - 打开面板不再预先扫描所有列；原先整表的「列统计」表格已移除，统计只按当前选区计算。
+- **输入与高亮更轻**
+  - 补全列表改为批量更新，减少每次按键的控件通知；分类页签一次扫描得出；弹窗尺寸不变时不再重复设置。
+  - 相关列高亮在光标不落在标识符上时直接返回，只让真正变化的范围重新分类，大脚本里移动光标不再整篇重绘。
+  - 快速修复灯泡改为输入暂停 400 毫秒后刷新，规则引擎在后台线程执行，输入不再等待分析。
+- **测试**：全量 375 项通过，1 项 SQL Server 元数据集成测试因未设置 `MSSQLTOOL_TEST_CONNECTION` 跳过。
+
+### English
+
+- **The floating result panel is now a field list plus the result grid**
+  - A new **Fields** list on the left filters by name or type, toggles each column's visibility, and jumps to a column when clicked; wide result sets build it in batches, so opening the panel stays responsive.
+  - The grid keeps the per-column row filters, sorting, CSV / JSON / INSERT export and copy-statistics actions; the old "Columns..." button is replaced by the field list.
+  - A new **Freeze columns** selector pins the first 1-10 visible columns while scrolling right. After `Ctrl+Shift+F`, type a column name and press `F3` to cycle matches by caption, field name or SQL type; a hidden match is revealed first.
+- **Statistics follow the selection**
+  - One selected cell describes its column, several cells describe the selection: non-null, empty, distinct, longest, sum, average, minimum and maximum. A single-column scan stops after 100,000 rows so a million-row grid cannot block the panel.
+  - Opening the panel no longer scans every column up front, and the old whole-table "Column statistics" table is gone; statistics are computed for the current selection only.
+- **Lighter typing and highlighting**
+  - The completion list is updated in batches instead of one notification per row, the category tabs come from a single pass, and the popup size is only assigned when it changes.
+  - Related-column highlighting returns immediately when the caret is not on an identifier and only invalidates the span that actually changed, so moving the caret in a large script no longer repaints the document.
+  - The quick-fix light bulb refreshes 400 ms after typing stops and runs the rule engine on a background thread, so typing no longer waits for the analysis.
+- **Tests**: all 375 tests pass; one SQL Server metadata integration test is skipped because `MSSQLTOOL_TEST_CONNECTION` is not set.
+
 ## 5.512
 
 ### 中文
