@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Data;
@@ -21,6 +21,7 @@ namespace MSSQLTool.Results
     internal static class ResultsGridMenu
     {
         private static readonly HashSet<object> hooked = new HashSet<object>();
+
         [ThreadStatic] private static object currentGrid;
         private static object CurrentGrid => currentGrid;
 

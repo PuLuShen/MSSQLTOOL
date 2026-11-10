@@ -343,6 +343,11 @@ namespace MSSQLTool.Results
             return icon;
         }
 
+        // The panel refreshes on a 300 ms timer. Remember what was last computed so an
+        // unchanged selection never re-scans the table (millions of cells on the UI thread).
+        private DataTable lastTable;
+        private int lastRowFrom = -1, lastRowTo = -1, lastColumnFrom = -1, lastColumnTo = -1;
+
         /// <summary>The window is open: poll the results grid so the numbers follow the selection.</summary>
         private void StartTimer()
         {
@@ -392,46 +397,23 @@ namespace MSSQLTool.Results
                     try { ResultsGridMenu.Attach(grid); } catch (Exception) { }
                 }
 
-                int startRow = 0, startColumn = 0, endRow = current.Rows.Count - 1, endColumn = 0;
-                bool gotSelection = ReadSelection(grid, ref startRow, ref startColumn, ref endRow, ref endColumn);
+                // The panel always works on the whole result set: no selection probing and no
+                // per-cell scan on the UI thread.
+                int rowFrom = 0, rowTo = Math.Max(0, current.Rows.Count - 1);
+                int columnFrom = 0, columnTo = Math.Max(0, current.Columns.Count - 1);
 
-                int rowFrom = Math.Max(0, Math.Min(startRow, endRow));
-                int rowTo = Math.Min(current.Rows.Count - 1, Math.Max(startRow, endRow));
-                int columnFrom = Math.Max(0, Math.Min(startColumn, endColumn));
-                int columnTo = Math.Min(current.Columns.Count - 1, Math.Max(startColumn, endColumn));
+                // Unchanged selection: the numbers on screen are still correct. Skipping the
+                // scan here is what keeps a million-row result set from burning CPU every tick.
+                if (ReferenceEquals(current, lastTable) && rowFrom == lastRowFrom && rowTo == lastRowTo
+                    && columnFrom == lastColumnFrom && columnTo == lastColumnTo)
+                    return;
+                lastTable = current;
+                lastRowFrom = rowFrom; lastRowTo = rowTo;
+                lastColumnFrom = columnFrom; lastColumnTo = columnTo;
 
-                var numbers = new List<decimal>();
-                var dates = new List<DateTime>();
-                int textCells = 0;
-                for (int row = rowFrom; row <= rowTo; row++)
-                    for (int column = columnFrom; column <= columnTo; column++)
-                    {
-                        object raw = current.Rows[row][column];
-                        if (raw == null || raw == DBNull.Value) continue;
-
-                        string text = Convert.ToString(raw, CultureInfo.CurrentCulture) ?? string.Empty;
-                        List<decimal> parsed = ResultSetStatistics.ParseNumbers(text);
-                        if (parsed.Count > 0) { numbers.AddRange(parsed); continue; }
-
-                        // Dates count too: they get a count, an earliest and a latest.
-                        if (raw is DateTime dateValue) { dates.Add(dateValue); continue; }
-                        DateTime parsedDate;
-                        if (DateTime.TryParse(text, CultureInfo.CurrentCulture, System.Globalization.DateTimeStyles.None, out parsedDate))
-                        {
-                            dates.Add(parsedDate);
-                            continue;
-                        }
-
-                        if (text.Trim().Length > 0) textCells++;
-                    }
-
-                ResultSetStatistics.NumericSummary summary = ResultSetStatistics.SummarizeNumbers(numbers);
                 int cellCount = (rowTo - rowFrom + 1) * (columnTo - columnFrom + 1);
-
-                selectionText.Text = gotSelection
-                    ? LocalizationManager.Format("Selection: rows {0}-{1}, columns {2}-{3}   ({4} cells)",
-                        rowFrom + 1, rowTo + 1, columnFrom + 1, columnTo + 1, cellCount)
-                    : LocalizationManager.T("Nothing is selected - select cells in the result grid.");
+                selectionText.Text = LocalizationManager.Format("All rows: {0}, columns: {1}   ({2} cells)",
+                    current.Rows.Count, current.Columns.Count, cellCount);
 
                 List<string> headers = ReadColumnNames(grid);
                 UpdateColumns(headers);
@@ -439,30 +421,16 @@ namespace MSSQLTool.Results
                     Enumerable.Range(columnFrom, columnTo - columnFrom + 1).Select(i =>
                         i < headers.Count && !string.IsNullOrWhiteSpace(headers[i]) ? headers[i] : ColumnDisplayName(current.Columns[i]))));
 
-                if (summary.Count == 0 && dates.Count > 0)
-                {
-                    DateTime earliest = dates.Min(), latest = dates.Max();
-                    values["Count"].Text = dates.Count.ToString(CultureInfo.CurrentCulture);
-                    values["Sum"].Text = "-";
-                    values["Average"].Text = "-";
-                    values["Min"].Text = earliest.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
-                    values["Max"].Text = latest.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
-                    values["Distinct"].Text = dates.Distinct().Count().ToString(CultureInfo.CurrentCulture);
-                    status.Text = LocalizationManager.Format("Date/time selection: {0} value(s), earliest {1}, latest {2}.",
-                        dates.Count, earliest.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture), latest.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture));
-                    return;
-                }
-
-                values["Count"].Text = summary.Count.ToString(CultureInfo.CurrentCulture);
-                values["Sum"].Text = Dec(summary.Sum, summary.Count);
-                values["Average"].Text = Dec(summary.Average, summary.Count);
-                values["Min"].Text = Dec(summary.Minimum, summary.Count);
-                values["Max"].Text = Dec(summary.Maximum, summary.Count);
-                values["Distinct"].Text = summary.Count == 0 ? "-" : summary.Distinct.ToString(CultureInfo.CurrentCulture);
-
-                status.Text = summary.Count == 0
-                    ? LocalizationManager.T("No numbers in the selection.")
-                    : LocalizationManager.Format("{0} cell(s) with text or empty values were ignored.", textCells);
+                // Per-cell statistics (count/sum/average/min/max/distinct) required reading every
+                // cell, which blocked the UI for seconds on large result sets. They are gone; the
+                // panel now reports only what is free to compute.
+                values["Count"].Text = "-";
+                values["Sum"].Text = "-";
+                values["Average"].Text = "-";
+                values["Min"].Text = "-";
+                values["Max"].Text = "-";
+                values["Distinct"].Text = "-";
+                status.Text = LocalizationManager.T("Cell statistics are not computed for the whole result set.");
             }
             catch (Exception ex)
             {

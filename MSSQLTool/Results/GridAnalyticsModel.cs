@@ -319,6 +319,37 @@ namespace MSSQLTool.Results
             return column.ColumnName;
         }
 
+        /// <summary>
+        /// Index of the next column whose caption, field name or SQL type contains the needle,
+        /// starting at <paramref name="startIndex"/> and wrapping at the end of the grid.  Returns -1
+        /// when nothing matches, so the caller can tell "no match" from "the first column".
+        /// </summary>
+        internal static int FindColumn(DataColumnCollection columns, string needle, int startIndex)
+        {
+            if (columns == null || columns.Count == 0) return -1;
+
+            string text = (needle ?? string.Empty).Trim();
+            if (text.Length == 0) return -1;
+
+            int count = columns.Count;
+            int start = ((startIndex % count) + count) % count;
+            for (int offset = 0; offset < count; offset++)
+            {
+                int index = (start + offset) % count;
+                DataColumn column = columns[index];
+                if (column == null) continue;
+
+                if (DisplayName(column).IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    column.ColumnName.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    FriendlyTypeName(column).IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+
         internal static string FriendlyTypeName(DataColumn column)
         {
             if (column == null) return string.Empty;
