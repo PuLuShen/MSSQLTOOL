@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -14,6 +14,7 @@ namespace MSSQLTool.Model
         private const int CacheCapacity = 6;
         private static readonly object CacheGate = new object();
         private static readonly List<CacheEntry> Cache = new List<CacheEntry>();
+
         private readonly Dictionary<SqlStatementRange, SqlScopeTree> scopes = new Dictionary<SqlStatementRange, SqlScopeTree>();
 
         public string Text { get; private set; } = string.Empty;

@@ -354,13 +354,51 @@ namespace MSSQLTool.Editor.Vs2022
             if (spanSnapshot == snapshot && SameSpans(spans, next)) return;
             bool firstDraw = spans == null || spans.Count == 0;
 
+            // Only the tokens that appeared or disappeared have to be reclassified.  Invalidating
+            // the whole document made the editor reclassify the entire script on every caret move
+            // (SSMS's own SQL classifier included), which is what made a large script feel heavy
+            // while typing even though the spans themselves are a handful of words.
+            SnapshotSpan changed = ChangedSpan(spanSnapshot, spans, snapshot, next);
+
             spans = next;
             spanSnapshot = snapshot;
 
             if (firstDraw && next.Count > 0)
                 MSSQLToolPackage._logger?.Info("MSSQLTool: related highlight spans=" + next.Count);
 
-            ClassificationChanged?.Invoke(this, new ClassificationChangedEventArgs(new SnapshotSpan(snapshot, 0, snapshot.Length)));
+            ClassificationChanged?.Invoke(this, new ClassificationChangedEventArgs(changed));
+        }
+
+        /// <summary>
+        /// Region covered by the old and the new related spans.  Old spans are tracked forward so a
+        /// token that stopped being related is repainted as well; if anything cannot be translated
+        /// the whole document is invalidated, which is the pre-existing, always-correct fallback.
+        /// </summary>
+        private static SnapshotSpan ChangedSpan(ITextSnapshot previousSnapshot, List<ClassificationSpan> previous,
+            ITextSnapshot snapshot, List<ClassificationSpan> next)
+        {
+            int start = int.MaxValue;
+            int end = -1;
+            if (previousSnapshot != null && previous != null)
+            {
+                foreach (ClassificationSpan item in previous)
+                {
+                    SnapshotSpan translated;
+                    try { translated = item.Span.TranslateTo(snapshot, SpanTrackingMode.EdgeInclusive); }
+                    catch (Exception) { return new SnapshotSpan(snapshot, 0, snapshot.Length); }
+                    if (translated.Start.Position < start) start = translated.Start.Position;
+                    if (translated.End.Position > end) end = translated.End.Position;
+                }
+            }
+            foreach (ClassificationSpan item in next)
+            {
+                if (item.Span.Start.Position < start) start = item.Span.Start.Position;
+                if (item.Span.End.Position > end) end = item.Span.End.Position;
+            }
+
+            if (end <= start)
+                return new SnapshotSpan(snapshot, Math.Min(Math.Max(start, 0), snapshot.Length), 0);
+            return new SnapshotSpan(snapshot, start, Math.Min(end, snapshot.Length) - start);
         }
 
         private static bool SameSpans(List<ClassificationSpan> left, List<ClassificationSpan> right)

@@ -99,6 +99,12 @@ namespace MSSQLTool.Model
                         AliasStart = aliasIndex >= 0 ? tokens[aliasIndex].Start : 0,
                         AliasLength = aliasIndex >= 0 ? tokens[aliasIndex].Length : 0
                     });
+                    // "FROM (SELECT ...) AS x, dbo.T t" declares t as well; keep reading the list.
+                    int afterSource = aliasIndex;
+                    if (aliasIndex >= 0 && tokens[aliasIndex].Is("AS"))
+                        afterSource = NextSignificant(tokens, aliasIndex + 1, last);
+                    if (token.Is("FROM") && afterSource >= 0)
+                        CollectCommaSeparatedSources(tokens, first, last, tree, afterSource);
                     continue;
                 }
 
@@ -109,13 +115,14 @@ namespace MSSQLTool.Model
 
                 int aliasCandidate = NextSignificant(tokens, nameEnd + 1, last);
                 string sourceAlias = null;
-                int aliasStart = 0, aliasLength = 0;
+                int aliasStart = 0, aliasLength = 0, sourceEnd = nameEnd;
                 if (aliasCandidate >= 0 && tokens[aliasCandidate].Kind == SqlTokenKind.Identifier
                     && !ClauseTerminators.Contains(tokens[aliasCandidate].Text))
                 {
                     sourceAlias = SqlTokenizer.Unquote(tokens[aliasCandidate]);
                     aliasStart = tokens[aliasCandidate].Start;
                     aliasLength = tokens[aliasCandidate].Length;
+                    sourceEnd = aliasCandidate;
                 }
                 else if (aliasCandidate >= 0 && tokens[aliasCandidate].Is("AS"))
                 {
@@ -125,6 +132,7 @@ namespace MSSQLTool.Model
                         sourceAlias = SqlTokenizer.Unquote(tokens[aliasAfterAs]);
                         aliasStart = tokens[aliasAfterAs].Start;
                         aliasLength = tokens[aliasAfterAs].Length;
+                        sourceEnd = aliasAfterAs;
                     }
                 }
 
@@ -138,10 +146,83 @@ namespace MSSQLTool.Model
                     AliasStart = aliasStart,
                     AliasLength = aliasLength
                 });
+                // "FROM a AS A, b AS B" declares B too, and the loop only reads what follows
+                // FROM / JOIN / APPLY itself.  The rest of the FROM list is read here.
+                if (token.Is("FROM"))
+                    CollectCommaSeparatedSources(tokens, first, last, tree, sourceEnd);
             }
 
             CollectSelectAliases(tokens, first, last, tree);
             return tree;
+        }
+
+        /// <summary>
+        /// Table references that continue one FROM list after a comma.  "FROM dbo.A AS A,
+        /// dbo.B AS B" declares two sources, but the walk above only reads the reference directly
+        /// after FROM/JOIN/APPLY, so B was never in the scope: an unqualified column list at
+        /// "... AND |" resolved against A alone and B's columns were missing, while "B." still
+        /// worked through the ScriptDOM alias map.  The walk stops at the clause terminator,
+        /// skips WITH (...) table hints, and leaves a derived table to its own alias.
+        /// </summary>
+        private static void CollectCommaSeparatedSources(IList<SqlToken> tokens, int first, int last,
+            SqlScopeTree tree, int afterSource)
+        {
+            int cursor = afterSource;
+            while (true)
+            {
+                int next = NextSignificant(tokens, cursor + 1, last);
+                if (next < 0) return;
+                while (next >= 0 && tokens[next].Is("WITH"))
+                {
+                    int open = NextSignificant(tokens, next + 1, last);
+                    if (open < 0 || tokens[open].Text != "(") return;
+                    int close = FindMatchingParen(tokens, open, last);
+                    if (close < 0) return;
+                    next = NextSignificant(tokens, close + 1, last);
+                }
+                if (next < 0 || tokens[next].Text != ",") return;
+
+                int start = NextSignificant(tokens, next + 1, last);
+                if (start < 0 || tokens[start].Kind != SqlTokenKind.Identifier) return;
+
+                string objectName = ReadQualifiedName(tokens, start, last, out int nameEnd);
+                if (string.IsNullOrEmpty(objectName)) return;
+
+                int aliasCandidate = NextSignificant(tokens, nameEnd + 1, last);
+                string alias = null;
+                int aliasStart = 0, aliasLength = 0, sourceEnd = nameEnd;
+                if (aliasCandidate >= 0 && tokens[aliasCandidate].Is("AS"))
+                {
+                    int aliasAfterAs = NextSignificant(tokens, aliasCandidate + 1, last);
+                    if (aliasAfterAs >= 0 && tokens[aliasAfterAs].Kind == SqlTokenKind.Identifier)
+                    {
+                        alias = SqlTokenizer.Unquote(tokens[aliasAfterAs]);
+                        aliasStart = tokens[aliasAfterAs].Start;
+                        aliasLength = tokens[aliasAfterAs].Length;
+                        sourceEnd = aliasAfterAs;
+                    }
+                }
+                else if (aliasCandidate >= 0 && tokens[aliasCandidate].Kind == SqlTokenKind.Identifier
+                         && !ClauseTerminators.Contains(tokens[aliasCandidate].Text))
+                {
+                    alias = SqlTokenizer.Unquote(tokens[aliasCandidate]);
+                    aliasStart = tokens[aliasCandidate].Start;
+                    aliasLength = tokens[aliasCandidate].Length;
+                    sourceEnd = aliasCandidate;
+                }
+
+                Add(tree, new SqlSource
+                {
+                    Alias = string.IsNullOrEmpty(alias) ? LastPart(objectName) : alias,
+                    ObjectName = objectName,
+                    Depth = DepthAt(tokens, first, start),
+                    Block = tree.BlockOf(tokens[start].Start),
+                    Start = tokens[start].Start,
+                    AliasStart = aliasStart,
+                    AliasLength = aliasLength
+                });
+                cursor = sourceEnd;
+            }
         }
 
         public int DepthAt(IList<SqlToken> tokens, SqlStatementRange statement, int offset)

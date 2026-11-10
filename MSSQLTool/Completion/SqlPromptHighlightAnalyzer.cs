@@ -24,9 +24,18 @@ namespace MSSQLTool.Completion
             var spans = new List<HighlightSpan>();
             if (string.IsNullOrEmpty(sql) || caretOffset < 0 || caretOffset > sql.Length) return spans;
 
+            // A caret on a space, a comma, a parenthesis, an operator or a line break has no
+            // related token: leave before the tokenizer and the parser run.  Without this guard
+            // every such keystroke paid a whole-document tokenize plus a ScriptDom parse for a
+            // list that is always empty (measured: ~0.4 ms at 10 KB, ~18 ms at 200 KB just for
+            // the tokenizer, plus 8 ms / 700 ms for the parse).
+            if (!CaretIsOnIdentifier(sql, caretOffset)) return spans;
+
             // The document model is shared with analysis and completion, so highlighting no longer
-            // re-lexes the script with a regular expression and it inherits the cache.
-            SqlDocumentModel model = SqlDocumentModel.Create(sql);
+            // re-lexes the script with a regular expression and it inherits the cache.  Get()
+            // reuses the model of an unchanged document; Create() re-tokenized it on every caret
+            // move, so arrowing through a large script also paid the full document cost.
+            SqlDocumentModel model = SqlDocumentModel.Get(sql);
             var tokens = new List<Token>();
             foreach (SqlToken token in model.Tokens)
             {
@@ -327,6 +336,34 @@ namespace MSSQLTool.Completion
         {
             return KeywordSet.Contains(value);
         }
+
+        /// <summary>
+        /// True when the caret touches a plain identifier or a quoted/bracketed name.  Keywords are
+        /// excluded: the token list drops them, so a caret on one can never produce a related span.
+        /// </summary>
+        private static bool CaretIsOnIdentifier(string sql, int caretOffset)
+        {
+            int caret = Math.Max(0, Math.Min(caretOffset, sql.Length));
+            bool touchesIdentifier = IsWordAt(sql, caret - 1) || IsWordAt(sql, caret)
+                || (caret > 0 && IsNameQuote(sql[caret - 1]))
+                || (caret < sql.Length && IsNameQuote(sql[caret]));
+            if (!touchesIdentifier) return false;
+
+            int start = caret;
+            while (start > 0 && IsWordChar(sql[start - 1])) start--;
+            int end = caret;
+            while (end < sql.Length && IsWordChar(sql[end])) end++;
+            if (end == start) return true;
+            return !IsKeyword(sql.Substring(start, end - start));
+        }
+
+        private static bool IsWordAt(string sql, int index)
+            => index >= 0 && index < sql.Length && IsWordChar(sql[index]);
+
+        private static bool IsNameQuote(char value) => value == '[' || value == ']' || value == '"';
+
+        private static bool IsWordChar(char value)
+            => char.IsLetterOrDigit(value) || value == '_' || value == '@' || value == '#' || value == '$';
 
         private sealed class Token
         {

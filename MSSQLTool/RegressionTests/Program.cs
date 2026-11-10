@@ -119,6 +119,7 @@ namespace MSSQLTool.RegressionTests
             Run("EXEC without parameters releases incomplete next statement", TestExecuteBeforeIncompleteStatement);
             Run("EXEC positional value remains argument context", TestExecutePositionalValue);
             Run("Exact snippet prefix is context-independent", TestExactSnippetPrefix);
+            Run("A completed snippet prefix rebuilds the stale cache", TestSnippetPrefixRebuildsCache);
             Run("Nested SELECT does not split statement scope", TestNestedSelectStatementScope);
             Run("Alias from ScriptDOM tokens", () => Equal("dbo.Customer", SqlSemanticModel.Create("SELECT c. FROM dbo.Customer AS c").Aliases["c"]));
             Run("Statement start comes from the parse", () =>
@@ -374,7 +375,9 @@ namespace MSSQLTool.RegressionTests
             Run("Model: caret statement lookup", TestStatementAtPrefersTheCaretStatement);
             Run("Model: SELECT INTO scanner", TestSelectIntoScannerIsLinearAndExact);
             Run("Model: scope tree resolves aliases", TestScopeTreeResolvesAliases);
+            Run("Model: scope tree reads comma-separated sources", TestScopeTreeReadsCommaSeparatedSources);
             Run("Model: scope tree isolates subqueries", TestScopeTreeDoesNotLeakSiblingSubqueries);
+            Run("Completion: comma-separated FROM scopes both tables", TestCommaSeparatedFromScopesColumns);
             Run("Analysis: rule catalog is consistent", TestRuleCatalogIsConsistent);
         Run("Analysis: duplicate alias stays inside the query block", TestDuplicateAliasStaysInsideTheQueryBlock);
         Run("Completion: JOIN inserts only the table by default", TestJoinCompletionInsertsOnlyTheTableByDefault);
@@ -439,6 +442,7 @@ namespace MSSQLTool.RegressionTests
         Run("Results: analytics honours cancellation", TestGridAnalyticsHonoursCancellation);
         Run("Results: analytics text is tab separated", TestGridAnalyticsTextIsTabSeparated);
          Run("Results: analytics uses the real field name", TestGridAnalyticsUsesTheRealFieldName);
+         Run("Results: column search cycles through matches", TestGridAnalyticsFindsTheNextColumn);
          Run("History: databases use the renamed files", TestHistoryDatabasesUseTheRenamedFiles);
         Run("History: query text entry shows a preview", TestQueryTextHistoryEntryShowsAPreview);
         Run("History: query text hash is stable", TestQueryTextHistoryHashIsStable);
@@ -750,6 +754,56 @@ namespace MSSQLTool.RegressionTests
             var snippets = new[] { new SnippetItem("ssf", "", "SELECT *\r\nFROM") };
             True(SqlCompletionAnalyzer.IsExactSnippetPrefix("SSF", true, snippets));
             True(!SqlCompletionAnalyzer.IsExactSnippetPrefix("SSF", false, snippets));
+        }
+
+        /// <summary>
+        /// The editor serves a keystroke that only extends the word from the candidates built before
+        /// that letter existed.  "OUTER APPLY (" + "SSF" filtered a list cached at the parenthesis,
+        /// which never held the snippet, so the row only appeared on Ctrl+Space.
+        /// </summary>
+        private static void TestSnippetPrefixRebuildsCache()
+        {
+            var snippets = new[] { new SnippetItem("SSF", "", "SELECT *\r\nFROM") };
+            var stale = new List<CompletionItem>
+            {
+                new CompletionItem { DisplayText = "SsfTable", Kind = CompletionItemKind.Table }
+            };
+            True(SqlCompletionAnalyzer.NeedsSnippetReanalysis("SSF", true, stale, snippets),
+                "completing a snippet prefix kept serving the stale list");
+            var fresh = new List<CompletionItem>(stale)
+            {
+                new CompletionItem { DisplayText = "SSF", Kind = CompletionItemKind.Snippet, InsertText = "SELECT *\r\nFROM" }
+            };
+            True(!SqlCompletionAnalyzer.NeedsSnippetReanalysis("SSF", true, fresh, snippets),
+                "a list that already carries the snippet was rebuilt again");
+            True(!SqlCompletionAnalyzer.NeedsSnippetReanalysis("SS", true, stale, snippets),
+                "a partial prefix is not a snippet");
+            True(!SqlCompletionAnalyzer.NeedsSnippetReanalysis("SSF", false, stale, snippets),
+                "snippets are off, so there is nothing to surface");
+        }
+
+        /// <summary>
+        /// "FROM dbo.Header AS A, dbo.Detail AS B" with an unfinished predicate: both sources have
+        /// to be in scope, or typing after AND offered only the first table's columns (the shape
+        /// reported from a real script, where "AND |" showed functions and one column only).
+        /// </summary>
+        private static void TestCommaSeparatedFromScopesColumns()
+        {
+            var metadata = new MetadataSnapshot();
+            var header = new DatabaseObjectMetadata { Schema = "dbo", Name = "Header", Kind = CompletionItemKind.Table };
+            header.Columns.Add(new ColumnMetadata { Name = "HeaderName", DataType = "nvarchar" });
+            metadata.Objects.Add(header);
+            var detail = new DatabaseObjectMetadata { Schema = "dbo", Name = "Detail", Kind = CompletionItemKind.Table };
+            detail.Columns.Add(new ColumnMetadata { Name = "Memo", DataType = "nvarchar" });
+            metadata.Objects.Add(detail);
+
+            string sql = "SELECT *\nFROM dbo.Header AS A, dbo.Detail AS B\nWHERE A.djlsh = B.djlsh\n"
+                + "AND A.HeaderName = 'x'\nAND ISNULL(B.Memo,'') <> ''\nAND ";
+            CompletionContext context = SqlCompletionAnalyzer.Analyze(sql, sql.Length - (sql.LastIndexOf('\n') + 1));
+            Equal(CompletionContextKind.Predicate, context.Kind);
+            List<CompletionItem> items = SqlCompletionAnalyzer.BuildItems(context, metadata);
+            True(items.Any(i => i.Kind == CompletionItemKind.Column && i.DisplayText == "Memo"),
+                "the second source's column is missing: " + string.Join(", ", items.Take(8).Select(i => i.DisplayText)));
         }
 
         private static void TestNestedSelectStatementScope()

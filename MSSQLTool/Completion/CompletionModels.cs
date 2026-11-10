@@ -340,10 +340,33 @@ namespace MSSQLTool.Completion
         }
     }
 
+    /// <summary>
+    /// Shares the few strings that repeat once per column (data type names, collations).
+    /// A 225k-column catalog otherwise keeps 225k separate copies of "int"/"nvarchar",
+    /// which is pure Gen2 pressure; sharing them changes no behaviour.
+    /// </summary>
+    internal static class MetadataStringPool
+    {
+        private const int Capacity = 1024;
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> Pool =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+
+        internal static string Share(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return value ?? string.Empty;
+            // Type names are short; anything longer is not a shared vocabulary word.
+            if (value.Length > 64) return value;
+            if (Pool.TryGetValue(value, out string existing)) return existing;
+            if (Pool.Count >= Capacity) return value;
+            return Pool.GetOrAdd(value, value);
+        }
+    }
+
     internal sealed class ColumnMetadata
     {
+        private string dataType;
         public string Name { get; set; }
-        public string DataType { get; set; }
+        public string DataType { get => dataType; set => dataType = MetadataStringPool.Share(value); }
         public bool IsNullable { get; set; }
         public bool IsIdentity { get; set; }
         public bool IsComputed { get; set; }
@@ -378,9 +401,10 @@ namespace MSSQLTool.Completion
 
     internal sealed class RoutineParameterMetadata
     {
+        private string dataType;
         public string ObjectName { get; set; }
         public string Name { get; set; }
-        public string DataType { get; set; }
+        public string DataType { get => dataType; set => dataType = MetadataStringPool.Share(value); }
         public bool IsOutput { get; set; }
         public bool HasDefaultValue { get; set; }
         public short MaxLength { get; set; }
@@ -646,6 +670,14 @@ namespace MSSQLTool.Completion
         /// to offer columns and functions at a table source.
         /// </summary>
         public string ExactSnippetPrefix { get; set; }
+
+        /// <summary>
+        /// Whether snippets were offered when this context was analyzed.  The editor serves a
+        /// keystroke that only extends the word from the cached candidate list; that list was built
+        /// before the last letter existed, so a snippet prefix completed by that letter is missing
+        /// from it.  This flag lets the cache decide without re-reading the setting.
+        /// </summary>
+        public bool SnippetsEnabled { get; set; }
 
         /// <summary>
         /// The clause that owns the predicate: WHERE, HAVING or ON.  Only an ON predicate can be

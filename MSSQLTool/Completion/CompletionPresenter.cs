@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio;
+﻿using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System;
 using System.Collections.Generic;
@@ -207,7 +207,17 @@ namespace MSSQLTool.Completion
         public event Action DismissRequested;
         public bool IsVisible => window.Visible;
         public CompletionItem SelectedItem => list.SelectedIndex >= 0 && items != null && list.SelectedIndex < items.Count ? items[list.SelectedIndex] : null;
-        public List<CompletionItem> SelectedItems => list.SelectedItems.Cast<CompletionItem>().ToList();
+        public List<CompletionItem> SelectedItems
+        {
+            get
+            {
+                var selected = new List<CompletionItem>();
+                if (items == null) return selected;
+                foreach (int index in list.SelectedIndices)
+                    if (index >= 0 && index < items.Count) selected.Add(items[index]);
+                return selected;
+            }
+        }
 
         public void Show(IVsTextView textView, IReadOnlyList<CompletionItem> newItems, MetadataSnapshot metadata, CompletionContext context)
         {
@@ -222,6 +232,9 @@ namespace MSSQLTool.Completion
                 FeatureDiagnostics.Report("SQL Completion", "The completion popup could not be refreshed", ex);
                 try { window.Hide(); } catch { }
             }
+            finally
+            {
+            }
         }
 
         private void ShowCore(IVsTextView textView, IReadOnlyList<CompletionItem> newItems, MetadataSnapshot metadata, CompletionContext context)
@@ -230,7 +243,7 @@ namespace MSSQLTool.Completion
 
             // The list is refreshed on every keystroke.  Keeping the row the user moved to is part
             // of the editing feel: only a brand-new popup starts at the first row.
-            CompletionItem previousItem = list.SelectedItem as CompletionItem;
+            CompletionItem previousItem = SelectedItem;
             string previousKey = previousItem != null ? ItemKey(previousItem) : null;
             int previousIndex = list.SelectedIndex;
             bool sessionContinues = window.Visible && lastContext != null && context != null
@@ -259,23 +272,26 @@ namespace MSSQLTool.Completion
             list.BeginUpdate();
             try
             {
-                // Update the existing native list in place. Clearing it first
-                // briefly paints an empty popup and looks like a close/reopen.
-                int sharedCount = Math.Min(list.Items.Count, newItems.Count);
-                for (int i = 0; i < sharedCount; i++)
-                {
-                    if (!string.Equals(ItemKey(list.Items[i] as CompletionItem), ItemKey(newItems[i]), StringComparison.Ordinal)
-                        || !string.Equals((list.Items[i] as CompletionItem)?.Description, newItems[i].Description, StringComparison.Ordinal))
-                        list.Items[i] = newItems[i];
-                }
+                // The control only has to know *how many* rows exist: DrawCompletionItem paints
+                // from items[e.Index], so assigning items[i] one by one (a change notification
+                // each, ~130 per keystroke) was pure overhead.  Sync the count and repaint once.
+                items = newItems;
+                // Shrinking removes only the tail; growing adds in one batch notification
+                // instead of one Add per row.
                 while (list.Items.Count > newItems.Count)
                     list.Items.RemoveAt(list.Items.Count - 1);
-                for (int i = list.Items.Count; i < newItems.Count; i++)
-                    list.Items.Add(newItems[i]);
-                items = newItems;
+                int missing = newItems.Count - list.Items.Count;
+                if (missing > 0)
+                {
+                    var placeholders = new object[missing];
+                    object placeholder = 0;
+                    for (int i = 0; i < missing; i++) placeholders[i] = placeholder;
+                    list.Items.AddRange(placeholders);
+                }
+                list.Invalidate();
             }
             finally { list.EndUpdate(); }
-            if (list.Items.Count == 0 && !parameterInfo.Visible) { Hide(); return; }
+            if (items.Count == 0 && !parameterInfo.Visible) { Hide(); return; }
 
             // A popup that was already open keeps the selected row when it survives the filter;
             // a new popup starts at the first row.  Without an explicit arrow/mouse move the
@@ -378,9 +394,17 @@ namespace MSSQLTool.Completion
                 lineHeight);
 
             bool sizeChanged = window.Width != layout.Size.Width || window.Height != layout.Size.Height;
-            window.MinimumSize = layout.MinimumSize;
-            if (window.Width != layout.Size.Width) window.Width = layout.Size.Width;
-            if (window.Height != layout.Size.Height) window.Height = layout.Size.Height;
+            if (sizeChanged)
+            {
+                // MinimumSize must be applied before the new size or WinForms clamps it.
+                // All four assignments force a layout pass, so they only run when the size
+                // actually changes; a keystroke inside the same popup block skips them.
+                window.MinimumSize = layout.MinimumSize;
+                window.Width = layout.Size.Width;
+                window.Height = layout.Size.Height;
+            }
+            // Kept outside the guard: the details pane also changes width when the
+            // category or the selected row changes, not only with the window size.
             ApplyDetailsWidth();
 
             bool locationChanged = window.Location != layout.Location;
@@ -541,7 +565,7 @@ namespace MSSQLTool.Completion
                 return true;
             }
             if (commandId == (uint)VSConstants.VSStd2KCmdID.UP) { userMovedSelection = true; list.SelectedIndex = Math.Max(0, list.SelectedIndex - 1); return true; }
-            if (commandId == (uint)VSConstants.VSStd2KCmdID.DOWN) { userMovedSelection = true; list.SelectedIndex = Math.Min(list.Items.Count - 1, list.SelectedIndex + 1); return true; }
+            if (commandId == (uint)VSConstants.VSStd2KCmdID.DOWN) { userMovedSelection = true; list.SelectedIndex = Math.Min(items.Count - 1, list.SelectedIndex + 1); return true; }
             if (commandId == (uint)VSConstants.VSStd2KCmdID.PAGEUP) { MoveSelection(-VisibleItemCount); return true; }
             if (commandId == (uint)VSConstants.VSStd2KCmdID.PAGEDN) { MoveSelection(VisibleItemCount); return true; }
             // HOME/END and BOL/EOL stay with the editor: hijacking them for list
@@ -555,9 +579,9 @@ namespace MSSQLTool.Completion
 
         private void MoveSelection(int offset)
         {
-            if (list.Items.Count == 0) return;
+            if (items.Count == 0) return;
             userMovedSelection = true;
-            list.SelectedIndex = Math.Max(0, Math.Min(list.Items.Count - 1, list.SelectedIndex + offset));
+            list.SelectedIndex = Math.Max(0, Math.Min(items.Count - 1, list.SelectedIndex + offset));
         }
 
         private static string ItemKey(CompletionItem item) => item?.Key;
@@ -620,9 +644,25 @@ namespace MSSQLTool.Completion
             string selected = category.SelectedItem as string ?? "All";
             var available = new List<string> { "All" };
             AddCategory(available, "Columns", CompletionItemKind.Column);
-            if (allItems.Any(i => i.Kind == CompletionItemKind.Table || i.Kind == CompletionItemKind.View || i.Kind == CompletionItemKind.Synonym)) available.Add("Objects");
-            if (allItems.Any(i => i.Kind == CompletionItemKind.Procedure || i.Kind == CompletionItemKind.Function)) available.Add("Routines");
-            if (allItems.Any(i => i.Kind == CompletionItemKind.Server || i.Kind == CompletionItemKind.Database || i.Kind == CompletionItemKind.Schema)) available.Add("Containers");
+            // One pass over the candidates instead of three full scans: this runs on every keystroke.
+            bool hasObjects = false, hasRoutines = false, hasContainers = false;
+            for (int i = 0; i < allItems.Count; i++)
+            {
+                switch (allItems[i].Kind)
+                {
+                    case CompletionItemKind.Table:
+                    case CompletionItemKind.View:
+                    case CompletionItemKind.Synonym: hasObjects = true; break;
+                    case CompletionItemKind.Procedure:
+                    case CompletionItemKind.Function: hasRoutines = true; break;
+                    case CompletionItemKind.Server:
+                    case CompletionItemKind.Database:
+                    case CompletionItemKind.Schema: hasContainers = true; break;
+                }
+            }
+            if (hasObjects) available.Add("Objects");
+            if (hasRoutines) available.Add("Routines");
+            if (hasContainers) available.Add("Containers");
             AddCategory(available, "Joins", CompletionItemKind.Join);
             AddCategory(available, "Snippets", CompletionItemKind.Snippet);
             AddCategory(available, "Keywords", CompletionItemKind.Keyword);

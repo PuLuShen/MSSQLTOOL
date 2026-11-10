@@ -137,6 +137,7 @@ namespace MSSQLTool.Completion
             context.ReplacementStartColumn = Math.Max(0, caretColumn - context.Prefix.Length);
 
             bool snippetsEnabled = SettingsManager.GetSnippetSettings().useSnippets;
+            context.SnippetsEnabled = snippetsEnabled;
             if (snippetsEnabled && IsExactSnippetPrefix(context.Prefix, true, SnippetService.GetAllSnippets()))
             {
                 // An exact prefix still wins in every SQL context (a snippet is an editor construct,
@@ -650,6 +651,20 @@ namespace MSSQLTool.Completion
         internal static bool IsExactSnippetPrefix(string prefix, bool snippetsEnabled, IEnumerable<SnippetItem> snippets)
             => snippetsEnabled && !string.IsNullOrWhiteSpace(prefix) && (snippets ?? Enumerable.Empty<SnippetItem>())
                 .Any(s => string.Equals(s?.Prefix, prefix, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// True when the typed word has just completed a snippet prefix that the cached list cannot
+        /// show.  The editor serves a word-only keystroke from the candidates built before that
+        /// letter existed, and a snippet is only added when the analyzer reads the whole prefix, so
+        /// "OUTER APPLY (" cached at the parenthesis never contained "SSF"; typing the F kept
+        /// filtering that list and only Ctrl+Space (a full analysis) surfaced the snippet.
+        /// </summary>
+        internal static bool NeedsSnippetReanalysis(string prefix, bool snippetsEnabled,
+            IEnumerable<CompletionItem> cachedItems, IEnumerable<SnippetItem> snippets)
+            => IsExactSnippetPrefix(prefix, snippetsEnabled, snippets)
+               && !(cachedItems ?? Enumerable.Empty<CompletionItem>()).Any(i => i != null
+                   && i.Kind == CompletionItemKind.Snippet
+                   && string.Equals(i.DisplayText, prefix, StringComparison.OrdinalIgnoreCase));
 
         // Settings are read once per BuildItems call; per-item helpers (Quote,
         // MakeAlias, join rules) consume this instance instead of re-reading

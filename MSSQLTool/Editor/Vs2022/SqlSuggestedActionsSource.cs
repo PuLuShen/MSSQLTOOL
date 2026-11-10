@@ -4,6 +4,7 @@ using System.ComponentModel.Composition;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 using Microsoft.VisualStudio.Language.Intellisense;
 using Microsoft.VisualStudio.Imaging.Interop;
 using Microsoft.VisualStudio.Text;
@@ -38,12 +39,32 @@ namespace MSSQLTool.Editor.Vs2022
     {
         private readonly ITextView view;
         private readonly ITextBuffer buffer;
+        private readonly DispatcherTimer refresh;
         private bool disposed;
+
+        /// <summary>
+        /// The editor asks for a light bulb after every change it is told about.  Running the rule
+        /// engine per keystroke cost the whole document (measured ~11 ms at 10 KB and ~300 ms at
+        /// 50 KB), so the event is coalesced and fired once the typing pauses.
+        /// </summary>
+        private const int RefreshDelayMilliseconds = 400;
 
         public SqlSuggestedActionsSource(ITextView view, ITextBuffer buffer)
         {
             this.view = view;
             this.buffer = buffer;
+            Dispatcher dispatcher = null;
+            try
+            {
+                var wpfView = view as IWpfTextView;
+                if (wpfView != null) dispatcher = wpfView.VisualElement?.Dispatcher;
+            }
+            catch (Exception) { }
+            refresh = new DispatcherTimer(DispatcherPriority.Background, dispatcher ?? Dispatcher.CurrentDispatcher)
+            {
+                Interval = TimeSpan.FromMilliseconds(RefreshDelayMilliseconds)
+            };
+            refresh.Tick += OnRefreshTick;
             buffer.Changed += OnBufferChanged;
         }
 
@@ -56,25 +77,37 @@ namespace MSSQLTool.Editor.Vs2022
         }
 
         public Task<bool> HasSuggestedActionsAsync(ISuggestedActionCategorySet requestedActionCategories, SnapshotSpan range, CancellationToken cancel)
-            => Task.FromResult(FindFix(cancel) != null);
+        {
+            int caret = CurrentCaretOffset();
+            if (caret < 0 || cancel.IsCancellationRequested) return Task.FromResult(false);
+            // The engine parses the whole document; keep it off the UI thread so a large script
+            // cannot block the keystroke that asked for the light bulb.
+            return Task.Run(() => FindFix(caret, cancel) != null, cancel);
+        }
 
         public IEnumerable<SuggestedActionSet> GetSuggestedActions(ISuggestedActionCategorySet requestedActionCategories, SnapshotSpan range, CancellationToken cancel)
         {
-            Fix? fix = FindFix(cancel);
+            Fix? fix = FindFix(CurrentCaretOffset(), cancel);
             if (fix == null) return Enumerable.Empty<SuggestedActionSet>();
             return new[] { new SuggestedActionSet(null, new ISuggestedAction[] { new QuickFixAction(fix.Value.Display, fix.Value.Apply) }, null, SuggestedActionSetPriority.Medium, null) };
         }
 
-        private Fix? FindFix(CancellationToken cancel)
+        private int CurrentCaretOffset()
         {
-            if (cancel.IsCancellationRequested || disposed) return null;
+            try { return view.Caret.Position.BufferPosition.Position; }
+            catch (Exception) { return -1; }
+        }
+
+        private Fix? FindFix(int caret, CancellationToken cancel)
+        {
+            if (cancel.IsCancellationRequested || disposed || caret < 0) return null;
             try
             {
                 AnalysisSettings settings = SettingsManager.GetAnalysisSettings();
                 if (!settings.enabled) return null;
 
                 string text = buffer.CurrentSnapshot.GetText();
-                int caret = view.Caret.Position.BufferPosition.Position;
+                if (caret > text.Length) return null;
                 AnalysisDiagnostic diagnostic = QuickFixService.FindFixableAtCaret(text, caret, settings);
                 if (diagnostic == null) return null;
                 if (!QuickFixService.TryBuildEdit(text, diagnostic, out int start, out int length, out string replacement)) return null;
@@ -111,6 +144,35 @@ namespace MSSQLTool.Editor.Vs2022
 
         private void OnBufferChanged(object sender, TextContentChangedEventArgs e)
         {
+            if (disposed) return;
+            try
+            {
+                // Buffer events normally arrive on the UI thread, but a background edit must not
+                // throw out of a text change handler: fall back to the old immediate notification.
+                if (refresh.Dispatcher.CheckAccess())
+                {
+                    refresh.Stop();
+                    refresh.Start();
+                    return;
+                }
+                refresh.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (disposed) return;
+                    refresh.Stop();
+                    refresh.Start();
+                }));
+            }
+            catch (Exception)
+            {
+                EventHandler<EventArgs> handler = SuggestedActionsChanged;
+                if (handler != null) handler(this, EventArgs.Empty);
+            }
+        }
+
+        private void OnRefreshTick(object sender, EventArgs e)
+        {
+            refresh.Stop();
+            if (disposed) return;
             EventHandler<EventArgs> handler = SuggestedActionsChanged;
             if (handler != null) handler(this, EventArgs.Empty);
         }
@@ -119,6 +181,7 @@ namespace MSSQLTool.Editor.Vs2022
         {
             if (disposed) return;
             disposed = true;
+            try { refresh.Stop(); refresh.Tick -= OnRefreshTick; } catch (Exception) { }
             buffer.Changed -= OnBufferChanged;
         }
 

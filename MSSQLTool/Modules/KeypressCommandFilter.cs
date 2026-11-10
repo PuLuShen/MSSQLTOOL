@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio;
+﻿using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.OLE.Interop;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System;
@@ -19,6 +19,9 @@ namespace MSSQLTool
         private static readonly ConcurrentStack<NavigationLocation> NavigationHistory = new ConcurrentStack<NavigationLocation>();
         private IOleCommandTarget nextCommandTarget;
         private IVsTextView textView;
+        private static int liveCount;
+        private bool disposed;
+
         private readonly MSSQLToolPackage package;
         private readonly CompletionController completionController;
         private CancellationTokenSource navigationCancellation;
@@ -27,6 +30,7 @@ namespace MSSQLTool
         {
             this.package = package;
             this.textView = textView;
+            Interlocked.Increment(ref liveCount);
             completionController = new CompletionController(textView);
             completionController.BeforePopupShown += DismissNativeCompletion;
         }
@@ -191,8 +195,14 @@ namespace MSSQLTool
 
         private bool ShouldProcessAsteriskExpansionKey(uint nCmdID)
         {
-            var settings = SettingsManager.GetAsteriskExpansionSettings();
-            return settings.useAsteriskExpansion && KeyMatches(settings.triggerKey, nCmdID);
+            try
+            {
+                var settings = SettingsManager.GetAsteriskExpansionSettings();
+                return settings.useAsteriskExpansion && KeyMatches(settings.triggerKey, nCmdID);
+            }
+            finally
+            {
+            }
         }
 
         private bool KeyMatches(SettingsManager.SnippetReplaceKey key, uint nCmdID)
@@ -692,6 +702,9 @@ namespace MSSQLTool
 
         public void Dispose()
         {
+            if (disposed) return;
+            disposed = true;
+            Interlocked.Decrement(ref liveCount);
             if (f12KeyboardHookRegistered)
             {
                 F12KeyboardHook.Unregister(this);

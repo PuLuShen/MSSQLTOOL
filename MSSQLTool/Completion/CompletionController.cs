@@ -106,6 +106,17 @@ namespace MSSQLTool.Completion
 
         public void Request(bool explicitRequest)
         {
+            try
+            {
+                RequestCore(explicitRequest);
+            }
+            finally
+            {
+            }
+        }
+
+        private void RequestCore(bool explicitRequest)
+        {
             var settings = SettingsManager.GetSqlCompletionSettings();
             requestCancellation?.Cancel();
             requestCancellation?.Dispose();
@@ -122,7 +133,10 @@ namespace MSSQLTool.Completion
             // Fast path first: a keystroke that only extends the current word is served from the
             // cached candidates without copying the document.  Anything else (a dot, a comma, a
             // new statement, a new connection) falls through to the full analysis.
-            if (!explicitRequest && TryServeFromSnapshotCache(false)) return;
+            if (!explicitRequest && TryServeFromSnapshotCache(false))
+            {
+                return;
+            }
 
             // One full-document read per keystroke; only the current statement is analyzed.  The
             // window scanner is a single pass, so a 600 KB script no longer re-masks and re-parses
@@ -199,6 +213,12 @@ namespace MSSQLTool.Completion
             if (!string.Equals(context.MetadataScope ?? string.Empty, scope ?? string.Empty, StringComparison.OrdinalIgnoreCase)) return false;
 
             List<CompletionItem> items = GetFiltered(candidates, prefix);
+            // The list predates the last letter, and a snippet is only known once its whole prefix
+            // is typed: completing "SSF" here must re-analyze, or the row Ctrl+Space shows stays
+            // absent while the stale list is filtered down.
+            if (SqlCompletionAnalyzer.NeedsSnippetReanalysis(prefix, context.SnippetsEnabled, items,
+                    SnippetService.GetAllSnippets()))
+                return false;
             if (items.Count == 0) return false;
 
             context.Prefix = prefix;
@@ -425,8 +445,8 @@ namespace MSSQLTool.Completion
         }
 
         // A member-list request (e.g. "dbo.") before the metadata cache is warm
-        // used to show nothing at all. After a short grace period 鈥?so fast
-        // loads never flash an empty popup 鈥?park a loading frame in the popup.
+        // used to show nothing at all. After a short grace period — so fast
+        // loads never flash an empty popup — park a loading frame in the popup.
         private async Task ShowLoadingFrameAsync(CompletionContext context, ScriptFactoryAccess.ConnectionInfo connection, CancellationToken token)
         {
             try
