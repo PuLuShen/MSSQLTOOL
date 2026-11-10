@@ -6,6 +6,48 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.512
+
+### 中文
+
+- **逗号连接的 `FROM` 现在识别整张来源列表**
+  - `FROM dbo.A AS A, dbo.B AS B` 只把紧跟 `FROM` 的第一张表登记为来源，`AND ` 后补全未限定列时只按 A 解析，B 的字段不出现（必须先输入 `B.` 才看得到）。
+  - 现在作用域树会读完整个 `FROM` 列表（包括逗号后的表、`WITH (NOLOCK)` 之类提示后的表），`AND |` 会同时给出两张表的列；`SELECT *` 的展开也包括第二张表。
+- **测试**：新增逗号来源的作用域与补全用例；全量 375 项通过，1 项 SQL Server 元数据集成测试因未设置 `MSSQLTOOL_TEST_CONNECTION` 跳过。
+
+### English
+
+- **A comma-separated `FROM` now contributes every source**
+  - `FROM dbo.A AS A, dbo.B AS B` registered only the table directly after `FROM`. Unqualified column completion after `AND ` resolved against A alone, so B's fields were missing until `B.` was typed.
+  - The scope tree now reads the whole FROM list, including tables after commas and after `WITH (NOLOCK)` style hints. `AND |` offers both tables' columns, and `SELECT *` expansion includes the second table too.
+- **Tests**: new scope-tree and completion cases for comma sources; all 375 tests pass, and one SQL Server metadata integration test is skipped because `MSSQLTOOL_TEST_CONNECTION` is not set.
+
+## 5.511
+
+### 中文
+
+- **来源尾部补齐 APPLY 与 OUTER JOIN**
+  - `FROM dbo.XSMXZH A ` 之后的补全列表原来缺少 `OUTER APPLY`、`CROSS APPLY` 与 `LEFT/RIGHT/FULL OUTER JOIN`。现在来源尾部给出完整的连接写法；`AS 别名` 排在连接写法之后，不再压住它们。
+- **派生表、APPLY 里的第二个 `FROM` 能补全表名**
+  - `FROM (`、`JOIN (`、`APPLY (` 这类括号原来被当成函数调用，光标被解析成函数参数，所以派生表里第二个 `FROM` 后面没有表建议。现在 `FROM/JOIN/APPLY/USING/INTO/MERGE/PIVOT/UNPIVOT/TABLESAMPLE/WITH/OPTION` 后面的括号不再按函数处理，派生表与 APPLY 子查询内部可以正常补全表。
+- **新增表提示与查询提示**
+  - `FROM dbo.T WITH (` 提供 `NOLOCK`、`ROWLOCK`、`UPDLOCK`、`HOLDLOCK` 等常用表提示；`OPTION (` 提供 `RECOMPILE`、`MAXDOP`、`OPTIMIZE FOR` 等查询提示，并带用法说明（含中文）。
+- **按完整前缀输入片段时，自动列表直接显示片段**
+  - 在 `OUTER APPLY (` 后逐字输入 `SSF`，列表原来不显示该片段，必须按 Ctrl+Space。逐字输入走的是上一轮缓存的候选列表，而片段只有完整分析读到整个前缀后才会加入。现在检测到“刚补全一个片段前缀、缓存里还没有它”就重新分析，片段立即出现；Ctrl+Space 行为不变。
+- **测试**：新增连接写法、派生表 `FROM`、表/查询提示与片段前缀的回归用例；全量 372 项通过，1 项 SQL Server 元数据集成测试因未设置 `MSSQLTOOL_TEST_CONNECTION` 跳过。
+
+### English
+
+- **APPLY and OUTER JOIN forms are offered after a source**
+  - The list after `FROM dbo.XSMXZH A ` was missing `OUTER APPLY`, `CROSS APPLY` and `LEFT/RIGHT/FULL OUTER JOIN`. Every join/APPLY form is now offered at the source tail, and the `AS alias` suggestion ranks below them instead of burying them.
+- **A second `FROM` inside a derived table or APPLY now completes table names**
+  - Parentheses after `FROM (`, `JOIN (` and `APPLY (` were treated as a function call, so the caret resolved to function arguments and the second `FROM` offered no tables. Parentheses following `FROM/JOIN/APPLY/USING/INTO/MERGE/PIVOT/UNPIVOT/TABLESAMPLE/WITH/OPTION` are no longer function calls, so derived tables and APPLY subqueries complete normally.
+- **Table hints and query hints**
+  - `FROM dbo.T WITH (` offers `NOLOCK`, `ROWLOCK`, `UPDLOCK`, `HOLDLOCK` and the other common hints; `OPTION (` offers `RECOMPILE`, `MAXDOP`, `OPTIMIZE FOR` and the rest, each with usage text (localized).
+- **A snippet appears in the automatic list once its whole prefix is typed**
+  - Typing `SSF` after `OUTER APPLY (` did not show the snippet until Ctrl+Space. A word-only keystroke is served from the candidate list built before that letter existed, and a snippet is only added when the analyzer reads the whole prefix. The editor now re-analyzes when a keystroke completes a snippet prefix that the cached list lacks, so the snippet appears at once; Ctrl+Space is unchanged.
+- **Tests**: new regression cases for the join forms, the derived-table `FROM`, table/query hints and the snippet prefix; all 372 tests pass, and one SQL Server metadata integration test is skipped because `MSSQLTOOL_TEST_CONNECTION` is not set.
+
 ## 5.510
 
 ### 中文
