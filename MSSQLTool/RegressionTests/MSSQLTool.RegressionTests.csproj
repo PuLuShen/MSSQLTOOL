@@ -70,4 +70,3 @@
     <Copy SourceFiles="@(HistoryProbeNative)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
   </Target>
 </Project>
-
