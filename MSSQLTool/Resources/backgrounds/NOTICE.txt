@@ -1,0 +1,33 @@
+MSSQL Tool - bundled editor background images
+==============================================
+
+These six pictures are used as optional SQL editor backgrounds.  They come from
+the Reasonix theme packs, which are distributed under the MIT licence, so they may
+be bundled and redistributed with this extension.  Attribution is not required by
+the licence but is recorded here, and in the About/Settings UI, out of respect for
+the authors.
+
+Source : https://github.com/esengine/DeepSeek-Reasonix
+Path   : internal/ext/theme/builtin/*.background.webp
+Licence: MIT - Copyright (c) 2026 Reasonix Contributors
+         https://github.com/esengine/DeepSeek-Reasonix/blob/main/LICENSE
+
+1) sage-breeze.jpg      - Reasonix theme "Sage Breeze"
+2) crimson-horizon.jpg  - Reasonix theme "Crimson Horizon"
+3) noir-gold.jpg        - Reasonix theme "Noir Gold"
+4) violet-starlight.jpg - Reasonix theme "Violet Starlight"
+5) spark-notebook.jpg   - Reasonix theme "Spark Notebook"
+6) rose-dawn.jpg        - Reasonix theme "Rose Dawn"
+
+Processing: taken from the upstream WebP packs on 2026-11-07 and re-encoded as
+progressive JPEG (quality 88) at 2560 px width, because the WPF image decoder
+bundled with SSMS cannot read WebP.  No other modification (no cropping, no
+retouching) was made.
+
+Notes for the settings UI: the four pictures shipped up to 5.447
+(mist-forest, night-sky, mountain-ridge, desert-dunes) were replaced.  A saved
+setting that still names one of them is mapped to the closest new picture, so an
+upgrade never leaves the editor without a background.
+
+Images supplied by the user are never uploaded or redistributed by the extension;
+they stay on the local machine, referenced by path only.

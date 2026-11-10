@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio;
+﻿using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System;
 using System.Collections.Concurrent;
@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Linq;
+using MSSQLTool.Editor;
+using MSSQLTool.Editor.Vs2022;
 
 namespace MSSQLTool.Completion
 {
@@ -18,6 +20,30 @@ namespace MSSQLTool.Completion
         private readonly SynchronizationContext uiContext;
         private readonly System.Windows.Forms.Timer sessionMonitor;
         private readonly SqlPromptHighlightOverlay highlightOverlay;
+        private readonly IEditorHost editorHost;
+        private readonly MSSQLTool.Rendering.DiagnosticOverlay diagnosticOverlay;
+
+        // Candidates funded by the last analysis, reused for keystrokes that only extend the
+        // current word: filtering those from memory keeps typing inside a single frame.
+        private volatile List<CompletionItem> cachedCandidates;
+        private volatile CompletionContext cachedContext;
+        private MetadataSnapshot cachedMetadata;
+        private int cachedCaretOffset;
+        private Microsoft.VisualStudio.Text.ITextSnapshot cachedSnapshot;
+        private string sessionLocalKey;
+        private List<DatabaseObjectMetadata> sessionLocalObjects;
+        private int currentVersionNumber = -1;
+        private readonly Dictionary<string, List<CompletionItem>> prefixCache =
+            new Dictionary<string, List<CompletionItem>>(StringComparer.OrdinalIgnoreCase);
+        private readonly SemaphoreSlim analysisGate = new SemaphoreSlim(1, 1);
+        private readonly object sessionLocalGate = new object();
+        private readonly object analysisCacheGate = new object();
+        private readonly Dictionary<string, CompletionContext> analysisCache =
+            new Dictionary<string, CompletionContext>(StringComparer.Ordinal);
+        private readonly Queue<string> analysisCacheOrder = new Queue<string>();
+        private const int AnalysisCacheCapacity = 8;
+        private readonly Microsoft.VisualStudio.Text.Editor.IWpfTextView layoutView;
+        private readonly EventHandler<Microsoft.VisualStudio.Text.Editor.TextViewLayoutChangedEventArgs> layoutChanged;
         private CancellationTokenSource requestCancellation;
         private CompletionContext currentContext;
         private int currentLine;
@@ -32,12 +58,46 @@ namespace MSSQLTool.Completion
         {
             this.textView = textView;
             uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+            if (SqlEditorServices.TryGetSnapshot(textView, out Microsoft.VisualStudio.Text.ITextSnapshot initialSnapshot))
+            {
+                trackedBuffer = initialSnapshot.TextBuffer;
+                if (trackedBuffer != null) trackedBuffer.Changed += OnBufferChanged;
+            }
             presenter.CommitRequested += () => CommitCurrent();
             presenter.DismissRequested += Dismiss;
             sessionMonitor = new System.Windows.Forms.Timer { Interval = 200 };
-            sessionMonitor.Tick += (_, __) => { if (presenter.IsVisible && !IsCaretCurrent()) Dismiss(); };
+            sessionMonitor.Tick += (_, __) =>
+            {
+                // Scrolling does not move the caret or change the text, so a visible popup has
+                // to be re-anchored explicitly; the same tick keeps the caret/popup contract.
+                if (presenter.IsVisible)
+                {
+                    // The popup is non-activating.  Once another application becomes active it
+                    // must disappear instead of floating above it; the owner is the visible SSMS
+                    // frame, so this check does not depend on the editor's hidden fake HWND.
+                    if (!presenter.OwnerIsForeground) Dismiss();
+                    // Only the caret position matters here; scrolling and resizing are handled by
+                    // LayoutChanged.  Reading the document or repositioning the window on a timer
+                    // is what made typing feel stuttery.
+                    else if (!IsCaretCurrent()) Dismiss();
+                }
+            };
             sessionMonitor.Start();
-            highlightOverlay = new SqlPromptHighlightOverlay(textView, () => presenter.IsVisible);
+            editorHost = EditorHostFactory.Create(textView);
+            // Related-token highlight and squiggles are editor tags now (Editor/Vs2022), so the
+            // window painters are not created at all: nothing is drawn twice and nothing drifts
+            // while the view scrolls.
+            highlightOverlay = null;
+            diagnosticOverlay = null;
+
+            // Scroll, zoom and wrapping move the popup by event instead of the 200 ms poll, which
+            // only remains as the fallback when the editor adapter is unavailable.
+            if (SqlEditorServices.TryGetTextView(textView, out Microsoft.VisualStudio.Text.Editor.IWpfTextView wpfView))
+            {
+                layoutView = wpfView;
+                layoutChanged = (_, __) => { if (presenter.IsVisible) presenter.Reposition(textView); };
+                layoutView.LayoutChanged += layoutChanged;
+            }
         }
 
         public event Action BeforePopupShown;
@@ -59,9 +119,14 @@ namespace MSSQLTool.Completion
             requestCancellation = new CancellationTokenSource();
             CancellationToken token = requestCancellation.Token;
 
-            // One full-document read per keystroke; the text before and after the
-            // caret are slices of it. The previous flow issued a second COM
-            // GetLineText call just for the before-caret slice.
+            // Fast path first: a keystroke that only extends the current word is served from the
+            // cached candidates without copying the document.  Anything else (a dot, a comma, a
+            // new statement, a new connection) falls through to the full analysis.
+            if (!explicitRequest && TryServeFromSnapshotCache(false)) return;
+
+            // One full-document read per keystroke; only the current statement is analyzed.  The
+            // window scanner is a single pass, so a 600 KB script no longer re-masks and re-parses
+            // the whole document for every space, comma or dot.
             string text;
             int line;
             int column;
@@ -69,22 +134,216 @@ namespace MSSQLTool.Completion
             currentDocLastLine = docLastLine;
             currentDocLastColumn = docLastColumn;
             int caretOffset = GetOffset(text, line, column);
-            string beforeCaret = text.Substring(0, Math.Min(caretOffset, text.Length));
-            string afterCaret = text.Substring(beforeCaret.Length);
+            SqlStatementWindow window = SqlStatementWindow.Find(text, caretOffset);
+            string beforeCaret = window.BeforeCaret;
+            string afterCaret = window.AfterCaret;
             currentLine = line;
             currentColumn = column;
             currentDocumentText = text;
+            if (SqlEditorServices.TryGetSnapshot(textView, out Microsoft.VisualStudio.Text.ITextSnapshot requestedSnapshot))
+                currentVersionNumber = requestedSnapshot.Version.VersionNumber;
             ScriptFactoryAccess.ConnectionInfo connection = ScriptFactoryAccess.GetCurrentConnectionInfo();
             string metadataScope = connection == null ? string.Empty : (connection.ServerName + "|" + connection.Database);
+            int compatibilityLevel = 170;
+            if (connection != null && SqlMetadataCache.TryGetCached(connection, out MetadataSnapshot cachedMeta)
+                && cachedMeta.CompatibilityLevel > 0)
+                compatibilityLevel = cachedMeta.CompatibilityLevel;
             var requestMarker = new CompletionContext { IsExplicitRequest = explicitRequest, MetadataScope = metadataScope };
             currentContext = requestMarker;
-            _ = LoadAndShowAsync(requestMarker, beforeCaret, line, column, afterCaret, connection, token,
-                explicitRequest, settings.delayMilliseconds);
+            _ = LoadAndShowAsync(requestMarker, text, window.Start, beforeCaret, line, column, window.CaretColumn,
+                afterCaret, caretOffset, connection, compatibilityLevel, token, explicitRequest, settings.delayMilliseconds);
         }
 
-        private async Task LoadAndShowAsync(CompletionContext requestMarker, string beforeCaret, int caretLine, int caretColumn,
-            string afterCaret, ScriptFactoryAccess.ConnectionInfo connection, CancellationToken token,
-            bool explicitRequest, int delayMilliseconds)
+        /// <summary>
+        /// The trailing word at the caret.  Only plain word characters count, so punctuation (a
+        /// dot, a parenthesis, a comma) always falls back to a real analysis.
+        /// </summary>
+        internal static string TailWord(string text, int caretOffset)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            int end = Math.Max(0, Math.Min(caretOffset, text.Length));
+            int start = end;
+            while (start > 0 && IsWordChar(text[start - 1])) start--;
+            return text.Substring(start, end - start);
+        }
+
+        private static bool IsWordChar(char value)
+            => char.IsLetterOrDigit(value) || value == '_' || value == '@' || value == '#' || value == '$';
+
+        /// <summary>
+        /// Serves a keystroke that only extends (or shortens) the current word from the cached
+        /// candidate list.  Validity is decided from the snapshot version and the edit ranges, so no
+        /// document text has to be copied on the fast path.
+        /// </summary>
+        private bool TryServeFromSnapshotCache(bool explicitRequest)
+        {
+            List<CompletionItem> candidates = cachedCandidates;
+            CompletionContext context = cachedContext;
+            MetadataSnapshot metadata = cachedMetadata;
+            if (candidates == null || context == null || metadata == null) return false;
+            if (!SqlEditorServices.TryGetSnapshot(textView, out Microsoft.VisualStudio.Text.ITextSnapshot snapshot)) return false;
+            if (textView.GetCaretPos(out int line, out int column) != VSConstants.S_OK) return false;
+
+            int caretOffset = OffsetOf(snapshot, line, column);
+            if (!CacheEditIsWordOnly(snapshot, caretOffset)) return false;
+
+            int start = caretOffset;
+            while (start > 0 && IsWordChar(snapshot[start - 1])) start--;
+            if (start == caretOffset) return false;
+
+            string prefix = snapshot.GetText(start, caretOffset - start);
+            if (prefix.Length == 0 || prefix.Length > 64) return false;
+
+            ScriptFactoryAccess.ConnectionInfo connection = ScriptFactoryAccess.GetCurrentConnectionInfo();
+            string scope = connection == null ? string.Empty : connection.ServerName + "|" + connection.Database;
+            if (!string.Equals(context.MetadataScope ?? string.Empty, scope ?? string.Empty, StringComparison.OrdinalIgnoreCase)) return false;
+
+            List<CompletionItem> items = GetFiltered(candidates, prefix);
+            if (items.Count == 0) return false;
+
+            context.Prefix = prefix;
+            context.ReplacementStartColumn = Math.Max(0, column - prefix.Length);
+            context.CaretLine = line;
+            context.CaretColumn = column;
+            context.IsExplicitRequest = explicitRequest;
+            currentContext = context;
+            currentLine = line;
+            currentColumn = column;
+            currentVersionNumber = snapshot.Version.VersionNumber;
+            cachedSnapshot = snapshot;
+            cachedCaretOffset = caretOffset;
+
+            try
+            {
+                if (!presenter.IsVisible) BeforePopupShown?.Invoke();
+                presenter.Show(textView, items, metadata, context);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("SQL Completion", "The cached completion list could not be shown", ex);
+                return false;
+            }
+        }
+
+        private static int OffsetOf(Microsoft.VisualStudio.Text.ITextSnapshot snapshot, int line, int column)
+        {
+            if (snapshot == null || line < 0 || line >= snapshot.LineCount) return 0;
+            Microsoft.VisualStudio.Text.ITextSnapshotLine snapshotLine = snapshot.GetLineFromLineNumber(line);
+            return snapshotLine.Start.Position + Math.Min(Math.Max(column, 0), snapshotLine.Length);
+        }
+
+        private Microsoft.VisualStudio.Text.ITextBuffer trackedBuffer;
+
+        /// <summary>
+        /// Invalidates the fast-path cache as soon as an edit does anything other than typing or
+        /// deleting one word character at the caret (space, punctuation, paste, undo, multi-caret).
+        /// Keeping this check in the buffer event means the fast path never has to diff text.
+        /// </summary>
+        private void OnBufferChanged(object sender, Microsoft.VisualStudio.Text.TextContentChangedEventArgs e)
+        {
+            try
+            {
+                if (e.Changes == null || e.Changes.Count == 0) return;
+                foreach (Microsoft.VisualStudio.Text.ITextChange change in e.Changes)
+                {
+                    string inserted = change.NewText ?? string.Empty;
+                    if (inserted.Length > 1 || change.OldLength > 1) { cachedSnapshot = null; return; }
+                    if (inserted.Length == 1 && !IsWordChar(inserted[0])) { cachedSnapshot = null; return; }
+                    if (Math.Abs(change.OldPosition - cachedCaretOffset) > 1) { cachedSnapshot = null; return; }
+                }
+            }
+            catch (Exception)
+            {
+                cachedSnapshot = null;
+            }
+        }
+
+        private bool CacheEditIsWordOnly(Microsoft.VisualStudio.Text.ITextSnapshot snapshot, int caretOffset)
+        {
+            if (cachedSnapshot == null) return false;
+            if (ReferenceEquals(cachedSnapshot, snapshot)) return true;
+            // The buffer event already rejected every non-word edit; only the caret has to still be
+            // one character away from where the cached candidates were built.
+            return Math.Abs(caretOffset - cachedCaretOffset) <= 1;
+        }
+
+        private List<CompletionItem> GetFiltered(List<CompletionItem> candidates, string prefix)
+        {
+            List<CompletionItem> cached;
+            if (prefixCache.TryGetValue(prefix, out cached)) return cached;
+
+            List<CompletionItem> items = SqlCompletionAnalyzer.FilterCandidates(candidates, prefix);
+            if (prefixCache.Count > 64) prefixCache.Clear();
+            prefixCache[prefix] = items;
+            return items;
+        }
+
+        /// <summary>
+        /// Temp tables declared before the current statement.  The prefix hash changes only when
+        /// an edit touches the prefix, so typing inside the current statement reuses the list
+        /// instead of re-running the temp-table regexes on every keystroke.
+        /// </summary>
+        private List<DatabaseObjectMetadata> GetSessionLocalObjects(string text, int statementStart, string scope)
+        {
+            if (string.IsNullOrEmpty(text) || statementStart <= 0)
+            {
+                lock (sessionLocalGate) { sessionLocalKey = null; sessionLocalObjects = null; }
+                return null;
+            }
+            int hash = SqlStatementWindow.HashRange(text, 0, statementStart);
+            string key = (scope ?? string.Empty) + "|" + statementStart + "|" + hash;
+            lock (sessionLocalGate)
+            {
+                if (string.Equals(key, sessionLocalKey, StringComparison.Ordinal)) return sessionLocalObjects;
+                List<DatabaseObjectMetadata> locals = SqlCompletionAnalyzer.CollectSessionLocalObjects(
+                    text.Substring(0, Math.Min(statementStart, text.Length)));
+                sessionLocalObjects = locals;
+                sessionLocalKey = key;
+                return locals;
+            }
+        }
+
+        /// <summary>
+        /// Analysis is keyed by the exact statement slice and caret.  A popup refresh, an explicit
+        /// Ctrl+Space on the same text and an undo/redo therefore reuse the parse instead of paying
+        /// for it twice; the key includes the session-local prefix and the compatibility level so a
+        /// changed temp table or connection can never hit a stale context.
+        /// </summary>
+        private CompletionContext AnalyzeWithStatementCache(CompletionContext requestMarker, string beforeCaret,
+            int analysisColumn, string afterCaret, string documentText, int statementStart, int compatibilityLevel)
+        {
+            List<DatabaseObjectMetadata> sessionLocals = GetSessionLocalObjects(documentText, statementStart, requestMarker.MetadataScope);
+            string key = (requestMarker.MetadataScope ?? string.Empty) + "|" + (sessionLocalKey ?? (statementStart + "|0"))
+                + "|" + compatibilityLevel + "|" + analysisColumn
+                + "|" + (beforeCaret ?? string.Empty).Length + ":" + SqlStatementWindow.HashRange(beforeCaret, 0, (beforeCaret ?? string.Empty).Length)
+                + "|" + (afterCaret ?? string.Empty).Length + ":" + SqlStatementWindow.HashRange(afterCaret, 0, (afterCaret ?? string.Empty).Length);
+            lock (analysisCacheGate)
+            {
+                CompletionContext cached;
+                if (analysisCache.TryGetValue(key, out cached)) return cached;
+            }
+
+            CompletionContext context = SqlCompletionAnalyzer.Analyze(beforeCaret, analysisColumn, afterCaret, sessionLocals, compatibilityLevel);
+            if (context == null) return null;
+            lock (analysisCacheGate)
+            {
+                if (!analysisCache.ContainsKey(key))
+                {
+                    analysisCache[key] = context;
+                    analysisCacheOrder.Enqueue(key);
+                    while (analysisCacheOrder.Count > AnalysisCacheCapacity)
+                        analysisCache.Remove(analysisCacheOrder.Dequeue());
+                }
+            }
+            return context;
+        }
+
+
+        private async Task LoadAndShowAsync(CompletionContext requestMarker, string documentText, int statementStart,
+            string beforeCaret, int caretLine, int caretColumn, int analysisColumn, string afterCaret,
+            int documentCaretOffset, ScriptFactoryAccess.ConnectionInfo connection, int compatibilityLevel,
+            CancellationToken token, bool explicitRequest, int delayMilliseconds)
         {
             CompletionContext context = requestMarker;
             try
@@ -92,7 +351,19 @@ namespace MSSQLTool.Completion
                 if (!explicitRequest)
                     await Task.Delay(delayMilliseconds, token).ConfigureAwait(false);
 
-                context = await Task.Run(() => SqlCompletionAnalyzer.Analyze(beforeCaret, caretColumn, afterCaret), token).ConfigureAwait(false);
+                await analysisGate.WaitAsync(token).ConfigureAwait(false);
+                try
+                {
+                    // Latest wins: if a newer keystroke already replaced this request, skip the
+                    // expensive analysis instead of queueing it behind the previous one.
+                    if (!ReferenceEquals(currentContext, requestMarker)) return;
+                    context = await Task.Run(() => AnalyzeWithStatementCache(requestMarker, beforeCaret, analysisColumn,
+                        afterCaret, documentText, statementStart, compatibilityLevel), token).ConfigureAwait(false);
+                }
+                finally
+                {
+                    analysisGate.Release();
+                }
                 context.IsExplicitRequest = explicitRequest;
                 context.MetadataScope = requestMarker.MetadataScope;
                 context.CaretLine = caretLine;
@@ -120,7 +391,13 @@ namespace MSSQLTool.Completion
                 metadata = await LoadReferencedDatabasesAsync(context, connection, metadata, token).ConfigureAwait(false);
                 await SqlMetadataCache.ResolveSynonymColumnsAsync(connection, metadata, context, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
-                PostItems(context, SqlCompletionAnalyzer.BuildItems(context, metadata), metadata, token);
+                List<CompletionItem> candidates = SqlCompletionAnalyzer.BuildCandidates(context, metadata);
+                cachedCandidates = candidates;
+                cachedContext = context;
+                cachedMetadata = metadata;
+                prefixCache.Clear();
+                cachedCaretOffset = documentCaretOffset;
+                PostItems(context, SqlCompletionAnalyzer.FilterCandidates(candidates, context.Prefix), metadata, token);
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)
@@ -148,13 +425,13 @@ namespace MSSQLTool.Completion
         }
 
         // A member-list request (e.g. "dbo.") before the metadata cache is warm
-        // used to show nothing at all. After a short grace period — so fast
-        // loads never flash an empty popup — park a loading frame in the popup.
+        // used to show nothing at all. After a short grace period 鈥?so fast
+        // loads never flash an empty popup 鈥?park a loading frame in the popup.
         private async Task ShowLoadingFrameAsync(CompletionContext context, ScriptFactoryAccess.ConnectionInfo connection, CancellationToken token)
         {
             try
             {
-                await Task.Delay(400, token).ConfigureAwait(false);
+                await Task.Delay(150, token).ConfigureAwait(false);
                 if (connection != null && SqlMetadataCache.TryGetCached(connection, out MetadataSnapshot _)) return;
                 uiContext.Post(_ =>
                 {
@@ -303,8 +580,13 @@ namespace MSSQLTool.Completion
                 try
                 {
                     if (token.IsCancellationRequested || !ReferenceEquals(currentContext, context) || !IsCurrentSnapshot()) return;
+                    if (SqlEditorServices.TryGetSnapshot(textView, out Microsoft.VisualStudio.Text.ITextSnapshot shownSnapshot))
+                        cachedSnapshot = shownSnapshot;
+
                     if (items.Count == 0 && !CompletionPresenter.HasParameterInfo(metadata, context))
+                    {
                         presenter.Hide();
+                    }
                     else
                     {
                         // Dismiss SSMS's native completion only when opening our popup.
@@ -379,6 +661,9 @@ namespace MSSQLTool.Completion
             textView.GetCaretPos(out int line, out int column);
             int start = Math.Min(column, currentContext.ReplacementStartColumn);
             string insertText = GetCommitInsertText(item, selectedItems);
+            bool addFunctionParens = item.Kind == CompletionItemKind.Function && !insertMultipleColumns
+                && !insertText.EndsWith("(", StringComparison.Ordinal);
+            if (addFunctionParens) insertText += "()";
             SnippetVariableResult snippetResult = null;
             if (item.Kind == CompletionItemKind.Snippet)
             {
@@ -404,13 +689,18 @@ namespace MSSQLTool.Completion
                 else
                 {
                     int caretOffset = snippetResult != null && snippetResult.CursorOffset >= 0 ? snippetResult.CursorOffset : insertText.Length;
+                    if (addFunctionParens) caretOffset = insertText.Length - 1;
                     TextSpan caret = ToTextSpan(line, start, insertText, caretOffset, 0);
                     textView.SetCaretPos(caret.iStartLine, caret.iStartIndex);
                 }
             }
             finally { Marshal.FreeHGlobal(value); }
+            try { CompletionUsageStore.Record(currentContext?.MetadataScope, item); }
+            catch (Exception) { }
             bool requestAfterSnippet = ShouldRequestCompletionAfterCommit(item);
-            bool explicitSnippetContinuation = currentContext.IsExplicitRequest;
+            // The join continuation is the second half of one gesture (Tab, then pick the ON key), so
+            // it must open even when the fuzzy-popup setting is off.
+            bool explicitSnippetContinuation = currentContext.IsExplicitRequest || item.Kind == CompletionItemKind.Join;
             Dismiss();
             if (requestAfterSnippet) Request(explicitSnippetContinuation);
             return true;
@@ -425,24 +715,30 @@ namespace MSSQLTool.Completion
         }
 
         internal static bool ShouldRequestCompletionAfterCommit(CompletionItem item)
-            => item != null && item.Kind == CompletionItemKind.Snippet;
+        {
+            if (item == null) return false;
+            if (item.Kind == CompletionItemKind.Snippet) return true;
+
+            // A plain JOIN table leaves the caret right after the name; reopening the popup there is
+            // what turns "insert the table" into a second step offering the ON keys, instead of
+            // inserting a condition the user never asked for.
+            return item.Kind == CompletionItemKind.Join
+                && (item.InsertText ?? string.Empty).IndexOf(" ON ", StringComparison.OrdinalIgnoreCase) < 0;
+        }
 
         private bool IsCurrentSnapshot()
         {
             if (currentContext == null || textView == null) return false;
-            // Cheap staleness checks first: posted frames usually arrive while
-            // the user has already kept typing, and a caret or document-shape
-            // mismatch is detected without reading the full document text.
+            // Cheap staleness checks only: caret plus the buffer version.  Reading the whole document
+            // here used to run once per posted callback and dominated large scripts.
             if (textView.GetCaretPos(out int line, out int column) != VSConstants.S_OK) return false;
             if (line != currentLine || column != currentColumn) return false;
-            if (textView.GetBuffer(out IVsTextLines lines) != VSConstants.S_OK) return false;
-            if (lines.GetLastLineIndex(out int lastLine, out int lastColumn) != VSConstants.S_OK) return false;
-            if (lastLine != currentDocLastLine || lastColumn != currentDocLastColumn) return false;
-            if (lines.GetLineText(0, 0, lastLine, lastColumn, out string text) != VSConstants.S_OK) return false;
+            if (!SqlEditorServices.TryGetSnapshot(textView, out Microsoft.VisualStudio.Text.ITextSnapshot snapshot)) return false;
+            if (snapshot.Version.VersionNumber != currentVersionNumber) return false;
+
             ScriptFactoryAccess.ConnectionInfo connection = ScriptFactoryAccess.GetCurrentConnectionInfo();
             string scope = connection == null ? string.Empty : connection.ServerName + "|" + connection.Database;
-            return currentContext != null && IsCompletionSnapshotCurrent(currentDocumentText, text, currentLine, currentColumn,
-                currentContext.MetadataScope, line, column, scope);
+            return string.Equals(currentContext.MetadataScope ?? string.Empty, scope ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         }
 
         internal static bool IsCompletionSnapshotCurrent(string originalText, string currentText, int originalLine,
@@ -476,6 +772,15 @@ namespace MSSQLTool.Completion
         private bool TryReadDocument(out string text, out int line, out int column, out int docLastLine, out int docLastColumn)
         {
             text = null; line = column = 0; docLastLine = docLastColumn = 0;
+            if (SqlEditorServices.TryGetSnapshot(textView, out Microsoft.VisualStudio.Text.ITextSnapshot snapshot))
+            {
+                if (textView.GetCaretPos(out line, out column) != VSConstants.S_OK) return false;
+                text = snapshot.GetText();
+                docLastLine = Math.Max(0, snapshot.LineCount - 1);
+                docLastColumn = snapshot.GetLineFromLineNumber(docLastLine).Length;
+                return true;
+            }
+
             if (textView.GetBuffer(out IVsTextLines lines) != VSConstants.S_OK) return false;
             textView.GetCaretPos(out line, out column);
             if (lines.GetLastLineIndex(out docLastLine, out docLastColumn) != VSConstants.S_OK) return false;
@@ -500,7 +805,12 @@ namespace MSSQLTool.Completion
             requestCancellation?.Dispose();
             sessionMonitor.Stop();
             sessionMonitor.Dispose();
-            highlightOverlay.Dispose();
+            highlightOverlay?.Dispose();
+            analysisGate.Dispose();
+            if (trackedBuffer != null) { trackedBuffer.Changed -= OnBufferChanged; trackedBuffer = null; }
+            if (layoutView != null && layoutChanged != null) layoutView.LayoutChanged -= layoutChanged;
+            diagnosticOverlay?.Dispose();
+            editorHost.Dispose();
             presenter.Dispose();
         }
     }

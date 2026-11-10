@@ -1,6 +1,7 @@
 using MSSQLTool.Completion;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -18,7 +19,11 @@ namespace MSSQLTool.RegressionTests
         private static int Main()
         {
             if (HasCommandLineSwitch("--format-probe")) return FormatterProbe.Run(Environment.GetCommandLineArgs());
+            if (HasCommandLineSwitch("--list-analysis-rules")) return ListAnalysisRules();
             if (HasCommandLineSwitch("--storage")) return StorageProbe.Run(Environment.GetCommandLineArgs());
+            if (HasCommandLineSwitch("--history-probe")) return HistoryProbe.Run();
+            if (HasCommandLineSwitch("--history-inspect")) return HistoryProbe.Inspect(Environment.GetCommandLineArgs());
+            if (HasCommandLineSwitch("--completion-perf")) return RunCompletionPerf(Environment.GetCommandLineArgs());
 
             // The insert-text assertions expect square brackets, but Quote()
             // follows the machine's saved useSquareBrackets setting. Pin the
@@ -116,8 +121,106 @@ namespace MSSQLTool.RegressionTests
             Run("Exact snippet prefix is context-independent", TestExactSnippetPrefix);
             Run("Nested SELECT does not split statement scope", TestNestedSelectStatementScope);
             Run("Alias from ScriptDOM tokens", () => Equal("dbo.Customer", SqlSemanticModel.Create("SELECT c. FROM dbo.Customer AS c").Aliases["c"]));
+            Run("Statement start comes from the parse", () =>
+            {
+                // Valid T-SQL written on one line with no semicolon: only the tree sees the boundary.
+                // (An incomplete tail makes ScriptDOM drop the whole batch, which is why the text scan
+                // stays as the baseline and this only ever moves the start forward.)
+                const string sql = "DECLARE @a int SELECT h.HeaderName FROM dbo.Header h WHERE h.Amount > 1";
+                Equal(sql.IndexOf("SELECT h.HeaderName", StringComparison.Ordinal), SqlSemanticModel.Create(sql, sql.Length).StatementStart);
+            });
+            Run("Two statements on one line do not share a statement text", () =>
+            {
+                const string sql = "DECLARE @a int SELECT h.HeaderName FROM dbo.Header h WHERE h.Amount > 1";
+                CompletionContext context = SqlCompletionAnalyzer.Analyze(sql, sql.Length);
+                True(!(context.CurrentStatement ?? string.Empty).Contains("DECLARE"),
+                    "the first statement leaked into the current one: " + context.CurrentStatement);
+            });
+            Run("Aliases are filled from the parse without the text scan", () =>
+            {
+                CompletionContext context = SqlCompletionAnalyzer.Analyze("SELECT * FROM dbo.Header h WHERE h.", "SELECT * FROM dbo.Header h WHERE h.".Length);
+                Equal("dbo.Header", context.Aliases["h"]);
+            });
+            Run("Item key follows the text it is built from", () =>
+            {
+                var item = new CompletionItem { DisplayText = "Header", Kind = CompletionItemKind.Table };
+                string before = item.Key;
+                item.DisplayText = "Detail";
+                True(before != item.Key, "the cached key did not follow DisplayText");
+            });
+            Run("A word after a source stays a source tail", () =>
+            {
+                const string sql = "SELECT *\nFROM dbo.ZZJGH A LJ";
+                CompletionContext context = SqlCompletionAnalyzer.Analyze(sql, sql.Length - (sql.LastIndexOf('\n') + 1));
+                Equal(CompletionContextKind.TableSourceTail, context.Kind);
+                Equal("LJ", context.Prefix);
+            });
+            Run("A source tail offers the snippet but no columns", () =>
+            {
+                var snapshot = new MetadataSnapshot();
+                var table = new DatabaseObjectMetadata { Schema = "dbo", Name = "ZZJGH", Kind = CompletionItemKind.Table };
+                table.Columns.Add(new ColumnMetadata { Name = "LXTJGID", DataType = "int" });
+                snapshot.Objects.Add(table);
+                const string sql = "SELECT *\nFROM dbo.ZZJGH A LJ";
+                CompletionContext context = SqlCompletionAnalyzer.Analyze(sql, sql.Length - (sql.LastIndexOf('\n') + 1));
+                List<CompletionItem> shown = SqlCompletionAnalyzer.FilterCandidates(
+                    SqlCompletionAnalyzer.BuildCandidates(context, snapshot), context.Prefix);
+                True(shown.All(i => i.Kind != CompletionItemKind.Column),
+                    "a column was offered at a table source: " + string.Join(", ", shown.Select(i => i.DisplayText)));
+                True(shown.Any(i => i.DisplayText == "LJ"), "the exact snippet prefix is missing");
+            });
+            Run("An ON predicate offers the next join", () =>
+            {
+                const string sql = "SELECT *\nFROM dbo.ZZJGH A LEFT JOIN dbo.WDDDB B ON JS = A.DjLsh\nAND KHBM = A.DjState ";
+                CompletionContext context = SqlCompletionAnalyzer.Analyze(sql, sql.Length - (sql.LastIndexOf('\n') + 1));
+                Equal(CompletionContextKind.Predicate, context.Kind);
+                Equal("ON", context.PredicateOwner);
+                List<CompletionItem> items = SqlCompletionAnalyzer.BuildItems(context, new MetadataSnapshot());
+                int and = items.FindIndex(i => i.DisplayText == "AND");
+                int join = items.FindIndex(i => i.DisplayText == "LEFT JOIN");
+                True(and >= 0, "AND is missing from a finished ON predicate");
+                True(join > and, "LEFT JOIN should come after AND");
+                True(items.All(i => i.DisplayText != "GROUP BY"), "GROUP BY cannot follow a join condition");
+            });
+            Run("A WHERE predicate does not offer joins", () =>
+            {
+                const string sql = "SELECT * FROM dbo.WDDDH h WHERE h.DjLsh = 1 ";
+                CompletionContext context = SqlCompletionAnalyzer.Analyze(sql, sql.Length);
+                Equal("WHERE", context.PredicateOwner);
+                True(SqlCompletionAnalyzer.BuildItems(context, new MetadataSnapshot())
+                        .All(i => !i.DisplayText.EndsWith("JOIN", StringComparison.Ordinal)),
+                    "a join was offered after a WHERE condition");
+            });
+            Run("The resolved position publishes its clause and statement kind", () =>
+            {
+                const string select = "SELECT * FROM dbo.WDDDH h WHERE h.DjLsh = ";
+                CompletionContext selectContext = SqlCompletionAnalyzer.Analyze(select, select.Length);
+                Equal("WHERE", selectContext.EnclosingClause);
+                Equal("SELECT", selectContext.StatementKind);
+                Equal(SqlCaretKind.Predicate, selectContext.ResolvedKind);
+
+                const string update = "UPDATE dbo.WDDDH SET DjLsh = 1 WHERE ";
+                CompletionContext updateContext = SqlCompletionAnalyzer.Analyze(update, update.Length);
+                Equal("UPDATE", updateContext.StatementKind);
+                Equal("WHERE", updateContext.EnclosingClause);
+            });
+            // The semantic model patches an unfinished member with a placeholder, which moves every
+            // later offset; the caret has to be mapped into that text or the position is read from
+            // the wrong token.
+            Run("Caret maps past an inserted placeholder", () =>
+            {
+                const string patched = "SELECT h. FROM dbo.Header h WHERE h.Amount > 1 ";
+                Equal(SqlCaretKind.Predicate, SqlSemanticModel.Create(patched, patched.Length).Position.Kind);
+            });
+            Run("Member position does not need the caret at the end", () => Equal(SqlCaretKind.Member,
+                SqlSemanticModel.Create("SELECT c. FROM dbo.Customer c", "SELECT c.".Length).Position.Kind));
+            Run("Quoted member qualifier is read from tokens", () => Equal("dbo",
+                SqlSemanticModel.Create("SELECT * FROM \"dbo\".", 20).Position.Qualifier));
             Run("Quoted alias", () => Equal("sales.Order Header", SqlSemanticModel.Create("SELECT o. FROM [sales].[Order Header] AS [o]").Aliases["o"]));
             Run("Comment is ignored", () => True(!SqlSemanticModel.Create("-- FROM dbo.Secret s\nSELECT 1").Aliases.ContainsKey("s")));
+            Run("Language: default is English", () => Equal(LocalizationManager.EnglishLanguage, LocalizationManager.NormalizeLanguage(string.Empty)));
+            Run("Language: unsupported value falls back to English", () => Equal(LocalizationManager.EnglishLanguage, LocalizationManager.NormalizeLanguage("xx-YY")));
+            Run("Language: supported value is kept", () => Equal(LocalizationManager.ChineseLanguage, LocalizationManager.NormalizeLanguage("zh-CN")));
             Run("Unbounded UPDATE diagnostic", () => True(SqlSemanticModel.Create("UPDATE dbo.Customer SET Name='x'").Diagnostics.Exists(x => x.Code == "SQL_UNBOUNDED_DML")));
             Run("Bounded UPDATE", () => True(!SqlSemanticModel.Create("UPDATE dbo.Customer SET Name='x' WHERE Id=1").Diagnostics.Exists(x => x.Code == "SQL_UNBOUNDED_DML")));
             Run("WHERE context", () => Equal(CompletionContextKind.Predicate, SqlCompletionAnalyzer.Analyze("SELECT * FROM dbo.Customer c WHERE Na", 37).Kind));
@@ -144,6 +247,20 @@ namespace MSSQLTool.RegressionTests
             Run("EXEC recommends parameters", TestExecuteParameters);
             Run("Member recommends columns with FROM after caret", TestMemberColumns);
             Run("Predicate recommends operators", TestPredicateOperators);
+            Run("Completion keeps the selected item across refreshes", TestCompletionSelectionIsPreserved);
+            Run("Filtering cached candidates matches a full build", TestFilteringFromCachedCandidatesMatchesFullBuild);
+            Run("Recently used suggestions outrank stale ones", TestRecentlyUsedBoost);
+            Run("Completion history survives a reload", TestCompletionHistoryRoundTrip);
+            Run("Filtering 5000 candidates stays fast", TestFilterCandidatesStaysFast);
+            Run("Statement window isolates the caret statement", TestStatementWindowUsesCaretStatement);
+            Run("Statement window ignores quoted and commented separators", TestStatementWindowIgnoresQuotedAndCommentedSeparators);
+            Run("Statement window splits on GO", TestStatementWindowSplitsOnGo);
+            Run("Statement window keeps UPDATE SET together", TestStatementWindowKeepsUpdateSetTogether);
+            Run("Statement window keeps CTE together", TestStatementWindowKeepsCteWithMainSelect);
+            Run("Procedure body keeps SELECT separate after UPDATE without a semicolon", TestProcedureBodyUpdateWithoutSemicolonKeepsSelectContext);
+            Run("Segment-boundary match outranks a buried substring", TestSegmentBoundaryRanksBeforeSubstring);
+            Run("Outer scope does not leak a subquery alias", TestOuterScopeDoesNotLeakSubqueryAlias);
+            Run("Completion commit key respects the setting", TestCompletionCommitKeySetting);
             Run("CTE local object", () => True(SqlCompletionAnalyzer.Analyze("WITH cte(Id,Name) AS (SELECT 1,'x') SELECT cte.", 50).LocalObjects.Exists(x => x.Name == "cte")));
             Run("Temp table local object", () => True(SqlCompletionAnalyzer.Analyze("CREATE TABLE #t(Id int, Name nvarchar(20)); SELECT #t.", 55).LocalObjects.Exists(x => x.Name == "#t")));
             Run("Temp table survives GO analysis", () => True(SqlCompletionAnalyzer.Analyze("CREATE TABLE #t(Id int);\nGO\nSELECT #t.", 39).LocalObjects.Exists(x => x.Name == "#t")));
@@ -187,6 +304,8 @@ namespace MSSQLTool.RegressionTests
             Run("External object preserves database qualifier", TestExternalObjectInsertion);
             Run("Scalar function is not a FROM source", TestScalarFunctionSourceFiltering);
             Run("Table-valued function is a FROM source", TestTableValuedFunctionSourceFiltering);
+            Run("Table-valued function explains how it is called", TestTableValuedFunctionDocumentation);
+            Run("FROM offers the VALUES table constructor", TestTableValueConstructorItem);
             Run("Parameter type display", TestParameterTypeDisplay);
             Run("Completion suppresses comment trailing whitespace", () => True(SqlCompletionAnalyzer.Analyze("-- comment ", 11).Suppress));
             Run("Completion suppresses string trailing whitespace", () => True(SqlCompletionAnalyzer.Analyze("SELECT 'text ", 13).Suppress));
@@ -249,7 +368,46 @@ namespace MSSQLTool.RegressionTests
             Run("Independent parameter info", TestParameterInformation);
             Run("Resizable completion details pane", TestCompletionSplitter);
             Run("Completion popup constructs", TestCompletionPopupConstructs);
+
+            Run("Model: tokenizer keeps positions", TestSqlTokenizerKeepsPositions);
+            Run("Model: statement index splits batches", TestStatementIndexSplitsBatches);
+            Run("Model: caret statement lookup", TestStatementAtPrefersTheCaretStatement);
+            Run("Model: SELECT INTO scanner", TestSelectIntoScannerIsLinearAndExact);
+            Run("Model: scope tree resolves aliases", TestScopeTreeResolvesAliases);
+            Run("Model: scope tree isolates subqueries", TestScopeTreeDoesNotLeakSiblingSubqueries);
+            Run("Analysis: rule catalog is consistent", TestRuleCatalogIsConsistent);
+        Run("Analysis: duplicate alias stays inside the query block", TestDuplicateAliasStaysInsideTheQueryBlock);
+        Run("Completion: JOIN inserts only the table by default", TestJoinCompletionInsertsOnlyTheTableByDefault);
+        Run("Completion: JOIN offers each foreign key separately", TestJoinCompletionOffersEachKeySeparately);
+        Run("Completion: JOIN second stage appends only the ON clause", TestJoinCompletionSecondStageAppendsOnlyTheOnClause);
+        Run("Completion: JOIN target ranks ON first", TestJoinTargetAwaitingOnRanksOnFirst);
+        Run("Completion: JOIN target offers hints instead of AND/OR", TestJoinTargetTailOffersHints);
+        Run("Completion: ambiguous columns show their alias", TestAmbiguousColumnsCarryTheirAlias);
+        Run("Completion: FROM source tail ranks hint, joins and alias", TestFromSourceTailRanksContinuations);
+        Run("Completion: SELECT lists one SUM entry with its usage", TestSelectListShowsOneSumEntry);
+        Run("Completion: usage documentation is localized", TestUsageDocumentationIsLocalized);
+        Run("Completion: unique columns stay unqualified", TestUniqueColumnsStayUnqualified);
+            Run("Analysis: rules detect core patterns", TestRulesDetectCorePatterns);
+            Run("Analysis: settings and suppression", TestRulesRespectSettingsAndSuppression);
+            Run("Analysis: severity override", TestRuleSeverityOverrideIsApplied);
+        Run("Analysis: squiggle switches change the signature", TestAnalysisSquiggleSwitchesChangeSignature);
+            Run("Analysis: engine is deterministic", TestAnalysisEngineIsDeterministicAndCached);
+            Run("Analysis: broken SQL does not throw", TestAnalysisRulesDoNotThrowOnBrokenSql);
+            Run("Analysis: editor boundary", TestEditorBoundaryIsRespected);
+            Run("Analysis: fix at caret picks the caret diagnostic", TestFixAtCaretFindsTheCaretDiagnostic);
+            Run("Model: target scanner finds write targets", TestTargetScannerFindsWriteTargets);
+            Run("Completion: INSERT uses the scanned target", TestInsertCompletionUsesTheScannedTarget);
+            Run("Completion: CTE names are offered", TestCompletionOffersCteNames);
+            Run("Completion: EXEC parameters use the scanned procedure", TestExecuteParametersUseTheScannedProcedure);
+            Run("Completion: ALTER TABLE resolves the bracketed target", TestAlterTableCompletionResolvesBracketedTarget);
+            Run("Completion: nested scope members", TestCompletionResolvesNestedScopeMembers);
+            Run("Completion: joined columns are not duplicated", TestCompletionDoesNotDuplicateJoinedColumns);
+            Run("Completion: predicate state is classified", TestPredicateStateClassification);
+            Run("Completion: predicate prefers AND/OR after a complete condition", TestPredicateCompletionPrefersLogicalOperators);
+            Run("Completion: predicate separates operands and operators", TestPredicateCompletionKeepsOperandsAndOperatorsApart);
+            Run("Completion: predicate handles BETWEEN and groups", TestPredicateCompletionHandlesBetweenAndGroups);
             RunCompletionSelectionTests();
+            RunCompletionCorpusTests();            RunCompletionPerformanceTests();
             RunCompletionParameterInfoTests();
             RunUpdateHelperTests();
             RunStorageTests();
@@ -258,7 +416,46 @@ namespace MSSQLTool.RegressionTests
 
             RunSqlServerIntegration();
             // Must stay last: it compares the live settings with the snapshot taken before the run.
-            Run("Storage: the test run leaves the live settings alone", AssertLiveSettingsUnchanged);
+            Run("Refactor: variable rename uses batch scope", TestRenameVariableUsesBatchScope);
+        Run("Refactor: rename covers every reference in the statement", TestRenameChangesEveryReferenceInTheStatement);
+        Run("Refactor: rename stays inside the caret statement", TestRenameStaysInsideTheCaretStatement);
+        Run("Refactor: rename rejects a name that is already used", TestRenameRejectsANameThatIsAlreadyUsed);
+        Run("Refactor: rename keeps the quoting style", TestRenameKeepsTheQuotingStyle);
+         Run("Refactor: variable rename skips EXEC parameter names", TestRenameVariableSkipsExecParameterNames);
+         Run("Refactor: variable rename matches the whole name only", TestRenameVariableMatchesTheWholeNameOnly);
+         Run("Refactor: spans survive line/column conversion", TestRenameSpansSurviveLineColumnConversion);
+        Run("Refactor: qualify adds schema only to table references", TestQualifyAddsSchemaOnlyToTableReferences);
+        Run("Refactor: qualify skips CTEs, temp tables and qualified names", TestQualifySkipsCtesTempTablesAndQualifiedNames);
+        Run("Refactor: qualify handles multiple tables and updates", TestQualifyHandlesMultipleTablesAndUpdates);
+        Run("Highlight: every variable occurrence is related", TestHighlightIncludesEveryVariableOccurrence);
+        Run("Results: analytics computes column statistics", TestGridAnalyticsComputesColumnStatistics);
+        Run("Results: analytics respects the row cap", TestGridAnalyticsRespectsTheRowCap);
+        Run("Results: analytics handles an empty table", TestGridAnalyticsHandlesAnEmptyTable);
+        Run("Results: statistics bind to real properties", TestGridAnalyticsStatisticsAreBindableProperties);
+        Run("Results: text columns are never summed", TestGridAnalyticsTextColumnIsNeverSummed);
+        Run("Results: numeric and date ranges", TestGridAnalyticsNumericAndDateRanges);
+        Run("Results: statistics display text is readable", TestGridAnalyticsDisplayTextIsReadable);
+        Run("Results: analytics honours cancellation", TestGridAnalyticsHonoursCancellation);
+        Run("Results: analytics text is tab separated", TestGridAnalyticsTextIsTabSeparated);
+         Run("Results: analytics uses the real field name", TestGridAnalyticsUsesTheRealFieldName);
+         Run("History: databases use the renamed files", TestHistoryDatabasesUseTheRenamedFiles);
+        Run("History: query text entry shows a preview", TestQueryTextHistoryEntryShowsAPreview);
+        Run("History: query text hash is stable", TestQueryTextHistoryHashIsStable);
+        Run("History: SQL Prompt import follows the real schema", TestSqlPromptImportFollowsTheRealSchema);
+        Run("History: SQL Prompt saved stamp accepts FILETIME", TestSqlPromptSavedStampAcceptsFileTime);
+        Run("History: groups by file or tab", TestHistoryGroupsByFileOrTab);
+        Run("History: grouping survives an existing database", TestHistoryGroupingProbe);
+        Run("History: filter builds a conjunctive WHERE", TestHistoryFilterBuildsConjunctiveWhere);
+        Run("About: the appreciation image is embedded", TestAboutPageEmbedsTheAppreciationImage);
+         Run("Editor background: bundled pictures resolve", TestEditorBackgroundResolvesBundledPictures);
+         Run("Editor background: user files resolve", TestEditorBackgroundResolvesUserFiles);
+         Run("Editor background: bundled pictures are embedded", TestEditorBackgroundBundledPicturesAreEmbedded);
+         Run("Editor background: opacity clamps and dims", TestEditorBackgroundOpacityClampsAndDims);
+         Run("Editor background: settings normalize", TestEditorBackgroundSettingsNormalize);
+         Run("Editor background: stretch modes", TestEditorBackgroundStretchModes);
+         Run("Editor background: placement follows the fit mode", TestEditorBackgroundPlacementFollowsFit);
+         Run("Editor background: the picture is painted once", TestEditorBackgroundPaintsOnce);
+        Run("Storage: the test run leaves the live settings alone", AssertLiveSettingsUnchanged);
 
             foreach (string failure in Failures) Console.Error.WriteLine(failure);
             string skipped = SkippedCount == 0 ? string.Empty : $" {SkippedCount} integration test(s) skipped.";
@@ -285,7 +482,48 @@ namespace MSSQLTool.RegressionTests
             SettingsManager.OverrideCachedValue("SqlCompletionSettings", null);
         }
 
+        /// <summary>
+        /// The grouping rules run in SQL against a real database, and the store binds its data folder
+        /// once per process, so the probe verifies them in a child process with its own folder.
+        /// </summary>
+        private static void TestHistoryGroupingProbe()
+        {
+            string executable = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            var start = new ProcessStartInfo(executable, "--history-probe")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using (var process = Process.Start(start))
+            {
+                string output = process.StandardOutput.ReadToEnd();
+                string error = process.StandardError.ReadToEnd();
+                process.WaitForExit();
+
+                if (process.ExitCode != 0)
+                    throw new InvalidOperationException("history probe failed: " + output.Trim() + " " + error.Trim());
+            }
+        }
+
         private static void Run(string name, Action test) { TestCount++; try { test(); } catch (Exception ex) { Failures.Add(name + ": " + ex); } }
+
+        /// <summary>
+        /// Runs a test that asserts Chinese output.  English is the product default, so a test that
+        /// checks a translation has to ask for that language instead of relying on the default.
+        /// </summary>
+        private static void RunChinese(string name, Action test)
+        {
+            Run(name, () =>
+            {
+                string previous = LocalizationManager.CurrentLanguage;
+                LocalizationManager.SetLanguage(LocalizationManager.ChineseLanguage, false);
+                try { test(); }
+                finally { LocalizationManager.SetLanguage(previous, false); }
+            });
+        }
         private static void True(bool value) { if (!value) throw new InvalidOperationException("expected true"); }
         private static void Equal<T>(T expected, T actual) { if (!EqualityComparer<T>.Default.Equals(expected, actual)) throw new InvalidOperationException($"expected {expected}, actual {actual}"); }
         private static void Throws(Action action) { try { action(); } catch { return; } throw new InvalidOperationException("expected exception"); }
@@ -527,9 +765,12 @@ namespace MSSQLTool.RegressionTests
             var orders = new DatabaseObjectMetadata { Schema = "dbo", Name = "Orders", Kind = CompletionItemKind.Table };
             orders.Columns.Add(new ColumnMetadata { Name = "Id", DataType = "int" });
             metadata.Objects.Add(orders);
-            string sql = "SELECT * FROM dbo.Customer c JOIN ";
+            string sql = "SELECT * FROM dbo.Customer c JOIN Orders";
             List<CompletionItem> items = SqlCompletionAnalyzer.BuildItems(SqlCompletionAnalyzer.Analyze(sql, sql.Length), metadata);
-            True(items.Any(x => x.DisplayText == "dbo.Orders" && x.Description == "same-name column join" && x.InsertText.Contains(" ON ")));
+            // ON is offered once the typed name is complete, one entry per key.
+            True(items.Any(x => x.DisplayText.StartsWith("ON ", StringComparison.Ordinal) && x.InsertText.Contains(" ON ")
+                && x.Description != null && x.Description.StartsWith("join on", StringComparison.Ordinal)));
+            True(items.Any(x => x.DisplayText == "dbo.Orders" && !x.InsertText.Contains(" ON ")));
         }
 
         private static void TestCustomJoinRule()
@@ -939,7 +1180,10 @@ namespace MSSQLTool.RegressionTests
             const int caret = 7;
             CompletionContext context = SqlCompletionAnalyzer.Analyze(sql.Substring(0, caret), caret, sql.Substring(caret));
             List<CompletionItem> items = SqlCompletionAnalyzer.BuildItems(context, metadata);
-            Equal(2, items.Count(x => x.DisplayText == "Id"));
+            // Both sources own an Id, so each row names its own source instead of repeating "Id".
+            Equal(2, items.Count(x => x.DisplayText == "c.Id" || x.DisplayText == "o.Id"));
+            True(items.Any(x => x.DisplayText == "c.Id" && x.InsertText == "[c].[Id]"));
+            True(items.Any(x => x.DisplayText == "o.Id" && x.InsertText == "[o].[Id]"));
         }
 
         private static void TestGroupBySelectColumn()
@@ -1009,6 +1253,91 @@ namespace MSSQLTool.RegressionTests
             True(items.Any(x => x.DisplayText == "dbo.GetCustomers"));
         }
 
+        private static void TestTableValuedFunctionDocumentation()
+        {
+            // Every built-in table-valued function used to answer with the bare summary line
+            // "SQL Server table-valued function"; the details pane now carries its signature,
+            // a usage note and an example, exactly like a scalar function.
+            string[] builtIns = { "OPENJSON", "OPENXML", "STRING_SPLIT", "GENERATE_SERIES" };
+            foreach (string name in builtIns)
+            {
+                True(SqlCompletionAnalyzer.HasUsageNotes(name));
+                string english = SqlCompletionAnalyzer.FunctionDocumentation(name);
+                True(english.StartsWith(name + "(", StringComparison.Ordinal));
+                True(english.Contains("Example:"));
+                // The note has to describe the FROM form, not only the name.
+                True(english.IndexOf("table-valued", StringComparison.OrdinalIgnoreCase) >= 0);
+            }
+
+            List<CompletionItem> items = SqlCompletionAnalyzer.BuildItems(SqlCompletionAnalyzer.Analyze("SELECT * FROM ", 14), Metadata());
+            CompletionItem openJson = items.FirstOrDefault(i => i.DisplayText == "OPENJSON");
+            True(openJson != null);
+            True(openJson.DetailText.Contains("OPENJSON("));
+            True(openJson.DetailText.Contains("WITH ("));
+
+            // A user-defined table-valued function says how it is called before the column list.
+            MetadataSnapshot metadata = Metadata();
+            metadata.Objects.Add(new DatabaseObjectMetadata { Schema = "dbo", Name = "GetCustomers", Kind = CompletionItemKind.Function, IsTableValuedFunction = true });
+            items = SqlCompletionAnalyzer.BuildItems(SqlCompletionAnalyzer.Analyze("SELECT * FROM ", 14), metadata);
+            CompletionItem tvf = items.FirstOrDefault(i => i.DisplayText == "dbo.GetCustomers");
+            True(tvf != null);
+            True(tvf.DetailText.Contains("FROM/JOIN"));
+            True(tvf.DetailText.Contains("dbo.GetCustomers"));
+
+            // The same notes are translated, so a Chinese popup does not fall back to English.
+            string englishDoc = SqlCompletionAnalyzer.FunctionDocumentation("OPENJSON");
+            LocalizationManager.SetLanguage(LocalizationManager.ChineseLanguage, false);
+            try
+            {
+                True(!string.Equals(SqlCompletionAnalyzer.FunctionDocumentation("OPENJSON"), englishDoc, StringComparison.Ordinal));
+                CompletionItem translated = SqlCompletionAnalyzer.BuildItems(SqlCompletionAnalyzer.Analyze("SELECT * FROM ", 14), metadata)
+                    .FirstOrDefault(i => i.DisplayText == "dbo.GetCustomers");
+                True(translated != null && translated.DetailText.Contains("表值函数"));
+            }
+            finally
+            {
+                LocalizationManager.SetLanguage(LocalizationManager.EnglishLanguage, false);
+            }
+        }
+
+        private static void TestTableValueConstructorItem()
+        {
+            MetadataSnapshot metadata = Metadata();
+            List<CompletionItem> sources = SqlCompletionAnalyzer.BuildItems(SqlCompletionAnalyzer.Analyze("SELECT * FROM ", 14), metadata);
+            CompletionItem constructor = sources.FirstOrDefault(i => i.Kind == CompletionItemKind.Snippet && i.InsertText.Contains("VALUES"));
+            if (constructor == null)
+                throw new InvalidOperationException("VALUES snippet missing; list: " + string.Join(", ", sources.Select(i => i.Kind + ":" + i.DisplayText)));
+            Equal("VALUES (...)", constructor.DisplayText);
+            // It has to paste a whole derived table, not just the keyword.
+            if (!constructor.InsertText.StartsWith("(", StringComparison.Ordinal)) throw new InvalidOperationException("insert='" + constructor.InsertText + "'");
+            if (!constructor.InsertText.Contains("AS ")) throw new InvalidOperationException("insert='" + constructor.InsertText + "'");
+            if (!constructor.InsertText.Contains("c1") || !constructor.InsertText.Contains("c2")) throw new InvalidOperationException("insert='" + constructor.InsertText + "'");
+            if (!constructor.InsertText.Contains("${1:1}")) throw new InvalidOperationException("insert='" + constructor.InsertText + "'");
+            if (!constructor.DetailText.Contains("column list")) throw new InvalidOperationException("detail='" + constructor.DetailText + "'");
+
+            // Typing the name of the keyword brings it to the top of the source list.
+            List<CompletionItem> filtered = SqlCompletionAnalyzer.BuildItems(SqlCompletionAnalyzer.Analyze("SELECT * FROM VAL", 17), metadata);
+            if (filtered.Count == 0 || filtered[0].DisplayText != "VALUES (...)")
+                throw new InvalidOperationException("filtered: " + string.Join(", ", filtered.Select(i => i.DisplayText)));
+
+            // It is a source, not something that can follow SELECT.
+            List<CompletionItem> selectList = SqlCompletionAnalyzer.BuildItems(SqlCompletionAnalyzer.Analyze("SELECT ", 7), metadata);
+            True(!selectList.Any(i => i.DisplayText == "VALUES (...)"));
+
+            // The usage note is translated for the Chinese popup.
+            LocalizationManager.SetLanguage(LocalizationManager.ChineseLanguage, false);
+            try
+            {
+                CompletionItem translated = SqlCompletionAnalyzer.BuildItems(SqlCompletionAnalyzer.Analyze("SELECT * FROM ", 14), metadata)
+                    .FirstOrDefault(i => i.DisplayText == "VALUES (...)");
+                True(translated != null && translated.DetailText.Contains("临时表"));
+            }
+            finally
+            {
+                LocalizationManager.SetLanguage(LocalizationManager.EnglishLanguage, false);
+            }
+        }
+
         private static void TestParameterTypeDisplay()
         {
             Equal("nvarchar(20)", new RoutineParameterMetadata { DataType = "nvarchar", MaxLength = 40 }.TypeDisplay);
@@ -1044,7 +1373,7 @@ namespace MSSQLTool.RegressionTests
             metadata.Objects.Add(orders);
             CompletionContext context = SqlCompletionAnalyzer.Analyze("SELECT c.Id FROM dbo.Customer c JOIN dbo.Orders o ON c.Id=o.Id GROUP BY c.Id, ", 80);
             List<CompletionItem> items = SqlCompletionAnalyzer.BuildItems(context, metadata);
-            True(items.Any(x => x.DisplayText == "Id" && x.InsertText == "[o].[Id]") && !items.Any(x => x.InsertText == "[c].[Id]"));
+            True(items.Any(x => x.DisplayText == "o.Id" && x.InsertText == "[o].[Id]") && !items.Any(x => x.InsertText == "[c].[Id]"));
         }
 
         private static void TestQualifiedTypedValue()
@@ -1118,10 +1447,10 @@ namespace MSSQLTool.RegressionTests
             metadata.Objects.Add(orders);
             var fk = new ForeignKeyMetadata { ParentObject = "dbo.Orders", ReferencedObject = "dbo.Customer" };
             fk.ParentColumns.Add("CustomerId"); fk.ReferencedColumns.Add("Id"); metadata.ForeignKeys.Add(fk);
-            string before = "SELECT * FROM dbo.Customer c JOIN dbo.";
+            string before = "SELECT * FROM dbo.Customer c JOIN dbo.Orders";
             CompletionContext context = SqlCompletionAnalyzer.Analyze(before, before.Length);
             List<CompletionItem> items = SqlCompletionAnalyzer.BuildItems(context, metadata);
-            True(context.IsJoinSource && items.Any(x => x.DisplayText == "dbo.Orders" && x.InsertText.Contains(" ON ")));
+            True(context.IsJoinSource && items.Any(x => x.DisplayText.StartsWith("ON ", StringComparison.Ordinal) && x.InsertText.Contains(" ON ")));
         }
 
         private static void TestSpecialExpressionKinds()

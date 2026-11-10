@@ -50,12 +50,15 @@ namespace MSSQLTool.Completion
             int roomBelow = workArea.Bottom - belowTop;
             int roomAbove = caretPoint.Y - Gap - workArea.Top;
 
-            bool placeBelow = roomBelow >= roomAbove;
+            bool belowFits = roomBelow >= MinimumUsableHeight;
+            bool aboveFits = roomAbove >= MinimumUsableHeight;
+            // Prefer below the caret, but only when that side has usable room.  When the caret is
+            // near the bottom of the screen, flipping above keeps a real list visible instead of
+            // squeezing a 40-pixel strip below the line.
+            bool placeBelow = belowFits != aboveFits ? belowFits : roomBelow >= roomAbove;
             int room = Math.Max(0, placeBelow ? roomBelow : roomAbove);
 
-            // Cap the height to the room on the chosen side; this is what guarantees the caret line
-            // stays visible. The minimum is lowered as far as necessary so the cap always applies.
-            int height = Math.Max(1, Math.Min(preferred.Height, Math.Max(room, MinimumUsableHeight)));
+            int height = Math.Max(1, Math.Min(preferred.Height, room > 0 ? room : preferred.Height));
             if (height > room) height = Math.Max(1, room);
 
             int minimumHeight = Math.Min(preferredMinimum.Height, height);

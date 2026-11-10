@@ -92,9 +92,10 @@ namespace MSSQLTool
                 if (completionController.HandleNavigation(nCmdID))
                     return VSConstants.S_OK;
 
-                // Tab is the only completion commit key; Enter must always insert
-                // a newline so multi-statement editing stays predictable.
-                if (nCmdID == (uint)VSConstants.VSStd2KCmdID.TAB
+                // Tab is the default completion commit key; Enter can be enabled in the SQL
+                // completion settings.  When the popup is not visible TryCommit returns false, so
+                // Enter still inserts a newline and Tab still indents.
+                if (ShouldCommitCompletion(SettingsManager.GetSqlCompletionSettings().completionCommitKey, nCmdID)
                     && completionController.TryCommit())
                     return VSConstants.S_OK;
 
@@ -161,6 +162,19 @@ namespace MSSQLTool
                 || nCmdID == (uint)VSConstants.VSStd2KCmdID.TAB
                 || nCmdID == (uint)VSConstants.VSStd2KCmdID.COMPLETEWORD
                 || nCmdID == (uint)VSConstants.VSStd2KCmdID.SHOWMEMBERLIST;
+        }
+
+        internal static bool ShouldCommitCompletion(SettingsManager.CompletionCommitKey key, uint nCmdID)
+        {
+            return ShouldCommitCompletion(key, nCmdID == (uint)VSConstants.VSStd2KCmdID.TAB,
+                nCmdID == (uint)VSConstants.VSStd2KCmdID.RETURN);
+        }
+
+        internal static bool ShouldCommitCompletion(SettingsManager.CompletionCommitKey key, bool tabKey, bool enterKey)
+        {
+            return key == SettingsManager.CompletionCommitKey.Tab ? tabKey
+                : key == SettingsManager.CompletionCommitKey.Enter ? enterKey
+                : tabKey || enterKey;
         }
 
         private bool ShouldProcessSnippetKey(uint nCmdID)

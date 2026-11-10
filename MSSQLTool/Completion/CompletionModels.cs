@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MSSQLTool.Model;
 
 namespace MSSQLTool.Completion
 {
@@ -8,13 +9,177 @@ namespace MSSQLTool.Completion
 
     internal sealed class CompletionItem
     {
-        public string DisplayText { get; set; }
-        public string InsertText { get; set; }
-        public string Description { get; set; }
-        public CompletionItemKind Kind { get; set; }
+        private string displayText;
+        private CompletionItemKind kind;
+        private string key;
+        private string scopeKey;
+        private string usageKey;
+        private string matchText;
+        private string bareMatchText;
+        private uint matchMask;
+        private bool matchMaskReady;
+
+        public string DisplayText
+        {
+            get { return displayText; }
+            set { displayText = value; key = null; usageKey = null; matchText = null; bareMatchText = null; matchMaskReady = false; }
+        }
+
+        public string InsertText
+        {
+            get
+            {
+                if (insertText == null && insertTextProvider != null)
+                {
+                    insertText = insertTextProvider();
+                    insertTextProvider = null;
+                }
+                if (insertText == null && ObjectSource != null)
+                    insertText = SqlCompletionAnalyzer.ObjectInsertText(ObjectSource, OmitSchema, AutoAlias ? AliasContext : null);
+                return insertText;
+            }
+            set { insertText = value; insertTextProvider = null; }
+        }
+
+        private string insertText;
+        private Func<string> insertTextProvider;
+
+        /// <summary>Metadata row this candidate was built from, when the text can be derived lazily.</summary>
+        internal DatabaseObjectMetadata ObjectSource { get; set; }
+        internal bool OmitSchema { get; set; }
+        internal bool AutoAlias { get; set; }
+        internal CompletionContext AliasContext { get; set; }
+
+        /// <summary>
+        /// Defers building the inserted text (schema quoting, auto alias) until a row is actually
+        /// committed.  A 20k-table source list only reads 200 descriptions and one insert text.
+        /// </summary>
+        internal Func<string> InsertTextProvider
+        {
+            get { return insertTextProvider; }
+            set { insertTextProvider = value; insertText = null; }
+        }
+
+        public CompletionItemKind Kind
+        {
+            get { return kind; }
+            set { kind = value; key = null; usageKey = null; }
+        }
+
+        /// <summary>
+        /// Identity used by the popup's refresh diff.  Built once per text change instead of once
+        /// per comparison, which used to allocate a string for every row on every keystroke.
+        /// </summary>
+        internal string Key
+        {
+            get
+            {
+                if (key == null) key = kind + "|" + displayText;
+                return key;
+            }
+        }
         public bool IsSystem { get; set; }
         public int Score { get; set; }
-        public string ScopeKey { get; set; }
+        public string ScopeKey
+        {
+            get { return scopeKey; }
+            set { scopeKey = value; usageKey = null; }
+        }
+
+        /// <summary>MRU lookup key, built once per candidate list instead of once per keystroke.</summary>
+        internal string UsageKey
+        {
+            get
+            {
+                if (usageKey == null) usageKey = (scopeKey ?? string.Empty) + "|" + kind + "|" + displayText;
+                return usageKey;
+            }
+        }
+
+        /// <summary>Display text without the leading '@' used by the matcher, computed once.</summary>
+        internal string MatchText
+        {
+            get
+            {
+                if (matchText == null) matchText = (displayText ?? string.Empty).TrimStart('@');
+                return matchText;
+            }
+        }
+
+        /// <summary>The part after the last dot, computed once instead of allocating per keystroke.</summary>
+        internal string BareMatchText
+        {
+            get
+            {
+                if (bareMatchText == null)
+                {
+                    string text = MatchText;
+                    int dot = text.LastIndexOf('.');
+                    bareMatchText = dot < 0 ? text : text.Substring(dot + 1);
+                }
+                return bareMatchText;
+            }
+        }
+
+        /// <summary>
+        /// Bitmask of the ASCII letters in the display text.  A typed prefix whose letters are
+        /// not all present can never match by prefix, initials, substring or in-order channels;
+        /// rejecting it with one bit test keeps a 20k-object database cheap.
+        /// </summary>
+        internal uint MatchMask
+        {
+            get
+            {
+                if (!matchMaskReady)
+                {
+                    string text = MatchText;
+                    uint mask = 0;
+                    for (int i = 0; i < text.Length; i++)
+                    {
+                        char c = text[i];
+                        if (c >= 'a' && c <= 'z') mask |= 1u << (c - 'a');
+                        else if (c >= 'A' && c <= 'Z') mask |= 1u << (c - 'A');
+                    }
+                    matchMask = mask;
+                    matchMaskReady = true;
+                }
+                return matchMask;
+            }
+        }
+
+        // Same idea for the one-line description: a select list carries ~200 candidates and their
+        // texts are only read for the row that is actually shown, so the keyword and function
+        // descriptions are supplied as a provider and built on first read.
+        private string description;
+        private Func<string> descriptionProvider;
+
+        public string Description
+        {
+            get
+            {
+                if (description == null && descriptionProvider != null)
+                {
+                    description = descriptionProvider();
+                    descriptionProvider = null;
+                }
+                if (description == null && ObjectSource != null) description = ObjectSource.DescriptionSummary;
+                return description;
+            }
+            set
+            {
+                description = value;
+                descriptionProvider = null;
+            }
+        }
+
+        internal Func<string> DescriptionProvider
+        {
+            get { return descriptionProvider; }
+            set { descriptionProvider = value; description = null; }
+        }
+
+        /// <summary>True while the description has not been built yet (used by the perf guard).</summary>
+        internal bool DescriptionIsDeferred => description == null && (descriptionProvider != null || ObjectSource != null);
 
         // Detail strings can be large (full column lists, module definitions).
         // They are built on first read only, so candidate construction per
@@ -27,6 +192,7 @@ namespace MSSQLTool.Completion
             get
             {
                 if (detailText == null && detailTextProvider != null) detailText = detailTextProvider();
+                if (detailText == null && ObjectSource != null) detailText = SqlCompletionAnalyzer.ObjectDetail(ObjectSource);
                 return detailText;
             }
             set
@@ -44,8 +210,10 @@ namespace MSSQLTool.Completion
 
         internal CompletionItem Clone() => new CompletionItem
         {
-            DisplayText = DisplayText, InsertText = InsertText, Description = Description,
-            Kind = Kind, IsSystem = IsSystem, Score = Score,
+            DisplayText = DisplayText, InsertText = InsertText,
+            Kind = Kind, IsSystem = IsSystem, Score = Score, ScopeKey = ScopeKey,
+            ObjectSource = ObjectSource, OmitSchema = OmitSchema, AutoAlias = AutoAlias, AliasContext = AliasContext,
+            description = description, descriptionProvider = descriptionProvider,
             detailText = detailText, detailTextProvider = detailTextProvider
         };
 
@@ -81,6 +249,12 @@ namespace MSSQLTool.Completion
 
         private string descriptionSummary;
         internal string DescriptionSummary => descriptionSummary ?? (descriptionSummary = Kind + (string.IsNullOrWhiteSpace(Database) ? "" : " in " + Database));
+
+        private string displayQualifiedName;
+        internal string DisplayQualifiedName => displayQualifiedName ?? (displayQualifiedName =
+            (IsExternal && !string.IsNullOrWhiteSpace(Server) ? Server + "." : "")
+            + (IsExternal && !string.IsNullOrWhiteSpace(Database) ? Database + "." : "")
+            + (string.IsNullOrEmpty(Schema) ? Name : Schema + "." + Name));
 
         private string detail;
         private int detailColumnCount = -1;
@@ -303,6 +477,11 @@ namespace MSSQLTool.Completion
         private readonly Dictionary<string, List<DatabaseObjectMetadata>> bySimpleName = new Dictionary<string, List<DatabaseObjectMetadata>>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<DatabaseObjectMetadata>> byQualifiedName = new Dictionary<string, List<DatabaseObjectMetadata>>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, List<ForeignKeyMetadata>> foreignKeysBySimpleName = new Dictionary<string, List<ForeignKeyMetadata>>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<DatabaseObjectMetadata> dataSources = new List<DatabaseObjectMetadata>();
+        private readonly List<DatabaseObjectMetadata> procedures = new List<DatabaseObjectMetadata>();
+
+        public IReadOnlyList<DatabaseObjectMetadata> DataSources => dataSources;
+        public IReadOnlyList<DatabaseObjectMetadata> Procedures => procedures;
 
         public MetadataObjectIndex(MetadataSnapshot snapshot)
         {
@@ -311,6 +490,8 @@ namespace MSSQLTool.Completion
             {
                 Add(bySimpleName, DatabaseIdentifier.NormalizeSqlServer(item.Name ?? string.Empty), item);
                 Add(byQualifiedName, DatabaseIdentifier.NormalizeSqlServer(item.QualifiedName ?? string.Empty), item);
+                if (SqlCompletionAnalyzer.IsDataSource(item)) dataSources.Add(item);
+                else if (item.Kind == CompletionItemKind.Procedure) procedures.Add(item);
             }
             foreach (ForeignKeyMetadata foreignKey in snapshot.ForeignKeys)
             {
@@ -393,12 +574,22 @@ namespace MSSQLTool.Completion
         General, DataSource, Member, Join, InsertBody, InsertColumns, UpdateSet,
         ExecuteObject, ExecuteArguments, ExecuteArgumentValue, FunctionArguments, Predicate, GroupBy, OrderBy, MergeSource,
         SelectList, WindowPartitionBy, WindowOrderBy, Output, Pivot, CreateTableDefinition, ConstraintColumns,
-        AlterTableAction, AlterTableColumn, IndexColumns
+        AlterTableAction, AlterTableColumn, IndexColumns,
+        // "FROM dbo.Orders |" — the source itself is written, what follows is a hint, a join or an alias.
+        TableSourceTail,
+        // "INNER JOIN dbo.Orders o |" — the join target is written: ON, a table hint or the next join.
+        JoinSourceTail,
+        // "FROM dbo.Orders o WITH (|" — the hint name is the body of the parenthesis.
+        TableHint,
+        // "... OPTION (|" — the query hint is the body of the parenthesis.
+        QueryHint
     }
 
     internal sealed class CompletionContext
     {
         public CompletionContextKind Kind { get; set; }
+        public SqlPredicateState PredicateState { get; set; }
+        public int PredicateDepth { get; set; }
         public string Prefix { get; set; }
         public string Qualifier { get; set; }
         public int ReplacementStartColumn { get; set; }
@@ -420,6 +611,11 @@ namespace MSSQLTool.Completion
         public string MaskedStatement { get; set; }
         public List<DeclaredVariableInfo> DeclaredVariables { get; set; }
 
+        // Absolute caret offset into DocumentText, kept so the completion pipeline can ask the
+        // shared document model which aliases are visible instead of guessing from text.
+        public int CaretOffset { get; set; } = -1;
+        public string DocumentText { get; set; }
+
         public HashSet<string> UsedParameters { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> ReferencedColumns { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> GroupByColumns { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -434,6 +630,41 @@ namespace MSSQLTool.Completion
         public int ArgumentIndex { get; set; }
         public bool IsJoinSource { get; set; }
         public bool IsDataSourceMember { get; set; }
+        // "… JOIN dbo.Orders o |" — the only token that can follow is ON.  Set from the
+        // masked statement so the popup can rank ON above the column list.
+        public bool AwaitingJoinPredicate { get; set; }
+        // "FROM dbo.Orders |": the written source object and whether an alias already follows it.
+        public string TableSourceName { get; set; }
+        public bool TableAliasWritten { get; set; }
+        // True when the caret position resolver answered instead of the text-shaped guesses; the
+        // corpus test uses it to keep a second classifier from creeping back.
+        public bool PositionResolved { get; set; }
+
+        /// <summary>
+        /// Set when the typed word is exactly a snippet prefix.  The snippet is then added on top of
+        /// whatever the position allows instead of switching the whole list to "general", which used
+        /// to offer columns and functions at a table source.
+        /// </summary>
+        public string ExactSnippetPrefix { get; set; }
+
+        /// <summary>
+        /// The clause that owns the predicate: WHERE, HAVING or ON.  Only an ON predicate can be
+        /// followed by another JOIN.
+        /// </summary>
+        public string PredicateOwner { get; set; }
+
+        /// <summary>The position the resolver answered, kept so a downstream layer can be checked
+        /// against it instead of silently replacing it.</summary>
+        public SqlCaretKind ResolvedKind { get; set; }
+
+        /// <summary>The clause that owns the caret (SELECT, FROM, JOIN, ON, WHERE, GROUP BY, ...).</summary>
+        public string EnclosingClause { get; set; }
+
+        /// <summary>SELECT / INSERT / UPDATE / DELETE / MERGE / DDL / EXEC, from the tree.</summary>
+        public string StatementKind { get; set; }
+        // True when the parse tree is what placed the caret; false means the token scan did.  The
+        // position has one entry point either way.
+        public bool PositionDecidedByTree { get; set; }
         public bool HasOmittedSchemaQualifier { get; set; }
     }
 

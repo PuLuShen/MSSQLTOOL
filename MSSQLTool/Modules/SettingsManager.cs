@@ -250,6 +250,14 @@ ORDER BY sd.[name];
             CtrlSpace
         }
 
+        /// <summary>Which key accepts the highlighted completion row.</summary>
+        public enum CompletionCommitKey
+        {
+            Tab = 0,
+            Enter = 1,
+            TabOrEnter = 2
+        }
+
         public class SnippetSettings
         {
             public bool useSnippets = false;
@@ -425,6 +433,7 @@ ORDER BY sd.[name];
             public bool trustServerCertificate = true;
             public bool useSquareBrackets = true;
             public bool showObjectDetails = true;
+        public bool preferRecentlyUsed = true;
             public bool enableColumnPicker = true;
             public bool autoAddAliases = false;
             public string aliasPrefixToIgnore = "tbl_,vw_";
@@ -440,8 +449,9 @@ ORDER BY sd.[name];
             public string resultsPanelSize = string.Empty;
             /// <summary>Show the statistics panel automatically when the result grid is clicked.</summary>
             public bool resultsPanelAutoShow = true;
-            public int delayMilliseconds = 120;
+            public int delayMilliseconds = 0;
             public int maximumItems = 200;
+            public CompletionCommitKey completionCommitKey = CompletionCommitKey.Tab;
         }
 
         public static string GetUiLanguage()
@@ -1068,19 +1078,161 @@ ORDER BY sd.[name];
         }
         public static SqlCompletionSettings GetSqlCompletionSettings()
         {
+            lock (completionCacheLock)
+            {
+                if (completionCache != null && (DateTime.UtcNow - completionCacheUtc).TotalMilliseconds < CompletionCacheMilliseconds)
+                    return completionCache;
+            }
+
             try
             {
                 var value = JsonConvert.DeserializeObject<SqlCompletionSettings>(GetRegisterValue("SqlCompletionSettings"));
-                if (value != null) { value.delayMilliseconds = Math.Max(0, Math.Min(1000, value.delayMilliseconds)); value.maximumItems = Math.Max(20, Math.Min(1000, value.maximumItems)); return value; }
+                if (value != null)
+                {
+                    value.delayMilliseconds = Math.Max(0, Math.Min(1000, value.delayMilliseconds));
+                    value.maximumItems = Math.Max(20, Math.Min(1000, value.maximumItems));
+                    lock (completionCacheLock) { completionCache = value; completionCacheUtc = DateTime.UtcNow; }
+                    return value;
+                }
             }
             catch { }
-            return new SqlCompletionSettings();
+
+            var fallback = new SqlCompletionSettings();
+            lock (completionCacheLock) { completionCache = fallback; completionCacheUtc = DateTime.UtcNow; }
+            return fallback;
         }
 
         public static bool SaveSqlCompletionSettings(SqlCompletionSettings settings)
         {
-            return SaveRegisterValue("SqlCompletionSettings", JsonConvert.SerializeObject(settings ?? new SqlCompletionSettings()));
+            bool saved = SaveRegisterValue("SqlCompletionSettings", JsonConvert.SerializeObject(settings ?? new SqlCompletionSettings()));
+            lock (completionCacheLock) { completionCache = null; completionCacheUtc = DateTime.MinValue; }
+            return saved;
         }
+
+        /// <summary>
+        /// Editor background image options.  Stored as a single JSON value so an older build that
+        /// does not know a newer field can never leave the editor half configured.
+        /// </summary>
+        public class EditorBackgroundSettings
+        {
+            public const string BuiltInPrefix = "builtin:";
+            public const string DefaultImage = BuiltInPrefix + "sage-breeze";
+
+            public const int MinOpacityPercent = 5;
+            public const int MaxOpacityPercent = 100;
+
+            public bool enabled;
+            public string image = DefaultImage;
+            public int opacityPercent = 16;
+            public string fit = "UniformToFill";
+            public bool dimOnDarkTheme = true;
+
+            /// <summary>
+            /// Draw the picture as one layer behind the editor (the ClaudiaIDE architecture) instead of
+            /// composing it into the text format map.  Kept in the settings file so a shell where the
+            /// text surface stays opaque can be switched back without a rebuild.
+            /// </summary>
+            public bool useBackdrop = true;
+
+            public EditorBackgroundSettings Normalize()
+            {
+                opacityPercent = Math.Max(MinOpacityPercent, Math.Min(MaxOpacityPercent, opacityPercent));
+                image = string.IsNullOrWhiteSpace(image) ? DefaultImage : image.Trim();
+                fit = NormalizeFit(fit);
+                return this;
+            }
+
+            /// <summary>Accepts the four supported fill modes and falls back to the safe crop.</summary>
+            public static string NormalizeFit(string value)
+            {
+                switch ((value ?? string.Empty).Trim().ToLowerInvariant())
+                {
+                    case "fill": return "Fill";
+                    case "uniform": return "Uniform";
+                    case "tile": return "Tile";
+                    default: return "UniformToFill";
+                }
+            }
+        }
+
+        private static readonly object editorBackgroundCacheLock = new object();
+        private static EditorBackgroundSettings editorBackgroundCache;
+        private static DateTime editorBackgroundCacheUtc;
+
+        public static EditorBackgroundSettings GetEditorBackgroundSettings()
+        {
+            lock (editorBackgroundCacheLock)
+            {
+                if (editorBackgroundCache != null && (DateTime.UtcNow - editorBackgroundCacheUtc).TotalMilliseconds < CompletionCacheMilliseconds)
+                    return editorBackgroundCache;
+            }
+
+            try
+            {
+                var parsed = JsonConvert.DeserializeObject<EditorBackgroundSettings>(GetRegisterValue("EditorBackgroundSettings"));
+                if (parsed != null)
+                {
+                    parsed.Normalize();
+                    lock (editorBackgroundCacheLock) { editorBackgroundCache = parsed; editorBackgroundCacheUtc = DateTime.UtcNow; }
+                    return parsed;
+                }
+            }
+            catch { }
+
+            var fallback = new EditorBackgroundSettings();
+            lock (editorBackgroundCacheLock) { editorBackgroundCache = fallback; editorBackgroundCacheUtc = DateTime.UtcNow; }
+            return fallback;
+        }
+
+        public static bool SaveEditorBackgroundSettings(EditorBackgroundSettings settings)
+        {
+            bool saved = SaveRegisterValue("EditorBackgroundSettings",
+                JsonConvert.SerializeObject((settings ?? new EditorBackgroundSettings()).Normalize()));
+            lock (editorBackgroundCacheLock) { editorBackgroundCache = null; editorBackgroundCacheUtc = DateTime.MinValue; }
+            return saved;
+        }
+
+        // The completion path reads these settings several times per keystroke; deserializing the
+        // registry value every time costs more than the rest of the filter.  A short-lived snapshot
+        // is invalidated explicitly by SaveSqlCompletionSettings (and expires so an external edit
+        // is still picked up).
+        private const int CompletionCacheMilliseconds = 3000;
+        private static readonly object completionCacheLock = new object();
+        private static SqlCompletionSettings completionCache;
+        private static DateTime completionCacheUtc = DateTime.MinValue;
+
+        /// <summary>
+        /// Code analysis settings are stored next to the completion settings so an upgrade keeps
+        /// the user's rule severities.  A missing or unreadable value falls back to the defaults
+        /// (A/B/C rules on, style rules off, Info diagnostics only in the tool window).
+        /// </summary>
+        internal static MSSQLTool.Analysis.AnalysisSettings GetAnalysisSettings()
+        {
+            try
+            {
+                var value = JsonConvert.DeserializeObject<MSSQLTool.Analysis.AnalysisSettings>(GetRegisterValue("AnalysisSettings"));
+                if (value != null)
+                {
+                    value.ruleSeverity = value.ruleSeverity ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    return value;
+                }
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug(ex, "Could not read the code analysis settings.");
+            }
+            return new MSSQLTool.Analysis.AnalysisSettings();
+        }
+
+        internal static bool SaveAnalysisSettings(MSSQLTool.Analysis.AnalysisSettings settings)
+        {
+            bool saved = SaveRegisterValue("AnalysisSettings", JsonConvert.SerializeObject(settings ?? new MSSQLTool.Analysis.AnalysisSettings()));
+            if (saved) AnalysisSettingsVersion++;
+            return saved;
+        }
+
+        /// <summary>Bumped on every successful save so open editors know to reload the rules.</summary>
+        internal static int AnalysisSettingsVersion { get; private set; }
 
     }
 }

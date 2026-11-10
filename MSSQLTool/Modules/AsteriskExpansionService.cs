@@ -315,19 +315,33 @@ namespace MSSQLTool
             {
                 foreach (TSqlStatement statement in batch.Statements)
                 {
-                    SelectStatement selectStatement = GetSelectStatement(statement);
-                    TSqlFragment selectFragment = selectStatement != null && selectStatement.FragmentLength > 0 ? (TSqlFragment)selectStatement : selectStatement?.QueryExpression;
-                    if (selectStatement == null || selectFragment == null || !ContainsCursor(fragment, selectFragment, cursorLine, cursorColumn))
-                        continue;
+                    foreach (SelectStatement selectStatement in GetSelectStatements(statement))
+                    {
+                        TSqlFragment selectFragment = selectStatement.FragmentLength > 0 ? (TSqlFragment)selectStatement : selectStatement.QueryExpression;
+                        if (selectFragment == null || !ContainsCursor(fragment, selectFragment, cursorLine, cursorColumn))
+                            continue;
 
-                    if (selectFragment == null || selectFragment.StartOffset < 0 || selectFragment.FragmentLength <= 0 || selectFragment.StartOffset + selectFragment.FragmentLength > fullText.Length)
-                        return false;
+                        if (selectFragment.StartOffset < 0 || selectFragment.FragmentLength <= 0
+                            || selectFragment.StartOffset + selectFragment.FragmentLength > fullText.Length)
+                            return false;
 
-                    return TryBuildSelectInfo(script, fullText, selectStatement, starOffset, out selectInfo);
+                        return TryBuildSelectInfo(script, fullText, selectStatement, starOffset, out selectInfo);
+                    }
                 }
             }
 
             return false;
+        }
+
+        private static IEnumerable<SelectStatement> GetSelectStatements(TSqlStatement statement)
+        {
+            if (statement == null) yield break;
+            SelectStatement select = GetSelectStatement(statement);
+            if (select != null) yield return select;
+
+            foreach (TSqlStatement nested in GetNestedStatements(statement))
+                foreach (SelectStatement nestedSelect in GetSelectStatements(nested))
+                    yield return nestedSelect;
         }
 
         private static SelectStatement GetSelectStatement(TSqlStatement statement)
@@ -341,6 +355,45 @@ namespace MSSQLTool
             return null;
         }
 
+        /// <summary>
+        /// The statements inside a module body or control-flow block.  A SELECT after
+        /// CREATE PROCEDURE ... AS is a normal statement in that list, not a top-level
+        /// select, so tab-expansion has to walk these containers explicitly.
+        /// </summary>
+        private static IEnumerable<TSqlStatement> GetNestedStatements(TSqlStatement statement)
+        {
+            StatementList list = null;
+            if (statement is ProcedureStatementBody procedure) list = procedure.StatementList;
+            else if (statement is FunctionStatementBody function) list = function.StatementList;
+            else if (statement is TriggerStatementBody trigger) list = trigger.StatementList;
+            else if (statement is BeginEndBlockStatement block) list = block.StatementList;
+
+            if (list != null)
+            {
+                foreach (TSqlStatement child in list.Statements) yield return child;
+                yield break;
+            }
+
+            if (statement is TryCatchStatement tryCatch)
+            {
+                if (tryCatch.TryStatements != null)
+                    foreach (TSqlStatement child in tryCatch.TryStatements.Statements) yield return child;
+                if (tryCatch.CatchStatements != null)
+                    foreach (TSqlStatement child in tryCatch.CatchStatements.Statements) yield return child;
+                yield break;
+            }
+
+            if (statement is IfStatement ifStatement)
+            {
+                if (ifStatement.ThenStatement != null) yield return ifStatement.ThenStatement;
+                if (ifStatement.ElseStatement != null) yield return ifStatement.ElseStatement;
+                yield break;
+            }
+
+            if (statement is WhileStatement whileStatement && whileStatement.Statement != null)
+                yield return whileStatement.Statement;
+        }
+
         internal static bool CanAnalyzeAsteriskContext(string fullText, int starOffset)
         {
             var parser = new TSql170Parser(false);
@@ -349,10 +402,8 @@ namespace MSSQLTool
             if (script == null || (errors != null && errors.Count > 0)) return false;
             foreach (TSqlBatch batch in script.Batches)
                 foreach (TSqlStatement statement in batch.Statements)
-                {
-                    SelectStatement select = GetSelectStatement(statement);
-                    if (select != null && TryBuildSelectInfo(script, fullText, select, starOffset, out SelectInfo _)) return true;
-                }
+                    foreach (SelectStatement select in GetSelectStatements(statement))
+                        if (TryBuildSelectInfo(script, fullText, select, starOffset, out SelectInfo _)) return true;
             return false;
         }
 

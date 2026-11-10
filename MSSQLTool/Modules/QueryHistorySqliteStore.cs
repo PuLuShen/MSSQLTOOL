@@ -61,7 +61,7 @@ namespace MSSQLTool
         private static bool nativeLibraryLocated;
 
         /// <summary>Name of the history database file.</summary>
-        public const string DatabaseFileName = "query-history.db";
+        public const string DatabaseFileName = "execution-history.db";
 
         /// <summary>Where the history database is kept. Follows the configured data folder.</summary>
         public static string DatabasePath => Path.Combine(AppPaths.QueryHistoryFolder, DatabaseFileName);
@@ -106,6 +106,7 @@ namespace MSSQLTool
 
                 try
                 {
+                    HistoryDatabaseMigration.EnsureMigrated();
                     LoadNativeEngine();
                     Batteries_V2.Init();
                     engineVersion = raw.sqlite3_libversion().utf8_to_string();
@@ -523,7 +524,7 @@ namespace MSSQLTool
         }
 
         /// <summary>Minimal wrapper over a SQLite handle: statement lifetime, binding and stepping.</summary>
-        private sealed class SqliteDatabase : IDisposable
+        internal sealed class SqliteDatabase : IDisposable
         {
             private sqlite3 handle;
 
@@ -533,11 +534,22 @@ namespace MSSQLTool
 
             public static SqliteDatabase Open(string path)
             {
+                return Open(path, raw.SQLITE_OPEN_READWRITE | raw.SQLITE_OPEN_CREATE);
+            }
+
+            /// <summary>Read-only handle for inspecting another application's database.</summary>
+            public static SqliteDatabase OpenReadOnly(string path)
+            {
+                return Open(path, raw.SQLITE_OPEN_READONLY);
+            }
+
+            private static SqliteDatabase Open(string path, int flags)
+            {
                 string directory = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
                 sqlite3 database;
-                int result = raw.sqlite3_open_v2(path, out database, raw.SQLITE_OPEN_READWRITE | raw.SQLITE_OPEN_CREATE, null);
+                int result = raw.sqlite3_open_v2(path, out database, flags, null);
                 if (result != raw.SQLITE_OK || database == null)
                 {
                     string message = database != null ? raw.sqlite3_errmsg(database).utf8_to_string() : "unknown error";
@@ -576,7 +588,7 @@ namespace MSSQLTool
             }
         }
 
-        private sealed class SqliteStatement : IDisposable
+        internal sealed class SqliteStatement : IDisposable
         {
             private readonly sqlite3 database;
             private sqlite3_stmt statement;
@@ -618,6 +630,17 @@ namespace MSSQLTool
             public void StepToCompletion()
             {
                 while (Step()) { }
+                Reset();
+            }
+
+            /// <summary>
+            /// Rewinds a finished statement so it can be bound and stepped again.  Without this the
+            /// second run of a reused statement silently kept the first row's values.
+            /// </summary>
+            public void Reset()
+            {
+                if (statement == null) return;
+                raw.sqlite3_reset(statement);
             }
 
             public string ColumnText(int index)

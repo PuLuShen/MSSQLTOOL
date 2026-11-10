@@ -57,6 +57,11 @@ namespace MSSQLTool
                 ["切换块注释"] = Row("Toggle Block Comment", "切換區塊註解", "ブロック コメントの切り替え", "블록 주석 전환", "Blockkommentar umschalten", "Basculer le commentaire de bloc", "Alternar comentario de bloque"),
                 ["使用 /* */ 包裹所选 SQL，或移除光标处的块注释"] = Row("Wrap the selected SQL in /* */ or remove the block comment at the caret", "使用 /* */ 包住選取的 SQL，或移除游標處的區塊註解", "選択した SQL を /* */ で囲むか、カーソル位置のブロック コメントを削除します", "선택한 SQL을 /* */로 감싸거나 커서 위치의 블록 주석을 제거합니다.", "Ausgewähltes SQL in /* */ einschließen oder den Blockkommentar an der Einfügemarke entfernen", "Entourer le SQL sélectionné de /* */ ou supprimer le commentaire de bloc au curseur", "Rodear el SQL seleccionado con /* */ o quitar el comentario de bloque en el cursor"),
                 ["查询历史"] = Row("Query History", "查詢歷程", "クエリ履歴", "쿼리 기록", "Abfrageverlauf", "Historique des requêtes", "Historial de consultas"),
+                ["执行历史"] = Row("Execution History", "執行歷史", "実行履歴", "실행 기록", "Ausführungsverlauf", "Historique d'exécution", "Historial de ejecución"),
+                ["代码分析"] = Row("Code Analysis", "程式碼分析", "コード分析", "코드 분석", "Codeanalyse", "Analyse du code", "Análisis de código"),
+                ["修复光标处的问题"] = Row("Fix Problem at Caret", "修正游標處的問題", "カーソル位置の問題を修正", "커서 위치의 문제 해결", "Problem an der Einfügemarke beheben", "Corriger le problème au curseur", "Corregir el problema en el cursor"),
+                ["重命名"] = Row("Rename", "重新命名", "名前の変更", "이름 바꾸기", "Umbenennen", "Renommer", "Cambiar nombre"),
+                ["为对象名添加架构"] = Row("Qualify Object Names", "限定物件名稱", "オブジェクト名の修飾", "개체 이름 한정", "Objektnamen qualifizieren", "Qualifier les noms d'objet", "Calificar nombres de objeto"),
                 ["统计信息摘要"] = Row("Statistics Summary", "統計資訊摘要", "統計情報の概要", "통계 정보 요약", "Statistikzusammenfassung", "Résumé des statistiques", "Resumen de estadísticas"),
                 ["打开最近捕获的 SET STATISTICS IO/TIME 输出摘要。"] = Row("Open the summary of the most recently captured SET STATISTICS IO/TIME output.", "開啟最近擷取的 SET STATISTICS IO/TIME 輸出摘要。", "最近取得した SET STATISTICS IO/TIME 出力の概要を開きます。", "가장 최근에 캡처한 SET STATISTICS IO/TIME 출력 요약을 엽니다.", "Zusammenfassung der zuletzt erfassten SET STATISTICS IO/TIME-Ausgabe öffnen.", "Ouvrir le résumé de la dernière sortie SET STATISTICS IO/TIME capturée.", "Abrir el resumen de la última salida de SET STATISTICS IO/TIME capturada."),
                 ["服务器健康面板"] = Row("Server Health Dashboard", "伺服器健康面板", "サーバー正常性ダッシュボード", "서버 상태 대시보드", "Serverintegrität", "Tableau de bord d'intégrité du serveur", "Panel de estado del servidor"),
@@ -127,14 +132,117 @@ namespace MSSQLTool
         {
             if (bar == null) return;
 
+            var controls = new List<CommandBarControl>();
             try
             {
                 foreach (CommandBarControl control in bar.Controls)
+                {
+                    controls.Add(control);
                     ApplyControl(control);
+                }
             }
             catch (Exception)
             {
             }
+
+            DisambiguateHistoryCaptions(controls);
+        }
+
+        /// <summary>
+        /// Both history commands are labelled by the same localized caption in some hosts: the
+        /// caption is resolved before the command table's 执行历史 is applied, so the tools menu
+        /// ended up with two 查询历史 entries.  Identify the execution-history command by its
+        /// command id and put its own caption back; if the host does not expose the command, use
+        /// the query-text tooltip to tell the two entries apart.
+        /// </summary>
+        private static void DisambiguateHistoryCaptions(List<CommandBarControl> controls)
+        {
+            if (controls == null || controls.Count < 2) return;
+
+            var duplicates = new List<CommandBarControl>();
+            foreach (CommandBarControl control in controls)
+            {
+                string caption = SafeCaption(control);
+                int id = ResolveCommandId(control);
+                if (id == ExecutionHistoryCommandId || id == QueryHistoryTextCommandId)
+                {
+                    MSSQLToolPackage._logger?.Info(
+                        "HISTORY-MENU id=" + id + " caption='" + caption + "' tooltip='" + SafeTooltip(control) + "'");
+                }
+
+                if (string.Equals(caption, "查询历史", StringComparison.Ordinal)) duplicates.Add(control);
+            }
+
+            if (duplicates.Count < 2) return;
+
+            // The query-text entry is the only one whose command-table entry carries a tooltip,
+            // and its tooltip names SQL Prompt; use that to identify which entry keeps the caption.
+            CommandBarControl queryText = null;
+            foreach (CommandBarControl control in duplicates)
+            {
+                if (SafeTooltip(control).IndexOf("SQL Prompt", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    queryText = control;
+                    break;
+                }
+            }
+
+            if (queryText == null)
+            {
+                int withTooltip = 0;
+                CommandBarControl only = null;
+                foreach (CommandBarControl control in duplicates)
+                {
+                    if (SafeTooltip(control).Length == 0) continue;
+                    withTooltip++;
+                    only = control;
+                }
+                if (withTooltip == 1) queryText = only;
+            }
+
+            // Still ambiguous: leave the menu untouched rather than rename the wrong entry.
+            if (queryText == null) return;
+
+            foreach (CommandBarControl control in duplicates)
+            {
+                if (ReferenceEquals(control, queryText)) continue;
+                SetCaption(control, "执行历史");
+                return;
+            }
+        }
+
+        private static string SafeCaption(CommandBarControl control)
+        {
+            try { return control == null ? string.Empty : control.Caption ?? string.Empty; }
+            catch (Exception) { return string.Empty; }
+        }
+
+        private static string SafeTooltip(CommandBarControl control)
+        {
+            try { return control == null ? string.Empty : control.TooltipText ?? string.Empty; }
+            catch (Exception) { return string.Empty; }
+        }
+
+        private static void SetCaption(CommandBarControl control, string caption)
+        {
+            try
+            {
+                if (control != null && !string.Equals(control.Caption, caption, StringComparison.Ordinal))
+                    control.Caption = caption;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// DTE exposes the command id of a menu item through its command object; the control id of
+        /// a merged VSCT item is not reliable in SSMS, which is what made the caption fix miss.
+        /// </summary>
+        private static int ResolveCommandId(CommandBarControl control)
+        {
+            try { return control == null ? 0 : control.Id; }
+            catch (Exception) { return 0; }
         }
 
         private static void ApplyControl(CommandBarControl control)
@@ -155,12 +263,48 @@ namespace MSSQLTool
             {
             }
 
+            ApplyKnownCommand(control);
+
             if (control is CommandBarPopup popup)
             {
                 try { ApplyBar(popup.CommandBar); }
                 catch (Exception) { }
             }
         }
+
+        /// <summary>
+        /// The two history commands sit next to each other and used to share a caption in older
+        /// packages, so their labels are forced by command id.  That keeps one 执行历史 and one
+        /// 查询历史 no matter what the installed command table contains.
+        /// </summary>
+        private static void ApplyKnownCommand(CommandBarControl control)
+        {
+            try
+            {
+                string key;
+                switch (ResolveCommandId(control))
+                {
+                    case ExecutionHistoryCommandId: key = "执行历史"; break;
+                    case QueryHistoryTextCommandId: key = "查询历史"; break;
+                    default: return;
+                }
+
+                string caption = LocalizationManager.CurrentLanguage == Chinese
+                    ? key
+                    : Texts[key].TryGetValue(LocalizationManager.CurrentLanguage, out string text)
+                        ? text
+                        : Texts[key][English];
+
+                if (!string.Equals(control.Caption, caption, StringComparison.Ordinal))
+                    control.Caption = caption;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private const int ExecutionHistoryCommandId = 4144;
+        private const int QueryHistoryTextCommandId = 4165;
 
         private static bool TryFindSource(string value, out string source, out string localized)
         {

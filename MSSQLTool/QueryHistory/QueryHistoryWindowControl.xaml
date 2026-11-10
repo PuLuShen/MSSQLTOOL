@@ -15,7 +15,7 @@
     <Button Content="Options" Width="80" Click="ToggleOptions_Click" Margin="0,0,5,0"/>
     <Button Content="Refresh" Width="80" Command="{Binding RefreshCommand}" Style="{DynamicResource PrimaryButtonStyle}"/>
    </StackPanel>
-   <TextBlock Text="Query History" FontWeight="Bold" FontSize="18" VerticalAlignment="Center"/>
+   <TextBlock Text="Execution History" FontWeight="Bold" FontSize="18" VerticalAlignment="Center"/>
   </DockPanel>
 
   <!-- Storage and retention options. They used to live on a page of the settings window;
@@ -123,3 +123,4 @@
   </Grid>
  </Grid>
 </UserControl>
+

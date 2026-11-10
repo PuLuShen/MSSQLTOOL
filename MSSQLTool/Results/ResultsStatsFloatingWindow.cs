@@ -15,7 +15,7 @@ namespace MSSQLTool.Results
     /// </summary>
     public sealed class ResultsStatsFloatingWindow : Window
     {
-        private readonly ResultsStatsControl content;
+        private readonly GridAnalyticsControl content;
 
         private const int WhKeyboardLowLevel = 13;
         private const int WmKeyDown = 0x0100;
@@ -33,11 +33,11 @@ namespace MSSQLTool.Results
 
         public ResultsStatsFloatingWindow()
         {
-            Title = LocalizationManager.T("Result statistics panel");
-            Width = 380;
-            Height = 460;
-            MinWidth = 260;
-            MinHeight = 240;
+            Title = LocalizationManager.T("Results analytics");
+            Width = 1100;
+            Height = 760;
+            MinWidth = 760;
+            MinHeight = 460;
             ResizeMode = ResizeMode.CanResizeWithGrip;
             WindowStyle = WindowStyle.ToolWindow;
             ShowInTaskbar = false;
@@ -46,7 +46,7 @@ namespace MSSQLTool.Results
             WindowStartupLocation = WindowStartupLocation.Manual;
             Background = (Brush)Application.Current?.TryFindResource("ToolThemeBackgroundBrush") ?? SystemColors.WindowBrush;
 
-            content = new ResultsStatsControl();
+            content = new GridAnalyticsControl();
             Content = content;
 
             // ShowActivated=false keeps the grid selection alive, but it also means the first click
@@ -212,7 +212,7 @@ namespace MSSQLTool.Results
                 double width, height;
                 if (TryParsePair(settings?.resultsPanelSize, out width, out height))
                 {
-                    if (width >= 240 && height >= 200 && width <= 2000 && height <= 1600)
+                    if (width >= 640 && height >= 420 && width <= 2400 && height <= 1800)
                     {
                         Width = width;
                         Height = height;
@@ -236,11 +236,33 @@ namespace MSSQLTool.Results
                     }
                 }
 
-                PlaceNextToResults();
+                PlaceCentered();
             }
             catch (Exception ex)
             {
                 MSSQLToolPackage._logger?.Debug(ex, "Could not restore the statistics window geometry.");
+            }
+        }
+
+        /// <summary>First run: centre the panel on the screen that holds the SSMS main window.</summary>
+        private void PlaceCentered()
+        {
+            try
+            {
+                System.Drawing.Rectangle area = System.Windows.Forms.Screen.FromHandle(
+                    System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle).WorkingArea;
+
+                if (Width > area.Width) Width = Math.Max(MinWidth, area.Width - 80);
+                if (Height > area.Height) Height = Math.Max(MinHeight, area.Height - 80);
+
+                Left = area.Left + Math.Max(0, (area.Width - Width) / 2.0);
+                Top = area.Top + Math.Max(0, (area.Height - Height) / 2.0);
+            }
+            catch (Exception)
+            {
+                Rect area = SystemParameters.WorkArea;
+                Left = area.Left + Math.Max(0, (area.Width - Width) / 2.0);
+                Top = area.Top + Math.Max(0, (area.Height - Height) / 2.0);
             }
         }
 

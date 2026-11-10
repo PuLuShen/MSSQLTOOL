@@ -51,7 +51,7 @@ namespace MSSQLTool.RegressionTests
             Run("Formatting: profile round trip", TestProfileRoundTrip);
             Run("Formatting: all boolean switches", TestAllBooleanSwitches);
             Run("Formatting: exported profile is JSON", TestProfileExport);
-            Run("Formatting: options dialog is localized", TestFormattingUiIsLocalized);
+            RunChinese("Formatting: options dialog is localized", TestFormattingUiIsLocalized);
         }
 
         private static string Format(string sql, Action<FormatterOptions> configure)

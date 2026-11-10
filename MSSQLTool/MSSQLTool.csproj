@@ -133,6 +133,7 @@
     <Compile Include="Modules\ObjectExplorerTreeReader.cs" />
     <Compile Include="Modules\QuickSearchLocalization.cs" />
     <Compile Include="Modules\ShellLocalization.cs" />
+    <Compile Include="Modules\EditorContextMenuInstaller.cs" />
     <Compile Include="Modules\TemplateEditorKeyGuard.cs" />
     <Compile Include="Modules\QueryHistorySqliteStore.cs" />
     <Compile Include="UpdateChecker.cs" />
@@ -174,6 +175,7 @@
     <Compile Include="Modules\KeypressCommandFilter.cs" />
     <Compile Include="Modules\MetricsService.cs" />
     <Compile Include="Modules\LocalizationManager.cs" />
+    <Compile Include="Modules\HistoryDatabaseMigration.cs" />
     <Compile Include="Modules\ToolWindowThemeSupport.cs" />
     <Compile Include="Modules\ScriptFactoryAccess.cs" />
     <Compile Include="Modules\ShortcutManager.cs" />
@@ -251,6 +253,51 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Compile Include="Completion\CompletionController.cs" />
+    <Compile Include="Completion\CompletionFilter.cs" />
+    <Compile Include="Editor\Abstractions\IEditorHost.cs" />
+    <Compile Include="Editor\EditorBackground.cs" />
+    <Compile Include="Editor\EditorBackgroundRules.cs" />
+    <Compile Include="Editor\EditorHostFactory.cs" />
+    <Compile Include="Editor\TextManager\TextManagerEditorHost.cs" />
+    <Compile Include="Editor\ActiveEditorLocator.cs" />
+    <Compile Include="Editor\Vs2022\SqlSuggestedActionsSource.cs" />
+    <Compile Include="Editor\Vs2022\RelatedHighlightActivation.cs" />
+    <Compile Include="Editor\Vs2022\SqlRelatedHighlightTagger.cs" />
+    <Compile Include="Editor\Vs2022\SqlDiagnosticsTagger.cs" />
+    <Compile Include="Editor\Vs2022\SqlDiagnosticQuickInfo.cs" />
+    <Compile Include="Editor\Vs2022\SqlEditorServices.cs" />
+    <Compile Include="Editor\Vs2022\EditorContextMenuHook.cs" />
+    <Compile Include="Model\SqlRenameService.cs" />
+    <Compile Include="Model\SqlQualifyService.cs" />
+    <Compile Include="Commands\RefactorCommands.cs" />
+    <Compile Include="Commands\Dialogs\RefactorDialog.cs" />
+    <Compile Include="Modules\QueryTextHistoryStore.cs" />
+    <Compile Include="QueryHistory\QueryTextHistoryEntry.cs" />
+    <Compile Include="QueryHistory\QueryTextCaptureService.cs" />
+    <Compile Include="QueryHistory\QueryTextHistoryControl.cs" />
+    <Compile Include="QueryHistory\ImportProgressWindow.cs" />
+    <Compile Include="QueryHistory\QueryTextHistoryWindowCommand.cs" />
+    <Compile Include="Results\GridAnalyticsModel.cs" />
+    <Compile Include="Results\GridAnalyticsControl.cs" />    <Compile Include="Model\SqlTokenizer.cs" />
+    <Compile Include="Model\SqlSelectIntoScanner.cs" />
+    <Compile Include="Model\SqlStatementIndex.cs" />
+    <Compile Include="Model\SqlTargetScanner.cs" />
+    <Compile Include="Model\SqlPredicateState.cs" />
+    <Compile Include="Completion\CompletionUsageStore.cs" />
+    <Compile Include="Model\SqlScopeTree.cs" />
+    <Compile Include="Model\SqlDocumentModel.cs" />
+    <Compile Include="Analysis\AnalysisModels.cs" />
+    <Compile Include="Analysis\RuleCatalog.cs" />
+    <Compile Include="Analysis\AnalysisRules.cs" />
+    <Compile Include="Analysis\AnalysisEngine.cs" />
+    <Compile Include="Analysis\QuickFixService.cs" />
+    <Compile Include="Rendering\DiagnosticOverlay.cs" />
+    <Compile Include="Rendering\QuickFixActions.cs" />
+    <Compile Include="Rendering\AnalysisRulesWindow.cs" />
+    <Compile Include="Rendering\AnalysisRulesControl.cs" />
+    <Compile Include="Rendering\FixAtCaretCommand.cs" />
+    <Compile Include="Modules\AnalysisOptionsPage.cs" />
+    <Compile Include="Rendering\AnalysisResultsControl.cs" />
     <Compile Include="Completion\SqlPromptHighlightAnalyzer.cs" />
     <Compile Include="Completion\SqlPromptHighlightOverlay.cs" />
     <Compile Include="Completion\CompletionModels.cs" />
@@ -258,9 +305,11 @@
     <Compile Include="Completion\CompletionPresenter.cs" />
     <Compile Include="Completion\SqlCompletionAnalyzer.cs" />
     <Compile Include="Completion\SqlMetadataCache.cs" />
+    <Compile Include="Completion\SqlCaretPosition.cs" />
     <Compile Include="Completion\SqlSemanticModel.cs" />
     <Compile Include="Completion\SqlSymbolResolver.cs" />
     <Compile Include="Completion\SqlTextContext.cs" />
+    <Compile Include="Completion\SqlStatementWindow.cs" />
     <Reference Include="ICSharpCode.AvalonEdit">
       <HintPath>$(NuGetPackageRoot)avalonedit\6.3.1.120\lib\net462\ICSharpCode.AvalonEdit.dll</HintPath>
       <Private>True</Private>
@@ -302,6 +351,7 @@
     <Reference Include="Octokit">
       <HintPath>$(NuGetPackageRoot)octokit\14.0.0\lib\netstandard2.0\Octokit.dll</HintPath>
     </Reference>
+    <Reference Include="System.ComponentModel.Composition" />
     <Reference Include="System.Buffers">
       <HintPath>$(NuGetPackageRoot)system.buffers\4.6.1\lib\net462\System.Buffers.dll</HintPath>
     </Reference>
@@ -384,17 +434,23 @@
       <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.Data.SqlClient.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <!-- The local query history store talks to the SQLite engine that ships with SSMS. The
-         managed provider is deployed with the extension so the matching 3.0.2 API surface is
-         always present. -->
+    <!-- SQLitePCLRaw is loaded from the SSMS host at runtime; VSSDK deliberately excludes
+         these assemblies from the VSIX. The compile-time reference must therefore stay on the
+         oldest supported SSMS baseline (3.0.2.2801, shipped by SSMS 22.10.2).
+         Never point these HintPaths at $(SsmsInstallRoot): upgrading the build machine's SSMS
+         would silently raise the reference to 3.0.5.x, which older hosts cannot satisfy.
+         See BUILD.zh-CN.md section 3.1. -->
     <Reference Include="SQLitePCLRaw.core">
-      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\SQLite\SQLitePCLRaw.core.dll</HintPath>
+      <HintPath>$(NuGetPackageRoot)sqlitepclraw.core\3.0.2\lib\netstandard2.0\SQLitePCLRaw.core.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="SQLitePCLRaw.batteries_v2">
-      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\SQLite\SQLitePCLRaw.batteries_v2.dll</HintPath>
+      <HintPath>$(NuGetPackageRoot)sqlitepclraw.config.e_sqlite3\3.0.2\lib\net471\SQLitePCLRaw.batteries_v2.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="SQLitePCLRaw.provider.e_sqlite3">
-      <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\SQLite\SQLitePCLRaw.provider.e_sqlite3.dll</HintPath>
+      <HintPath>$(NuGetPackageRoot)sqlitepclraw.provider.e_sqlite3\3.0.2\lib\net471\SQLitePCLRaw.provider.e_sqlite3.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="Microsoft.VisualStudio.CommandBars">
       <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.CommandBars.dll</HintPath>
@@ -410,6 +466,10 @@
     </Reference>
     <Reference Include="Microsoft.VisualStudio.Imaging.Interop.14.0.DesignTime">
       <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.Imaging.Interop.14.0.DesignTime.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Editor">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\Editor\Microsoft.VisualStudio.Editor.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.VisualStudio.Interop">
@@ -434,6 +494,38 @@
     </Reference>
     <Reference Include="Microsoft.VisualStudio.TextManager.Interop">
       <HintPath>$(SsmsInstallRoot)\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.TextManager.Interop.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.CoreUtility">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\Editor\Microsoft.VisualStudio.CoreUtility.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Text.Data">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\Editor\Microsoft.VisualStudio.Text.Data.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Text.Logic">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\Editor\Microsoft.VisualStudio.Text.Logic.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Text.UI">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\Editor\Microsoft.VisualStudio.Text.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Text.UI.Wpf">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\Editor\Microsoft.VisualStudio.Text.UI.Wpf.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Language.Intellisense">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\Editor\Microsoft.VisualStudio.Language.Intellisense.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Language">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\CommonExtensions\Microsoft\Editor\Microsoft.VisualStudio.Language.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualStudio.Utilities">
+      <HintPath>$(SsmsInstallRoot)\Common7\IDE\Microsoft.VisualStudio.Utilities.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.VisualStudio.Threading">
@@ -560,6 +652,17 @@
     <PackageReference Include="System.ValueTuple">
       <Version>4.6.2</Version>
     </PackageReference>
+    <!-- Keep all three SQLitePCLRaw packages on the oldest supported SSMS baseline.
+         Do not bump one of them independently; see BUILD.zh-CN.md section 3.1. -->
+    <PackageReference Include="SQLitePCLRaw.core">
+      <Version>3.0.2</Version>
+    </PackageReference>
+    <PackageReference Include="SQLitePCLRaw.config.e_sqlite3">
+      <Version>3.0.2</Version>
+    </PackageReference>
+    <PackageReference Include="SQLitePCLRaw.provider.e_sqlite3">
+      <Version>3.0.2</Version>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <VSCTCompile Include="MSSQLToolPackage.vsct">
@@ -574,9 +677,16 @@
     <Content Include="Resources\grid-to-temp-table.png" />
     <Content Include="Resources\info.png" />
     <Resource Include="Resources\logo.png" />
-    <Resource Include="..\pics\赞赏码.png">
-      <Link>Resources\appreciation.png</Link>
-    </Resource>
+    <Resource Include="Resources\appreciation.png" />
+    <Resource Include="Resources\backgrounds\sage-breeze.jpg" />
+    <Resource Include="Resources\backgrounds\crimson-horizon.jpg" />
+    <Resource Include="Resources\backgrounds\noir-gold.jpg" />
+    <Resource Include="Resources\backgrounds\violet-starlight.jpg" />
+    <Resource Include="Resources\backgrounds\spark-notebook.jpg" />
+    <Resource Include="Resources\backgrounds\rose-dawn.jpg" />
+    <Content Include="Resources\backgrounds\NOTICE.txt">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <Content Include="Resources\open-folder.png" />
     <Resource Include="Resources\play.png" />
     <Content Include="Resources\query-history.png" />
@@ -691,6 +801,25 @@
     <PostBuildEvent>powershell -NoProfile -ExecutionPolicy Bypass -Command "&amp; { $ErrorActionPreference = 'Stop'; $manifest = '$(ProjectDir)source.extension.vsixmanifest'; [xml]$xml = Get-Content $manifest; $version = $xml.PackageManifest.Metadata.Identity.Version; $vsix = Join-Path '$(TargetDir)' 'MSSQLTool.vsix'; $installerScript = Join-Path '$(TargetDir)' 'Installer\Install-Or-Reinstall.ps1'; $installerCommand = Join-Path '$(TargetDir)' 'Installer\安装或重装.cmd'; $baseName = 'MSSQLTool_SSMS22_' + $version; $destinationDirectory = [IO.Path]::GetFullPath((Join-Path '$(ProjectDir)' '..\artifacts')); New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null; $versionedVsix = Join-Path $destinationDirectory ($baseName + '.vsix'); $dest = Join-Path $destinationDirectory ($baseName + '.zip'); Copy-Item -LiteralPath $vsix -Destination $versionedVsix -Force; Compress-Archive -LiteralPath @($vsix, $installerScript, $installerCommand) -DestinationPath $dest -Force }"
 </PostBuildEvent>
   </PropertyGroup>
+  <!--
+    Enforce the SQLitePCLRaw compile baseline described in BUILD.zh-CN.md section 3.1.
+    A build that resolves a newer SQLitePCLRaw than the oldest supported SSMS ships would
+    produce a VSIX that fails with FileNotFoundException on that older host.
+  -->
+  <Target Name="ValidateSqlitePclRawBaseline" BeforeTargets="CoreCompile" Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <_SqlitePclRawCompileReference Include="@(ReferencePath)"
+          Condition="'%(Filename)' == 'SQLitePCLRaw.core' Or '%(Filename)' == 'SQLitePCLRaw.batteries_v2' Or '%(Filename)' == 'SQLitePCLRaw.provider.e_sqlite3'" />
+    </ItemGroup>
+    <Error Condition="'@(_SqlitePclRawCompileReference)' == ''"
+           Text="SQLitePCLRaw compile references are missing. Restore SQLitePCLRaw.core, SQLitePCLRaw.config.e_sqlite3 and SQLitePCLRaw.provider.e_sqlite3 3.0.2 (see BUILD.zh-CN.md section 3.1)." />
+    <GetAssemblyIdentity AssemblyFiles="@(_SqlitePclRawCompileReference)"
+                         Condition="'@(_SqlitePclRawCompileReference)' != ''">
+      <Output TaskParameter="Assemblies" ItemName="_SqlitePclRawCompileIdentity" />
+    </GetAssemblyIdentity>
+    <Error Condition="'%(_SqlitePclRawCompileIdentity.Version)' != '3.0.2.2801'"
+           Text="SQLitePCLRaw must compile against 3.0.2.2801 (the SSMS 22.10.2 baseline), but the resolved reference is %(_SqlitePclRawCompileIdentity.Identity). Do not reference the SQLitePCLRaw DLLs under the SSMS installation directory. See BUILD.zh-CN.md section 3.1." />
+  </Target>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">

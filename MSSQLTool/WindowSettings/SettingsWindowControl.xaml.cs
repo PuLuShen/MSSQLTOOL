@@ -11,9 +11,13 @@ namespace MSSQLTool
     using System.Threading.Tasks;
     using System.Windows;
     using System.Windows.Controls;
+    using System.Windows.Input;
     using System.Windows.Media;
     using System.Windows.Navigation;
     using System.Windows.Threading;
+    using MSSQLTool.Analysis;
+    using MSSQLTool.Completion;
+    using MSSQLTool.Editor;
     using static MSSQLTool.MSSQLToolPackage;
 
     /// <summary>
@@ -33,6 +37,22 @@ namespace MSSQLTool
 
         /// <summary>The formatting profile currently edited by the Code Format page.</summary>
         private FormatterOptions formatOptions = new FormatterOptions();
+
+        /// <summary>Picture chosen on the Editor page: "builtin:name" or an absolute file path.</summary>
+        private string editorBackgroundImage = SettingsManager.EditorBackgroundSettings.DefaultImage;
+        private readonly Dictionary<Border, string> editorBackgroundTileFrames = new Dictionary<Border, string>();
+
+        /// <summary>Localization keys of the built-in pictures, in tile order.</summary>
+        private static readonly Dictionary<string, string> EditorBackgroundPresetLabels =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "sage-breeze", "Sage breeze (default)" },
+                { "crimson-horizon", "Crimson horizon" },
+                { "noir-gold", "Noir gold" },
+                { "violet-starlight", "Violet starlight" },
+                { "spark-notebook", "Spark notebook" },
+                { "rose-dawn", "Rose dawn" }
+            };
         private readonly DispatcherTimer formatPreviewTimer;
         private readonly DispatcherTimer formatSaveStatusTimer;
 
@@ -163,6 +183,8 @@ as select 1;
                 CompletionSquareBrackets.IsChecked = completionSettings.useSquareBrackets;
                 CompletionAutoRefreshMetadata.IsChecked = completionSettings.autoRefreshMetadata;
                 CompletionShowObjectDetails.IsChecked = completionSettings.showObjectDetails;
+                CompletionPreferRecent.IsChecked = completionSettings.preferRecentlyUsed;
+                LoadRecentCompletions();
                 CompletionColumnPicker.IsChecked = completionSettings.enableColumnPicker;
                 CompletionAutoAliases.IsChecked = completionSettings.autoAddAliases;
                 CompletionAliasPrefixes.Text = completionSettings.aliasPrefixToIgnore;
@@ -171,7 +193,11 @@ as select 1;
             CompletionAdditionalKeywords.Text = completionSettings.additionalKeywords;
                 CompletionDelay.Text = completionSettings.delayMilliseconds.ToString();
                 CompletionMaximumItems.Text = completionSettings.maximumItems.ToString();
+                CompletionCommitKey.SelectedIndex = Math.Max(0, Math.Min(2, (int)completionSettings.completionCommitKey));
                 ResultsPanelAutoShow.IsChecked = completionSettings.resultsPanelAutoShow;
+
+                // Code Analysis page: one settings object drives the squiggles and the hover tips.
+                LoadAnalysisSettings();
 
                 // Code Format page: the whole profile is loaded from a single FormatterOptions instance.
                 formatOptions = SettingsManager.GetFormatterOptions();
@@ -187,6 +213,7 @@ as select 1;
                 LoadConnectionColorRules();
 
                 RefreshStoragePage();
+                LoadEditorBackgroundSettings();
 
             }
             catch (Exception ex)
@@ -224,6 +251,8 @@ as select 1;
             completionSettings.additionalKeywords = CompletionAdditionalKeywords.Text ?? string.Empty;
             completionSettings.delayMilliseconds = delay;
             completionSettings.maximumItems = maximumItems;
+            completionSettings.completionCommitKey = (SettingsManager.CompletionCommitKey)Math.Max(0, Math.Min(2, CompletionCommitKey.SelectedIndex));
+            completionSettings.preferRecentlyUsed = CompletionPreferRecent.IsChecked.GetValueOrDefault();
             if (!SettingsManager.SaveSqlCompletionSettings(completionSettings))
             {
                 LocalizedMessageBox.Show("The SQL completion setting could not be saved.",
@@ -234,6 +263,33 @@ as select 1;
             Completion.SqlMetadataCache.InvalidateAll();
 
             SavedMessage();
+        }
+
+        private void LoadRecentCompletions()
+        {
+            try
+            {
+                CompletionRecentList.ItemsSource = CompletionUsageStore.Snapshot();
+            }
+            catch (Exception)
+            {
+                CompletionRecentList.ItemsSource = null;
+            }
+        }
+
+        private void Button_RemoveRecentCompletion_Click(object sender, RoutedEventArgs e)
+        {
+            if (CompletionRecentList.SelectedItem is CompletionUsageEntry entry)
+            {
+                CompletionUsageStore.Remove(entry.Scope, entry.Kind, entry.Display);
+                LoadRecentCompletions();
+            }
+        }
+
+        private void Button_ClearRecentCompletions_Click(object sender, RoutedEventArgs e)
+        {
+            CompletionUsageStore.Clear();
+            LoadRecentCompletions();
         }
 
         private void Button_SaveResultsPanel_Click(object sender, RoutedEventArgs e)
@@ -247,6 +303,354 @@ as select 1;
                 return;
             }
 
+            SavedMessage();
+        }
+
+        private void LoadAnalysisSettings()
+        {
+            AnalysisSettings settings = SettingsManager.GetAnalysisSettings();
+            AnalysisEnabled.IsChecked = settings.enabled;
+            AnalysisSquiggles.IsChecked = settings.showSquiggles;
+            AnalysisInfoSquiggles.IsChecked = settings.showInfoSquiggles;
+            AnalysisHover.IsChecked = settings.showHover;
+            UpdateAnalysisDependencies();
+        }
+
+        private void UpdateAnalysisDependencies()
+        {
+            bool on = AnalysisEnabled.IsChecked.GetValueOrDefault(true);
+            bool squiggles = AnalysisSquiggles.IsChecked.GetValueOrDefault(true);
+            AnalysisSquiggles.IsEnabled = on;
+            AnalysisInfoSquiggles.IsEnabled = on && squiggles;
+            AnalysisHover.IsEnabled = on;
+        }
+
+        private void AnalysisFlag_Changed(object sender, RoutedEventArgs e) => UpdateAnalysisDependencies();
+
+        private void Button_SaveAnalysisSettings_Click(object sender, RoutedEventArgs e)
+        {
+            AnalysisSettings settings = SettingsManager.GetAnalysisSettings();
+            settings.enabled = AnalysisEnabled.IsChecked.GetValueOrDefault(true);
+            settings.showSquiggles = AnalysisSquiggles.IsChecked.GetValueOrDefault(true);
+            settings.showInfoSquiggles = AnalysisInfoSquiggles.IsChecked.GetValueOrDefault();
+            settings.showHover = AnalysisHover.IsChecked.GetValueOrDefault(true);
+
+            if (!SettingsManager.SaveAnalysisSettings(settings))
+            {
+                LocalizedMessageBox.Show("The code analysis settings could not be saved.",
+                    "Code Analysis", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            SavedMessage();
+        }
+
+        private void Button_ManageAnalysisRules_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                using (var window = new MSSQLTool.Rendering.AnalysisRulesWindow())
+                {
+                    Window host = Window.GetWindow(this);
+                    IntPtr owner = host != null ? new System.Windows.Interop.WindowInteropHelper(host).Handle : IntPtr.Zero;
+                    if (owner != IntPtr.Zero) window.ShowDialog(new HandleOwner(owner));
+                    else window.ShowDialog();
+                }
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("Code Analysis", "Opening the rule settings failed", ex);
+                return;
+            }
+
+            // The rule dialog saves on OK, so the switches may have changed with it.
+            LoadAnalysisSettings();
+        }
+
+        private void RestoreAnalysisDefaults()
+        {
+            var defaults = new AnalysisSettings();
+            SettingsManager.SaveAnalysisSettings(defaults);
+            LoadAnalysisSettings();
+        }
+
+        /// <summary>Lets the WinForms rule dialog open centred over this WPF window.</summary>
+        private sealed class HandleOwner : System.Windows.Forms.IWin32Window
+        {
+            public HandleOwner(IntPtr handle)
+            {
+                Handle = handle;
+            }
+
+            public IntPtr Handle { get; }
+        }
+
+        private void LoadEditorBackgroundSettings()
+        {
+            SettingsManager.EditorBackgroundSettings settings = SettingsManager.GetEditorBackgroundSettings();
+
+            BuildEditorBackgroundPresetTiles();
+
+            EditorBackgroundEnabled.IsChecked = settings.enabled;
+            int transparency = EditorBackgroundRules.OpacityToTransparency(settings.opacityPercent);
+            EditorBackgroundTransparency.Value = transparency;
+            EditorBackgroundTransparencyText.Text = transparency.ToString() + "%";
+            EditorBackgroundDimOnDark.IsChecked = settings.dimOnDarkTheme;
+            EditorBackgroundBackdrop.IsChecked = settings.useBackdrop;
+            SelectEditorBackgroundFit(settings.fit);
+            SelectEditorBackgroundPreset(settings.image);
+            RefreshEditorBackgroundPreview();
+        }
+
+        private void SelectEditorBackgroundFit(string fit)
+        {
+            string wanted = SettingsManager.EditorBackgroundSettings.NormalizeFit(fit);
+            foreach (object item in EditorBackgroundFit.Items)
+            {
+                var comboItem = item as ComboBoxItem;
+                if (comboItem != null && string.Equals(Convert.ToString(comboItem.Tag), wanted, StringComparison.OrdinalIgnoreCase))
+                {
+                    EditorBackgroundFit.SelectedItem = comboItem;
+                    return;
+                }
+            }
+
+            if (EditorBackgroundFit.Items.Count > 0) EditorBackgroundFit.SelectedIndex = 0;
+        }
+
+        /// <summary>
+        /// Builds one clickable thumbnail per bundled picture.  Rebuilt on every load so a language
+        /// switch is picked up and the tiles never drift from <see cref="EditorBackgroundRules.BuiltInImages"/>.
+        /// </summary>
+        private void BuildEditorBackgroundPresetTiles()
+        {
+            if (EditorBackgroundPresetPanel == null) return;
+
+            EditorBackgroundPresetPanel.Children.Clear();
+            editorBackgroundTileFrames.Clear();
+
+            Brush normalBorder = TryFindResource("ToolThemeBorderBrush") as Brush ?? SystemColors.ControlBrush;
+
+            foreach (string name in EditorBackgroundRules.BuiltInImages)
+            {
+                string tag = SettingsManager.EditorBackgroundSettings.BuiltInPrefix + name;
+                string key;
+                string label = EditorBackgroundPresetLabels.TryGetValue(name, out key) ? LocalizationManager.T(key) : name;
+
+                var frame = new Border
+                {
+                    Width = 158,
+                    Height = 89,
+                    CornerRadius = new CornerRadius(3),
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = normalBorder,
+                    ClipToBounds = true,
+                    SnapsToDevicePixels = true,
+                    Child = new Image
+                    {
+                        Source = EditorBackground.LoadThumbnail(tag, 320),
+                        Stretch = Stretch.UniformToFill
+                    }
+                };
+
+                var caption = new TextBlock
+                {
+                    Text = label,
+                    FontSize = 11,
+                    MaxWidth = 158,
+                    Margin = new Thickness(0, 3, 0, 0),
+                    Opacity = 0.85,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                };
+
+                var tile = new Border
+                {
+                    Tag = tag,
+                    Margin = new Thickness(0, 0, 10, 10),
+                    Padding = new Thickness(3),
+                    Background = Brushes.Transparent,
+                    Cursor = Cursors.Hand,
+                    ToolTip = label,
+                    Child = new StackPanel { Children = { frame, caption } }
+                };
+                tile.MouseLeftButtonUp += EditorBackgroundTile_Click;
+
+                editorBackgroundTileFrames[frame] = tag;
+                EditorBackgroundPresetPanel.Children.Add(tile);
+            }
+
+            UpdateEditorBackgroundSelection();
+        }
+
+        private void UpdateEditorBackgroundSelection()
+        {
+            Brush accent = TryFindResource("ToolThemeAccentBrush") as Brush ?? SystemColors.HighlightBrush;
+            Brush normal = TryFindResource("ToolThemeBorderBrush") as Brush ?? SystemColors.ControlBrush;
+
+            foreach (KeyValuePair<Border, string> pair in editorBackgroundTileFrames)
+            {
+                bool selected = string.Equals(pair.Value, editorBackgroundImage, StringComparison.OrdinalIgnoreCase);
+                pair.Key.BorderBrush = selected ? accent : normal;
+                pair.Key.BorderThickness = new Thickness(selected ? 2 : 1);
+            }
+        }
+
+        private void EditorBackgroundTile_Click(object sender, MouseButtonEventArgs e)
+        {
+            var element = sender as FrameworkElement;
+            string tag = element == null ? null : Convert.ToString(element.Tag);
+            if (string.IsNullOrEmpty(tag)) return;
+
+            editorBackgroundImage = tag;
+            EditorBackgroundEnabled.IsChecked = true;
+            UpdateEditorBackgroundSelection();
+            UpdateEditorBackgroundPathText();
+            RefreshEditorBackgroundPreview();
+        }
+
+        private void SelectEditorBackgroundPreset(string image)
+        {
+            editorBackgroundImage = string.IsNullOrWhiteSpace(image)
+                ? SettingsManager.EditorBackgroundSettings.DefaultImage
+                : image.Trim();
+
+            UpdateEditorBackgroundSelection();
+            UpdateEditorBackgroundPathText();
+        }
+
+        private static void SelectComboTag(ComboBox box, string tag)
+        {
+            if (box == null) return;
+            foreach (object item in box.Items)
+            {
+                var comboItem = item as ComboBoxItem;
+                if (comboItem != null && string.Equals(Convert.ToString(comboItem.Tag), tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    box.SelectedItem = comboItem;
+                    return;
+                }
+            }
+        }
+
+        private static string SelectedComboTag(ComboBox box, string fallback)
+        {
+            var item = box == null ? null : box.SelectedItem as ComboBoxItem;
+            string tag = item == null ? null : Convert.ToString(item.Tag);
+            return string.IsNullOrEmpty(tag) ? fallback : tag;
+        }
+
+        private void UpdateEditorBackgroundPathText()
+        {
+            bool builtIn = editorBackgroundImage.StartsWith(
+                SettingsManager.EditorBackgroundSettings.BuiltInPrefix, StringComparison.OrdinalIgnoreCase);
+            EditorBackgroundPath.Text = builtIn ? string.Empty : editorBackgroundImage;
+        }
+
+        private void RefreshEditorBackgroundPreview()
+        {
+            try
+            {
+                EditorBackgroundPreview.Source = EditorBackground.LoadThumbnail(editorBackgroundImage, 800);
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "Could not preview the editor background image.");
+            }
+
+            EditorBackgroundTransparencyText.Text = ((int)Math.Round(EditorBackgroundTransparency.Value)).ToString() + "%";
+        }
+
+        private void EditorBackgroundFit_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            RefreshEditorBackgroundPreview();
+        }
+
+        private void EditorBackgroundTransparency_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (EditorBackgroundTransparencyText != null)
+                EditorBackgroundTransparencyText.Text = ((int)Math.Round(EditorBackgroundTransparency.Value)).ToString() + "%";
+        }
+
+        private void EditorBackgroundPreviewOption_Changed(object sender, RoutedEventArgs e)
+        {
+            RefreshEditorBackgroundPreview();
+        }
+
+        private void Button_ChooseEditorBackground_Click(object sender, RoutedEventArgs e)
+        {
+            ChooseEditorBackgroundFile();
+        }
+
+        private void ChooseEditorBackgroundFile()
+        {
+            string previous = editorBackgroundImage;
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = LocalizationManager.T("Choose a background picture"),
+                Filter = "Pictures (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp|All files (*.*)|*.*",
+                CheckFileExists = true
+            };
+
+            if (dialog.ShowDialog() != true)
+            {
+                SelectEditorBackgroundPreset(previous);
+                RefreshEditorBackgroundPreview();
+                return;
+            }
+
+            editorBackgroundImage = dialog.FileName;
+            EditorBackgroundEnabled.IsChecked = true;
+            SelectEditorBackgroundPreset(editorBackgroundImage);
+            UpdateEditorBackgroundPathText();
+            RefreshEditorBackgroundPreview();
+        }
+
+        private void Button_ClearEditorBackground_Click(object sender, RoutedEventArgs e)
+        {
+            editorBackgroundImage = SettingsManager.EditorBackgroundSettings.DefaultImage;
+            SelectEditorBackgroundPreset(editorBackgroundImage);
+            EditorBackgroundEnabled.IsChecked = false;
+            RefreshEditorBackgroundPreview();
+        }
+
+        private void Button_SaveEditorBackground_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsManager.EditorBackgroundSettings settings = SettingsManager.GetEditorBackgroundSettings();
+            settings.enabled = EditorBackgroundEnabled.IsChecked.GetValueOrDefault();
+            settings.image = editorBackgroundImage;
+            settings.opacityPercent = EditorBackgroundRules.TransparencyToOpacity((int)Math.Round(EditorBackgroundTransparency.Value));
+            settings.fit = SelectedComboTag(EditorBackgroundFit, "UniformToFill");
+            settings.dimOnDarkTheme = EditorBackgroundDimOnDark.IsChecked.GetValueOrDefault();
+            settings.useBackdrop = EditorBackgroundBackdrop.IsChecked.GetValueOrDefault();
+
+            if (!SettingsManager.SaveEditorBackgroundSettings(settings))
+            {
+                LocalizedMessageBox.Show("The editor background setting could not be saved.", "Editor",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // The same path may now hold a different picture; drop the decoded copy and repaint.
+            EditorBackground.ClearImageCache();
+            EditorBackground.RefreshAll();
+            SavedMessage();
+        }
+
+        private void Button_DefaultEditorBackground_Click(object sender, RoutedEventArgs e)
+        {
+            var defaults = new SettingsManager.EditorBackgroundSettings();
+            defaults.Normalize();
+
+            if (!SettingsManager.SaveEditorBackgroundSettings(defaults))
+            {
+                LocalizedMessageBox.Show("The editor background setting could not be saved.", "Editor",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            EditorBackground.ClearImageCache();
+            EditorBackground.RefreshAll();
+            LoadEditorBackgroundSettings();
             SavedMessage();
         }
 
@@ -323,6 +727,9 @@ as select 1;
                 case "Code Format":
                     RestoreCodeFormatDefaults();
                     break;
+                case "Code Analysis":
+                    RestoreAnalysisDefaults();
+                    break;
                 default:
                     LocalizedMessageBox.Show("Default values are not available for this page.",
                         "Restore defaults", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -348,6 +755,8 @@ as select 1;
             CompletionJoinRules.Text = defaults.joinColumnRules;
             CompletionDelay.Text = defaults.delayMilliseconds.ToString();
             CompletionMaximumItems.Text = defaults.maximumItems.ToString();
+            CompletionCommitKey.SelectedIndex = (int)defaults.completionCommitKey;
+            CompletionPreferRecent.IsChecked = defaults.preferRecentlyUsed;
             ResultsPanelAutoShow.IsChecked = defaults.resultsPanelAutoShow;
             SettingsManager.SaveSqlCompletionSettings(defaults);
             Completion.SqlMetadataCache.InvalidateAll();

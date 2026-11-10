@@ -14,6 +14,8 @@ namespace MSSQLTool.Completion
         public string StatementText { get; private set; }
         public string MaskedBatch { get; private set; }
         public string MaskedStatement { get; private set; }
+        /// <summary>Offset of <see cref="StatementText"/> inside the text the caller passed in.</summary>
+        public int StatementStart { get; private set; }
 
         public static SqlTextContext Create(string textBeforeCaret)
         {
@@ -37,18 +39,32 @@ namespace MSSQLTool.Completion
 
             string batch = source.Substring(Math.Min(batchStart, source.Length));
             string maskedBatch = masked.Substring(Math.Min(batchStart, masked.Length));
-            int statementStart = FindStatementStart(batch, maskedBatch);
+            int statementStart = FindStatementStart(maskedBatch);
             string statement = batch.Substring(Math.Min(statementStart, batch.Length));
             return new SqlTextContext
             {
                 BatchText = batch,
                 StatementText = statement,
+                StatementStart = Math.Min(statementStart, batch.Length) + batchStart,
                 MaskedBatch = maskedBatch,
                 MaskedStatement = maskedBatch.Substring(Math.Min(statementStart, maskedBatch.Length))
             };
         }
 
-        private static int FindStatementStart(string source, string masked)
+        /// <summary>
+        /// Moves the statement window forward when the parse found a boundary the scan cannot see
+        /// (two statements written on one line, with no semicolon between them).
+        /// </summary>
+        internal void AdvanceStatement(int offset)
+        {
+            int shift = Math.Max(0, Math.Min(offset, StatementText.Length));
+            if (shift == 0) return;
+            StatementText = StatementText.Substring(shift);
+            MaskedStatement = MaskedStatement.Substring(Math.Min(shift, MaskedStatement.Length));
+            StatementStart += shift;
+        }
+
+        private static int FindStatementStart(string masked)
         {
             int depth = 0;
             int start = 0;
@@ -59,21 +75,10 @@ namespace MSSQLTool.Completion
                 else if (masked[i] == ';' && depth == 0) start = i + 1;
             }
 
-            // ScriptDom provides the authoritative top-level statement boundary.
-            // It can separate normal T-SQL statements even when semicolons are
-            // omitted, which is essential after expanding a multi-line snippet.
-            try
-            {
-                var parser = new TSql170Parser(true);
-                TSqlFragment fragment = parser.Parse(new StringReader(source ?? string.Empty), out IList<ParseError> _);
-                var script = fragment as TSqlScript;
-                TSqlStatement parsed = script?.Batches.SelectMany(b => b.Statements)
-                    .Where(s => s.StartOffset <= (source ?? string.Empty).Length)
-                    .OrderBy(s => s.StartOffset)
-                    .LastOrDefault();
-                if (parsed != null) start = Math.Max(start, parsed.StartOffset);
-            }
-            catch { }
+            // ScriptDom used to answer this here with its own parse of the batch, which doubled the
+            // parse cost of every keystroke.  The semantic model parses the same text a few lines
+            // later and reports the statement start from that tree, so the answer is applied there
+            // instead (see SqlSemanticModel.StatementStart / AdvanceStatement).
 
             // EXEC accepts a free-form argument tail, so an incomplete parse can
             // otherwise absorb a following snippet when both start on one line:
@@ -104,60 +109,167 @@ namespace MSSQLTool.Completion
             // statement; parentheses prevent subqueries from being mistaken for a
             // new batch statement.
             foreach (Match match in Regex.Matches(masked ?? string.Empty,
-                @"(?im)^[ \t]*(?:EXEC(?:UTE)?|SELECT|INSERT|UPDATE|DELETE|MERGE|DECLARE|SET|CREATE|ALTER|DROP|TRUNCATE|USE|PRINT|IF|WHILE|BEGIN|DBCC)\b"))
+                @"(?im)^[ \t]*(?<keyword>EXEC(?:UTE)?|SELECT|INSERT|UPDATE|DELETE|MERGE|DECLARE|SET|CREATE|ALTER|DROP|TRUNCATE|USE|PRINT|IF|WHILE|BEGIN|DBCC)\b"))
             {
                 int currentDepth = 0;
                 for (int i = start; i < match.Index; i++)
                 {
                     if (masked[i] == '(') currentDepth++;
-                    else if (masked[i] == ')') currentDepth = Math.Max(0, currentDepth - 1);
+                    else if (masked[i] == ')') currentDepth--;
+                    if (currentDepth < 0) currentDepth = 0;
                 }
-                if (match.Index > start && currentDepth == 0) start = match.Index;
+                if (match.Index <= start || currentDepth != 0) continue;
+                string keyword = match.Groups["keyword"].Value;
+                string first = FirstWord(masked, start, match.Index);
+                if (IsContinuation(first, keyword, masked, match.Index, start)) continue;
+                start = match.Index;
             }
             return start;
         }
 
-        public static string MaskCommentsAndStrings(string sql)
+        private static string FirstWord(string text, int start, int end)
         {
-            if (string.IsNullOrEmpty(sql)) return string.Empty;
-            var output = new StringBuilder(sql);
-            bool lineComment = false, blockComment = false, quoted = false, doubleQuoted = false, bracketed = false;
-            for (int i = 0; i < sql.Length; i++)
+            int index = start;
+            while (index < end && !char.IsLetter(text[index])) index++;
+            int wordStart = index;
+            while (index < end && (char.IsLetterOrDigit(text[index]) || text[index] == '_')) index++;
+            return index > wordStart ? text.Substring(wordStart, index - wordStart) : string.Empty;
+        }
+
+        private static string PreviousWord(string text, int start)
+        {
+            int index = start - 1;
+            while (index >= 0 && char.IsWhiteSpace(text[index])) index--;
+            int end = index + 1;
+            while (index >= 0 && (char.IsLetterOrDigit(text[index]) || text[index] == '_')) index--;
+            return index + 1 < end ? text.Substring(index + 1, end - index - 1) : string.Empty;
+        }
+
+        private static bool IsContinuation(string firstKeyword, string word, string text, int start, int statementStart)
+        {
+            if (string.IsNullOrEmpty(word)) return false;
+            if ((string.Equals(firstKeyword, "CREATE", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(firstKeyword, "ALTER", StringComparison.OrdinalIgnoreCase))
+                && HasTopLevelAs(text, statementStart, start)) return true;
+            if (string.Equals(word, "SET", StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(firstKeyword, "UPDATE", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(firstKeyword, "MERGE", StringComparison.OrdinalIgnoreCase))) return true;
+            if (string.Equals(word, "SELECT", StringComparison.OrdinalIgnoreCase))
             {
-                char c = sql[i];
-                char next = i + 1 < sql.Length ? sql[i + 1] : '\0';
+                if (string.Equals(firstKeyword, "INSERT", StringComparison.OrdinalIgnoreCase)) return true;
+                if (string.Equals(firstKeyword, "WITH", StringComparison.OrdinalIgnoreCase)) return true;
+                string previous = PreviousWord(text, start);
+                if (string.Equals(previous, "UNION", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(previous, "ALL", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(previous, "EXCEPT", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(previous, "INTERSECT", StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            if ((string.Equals(word, "UPDATE", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(word, "DELETE", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(word, "INSERT", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(word, "MERGE", StringComparison.OrdinalIgnoreCase))
+                && string.Equals(firstKeyword, "WITH", StringComparison.OrdinalIgnoreCase)) return true;
+            if ((string.Equals(word, "UPDATE", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(word, "DELETE", StringComparison.OrdinalIgnoreCase)
+                 || string.Equals(word, "INSERT", StringComparison.OrdinalIgnoreCase))
+                && string.Equals(firstKeyword, "MERGE", StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private static bool HasTopLevelAs(string text, int start, int end)
+        {
+            int depth = 0;
+            for (int i = Math.Max(0, start); i + 1 < end; i++)
+            {
+                if (text[i] == '(') { depth++; continue; }
+                if (text[i] == ')') { depth = Math.Max(0, depth - 1); continue; }
+                if (depth != 0 || (text[i] != 'A' && text[i] != 'a')) continue;
+                if (i > start && (char.IsLetterOrDigit(text[i - 1]) || text[i - 1] == '_')) continue;
+                if (text[i + 1] != 'S' && text[i + 1] != 's') continue;
+                if (i + 2 < end && (char.IsLetterOrDigit(text[i + 2]) || text[i + 2] == '_')) continue;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// One state machine, two answers: the masked text (comment and string content blanked) and the
+        /// state at a limit (inside a comment / string / quoted identifier, and whether the last
+        /// character was blanked).  Both used to be written out separately, which is how they drift.
+        /// </summary>
+        private static string Scan(string sql, int limit, out bool inside, out bool lastMasked)
+        {
+            inside = false;
+            lastMasked = false;
+            string value = sql ?? string.Empty;
+            int end = Math.Max(0, Math.Min(limit, value.Length));
+            var output = new StringBuilder(value);
+            bool lineComment = false, blockComment = false, quoted = false, doubleQuoted = false, bracketed = false;
+            bool masked = false;
+            for (int i = 0; i < end; i++)
+            {
+                char c = value[i], next = i + 1 < end ? value[i + 1] : '\0';
                 if (lineComment)
                 {
-                    if (c == '\r' || c == '\n') lineComment = false; else output[i] = ' ';
+                    if (c == '\r' || c == '\n') { lineComment = false; masked = false; }
+                    else { output[i] = ' '; masked = true; }
                 }
                 else if (blockComment)
                 {
-                    output[i] = c == '\r' || c == '\n' ? c : ' ';
-                    if (c == '*' && next == '/') { output[i + 1] = ' '; blockComment = false; i++; }
+                    if (c == '*' && next == '/')
+                    {
+                        output[i] = ' ';
+                        output[i + 1 < output.Length ? i + 1 : i] = ' ';
+                        blockComment = false;
+                        i++;
+                        masked = true;
+                    }
+                    else
+                    {
+                        output[i] = c == '\r' || c == '\n' ? c : ' ';
+                        masked = true;
+                    }
                 }
                 else if (quoted)
                 {
-                    output[i] = c == '\r' || c == '\n' ? c : ' ';
-                    if (c == '\'' && next == '\'') { output[i + 1] = ' '; i++; }
-                    else if (c == '\'') quoted = false;
+                    if (c == '\'' && next == '\'')
+                    {
+                        output[i] = ' ';
+                        output[i + 1 < output.Length ? i + 1 : i] = ' ';
+                        i++;
+                        masked = true;
+                    }
+                    else if (c == '\'') { output[i] = ' '; quoted = false; masked = true; }
+                    else { output[i] = c == '\r' || c == '\n' ? c : ' '; masked = true; }
                 }
                 else if (doubleQuoted)
                 {
                     if (c == '"' && next == '"') i++;
                     else if (c == '"') doubleQuoted = false;
+                    masked = false;
                 }
                 else if (bracketed)
                 {
                     if (c == ']' && next == ']') i++;
                     else if (c == ']') bracketed = false;
+                    masked = false;
                 }
-                else if (c == '-' && next == '-') { output[i] = output[i + 1] = ' '; lineComment = true; i++; }
-                else if (c == '/' && next == '*') { output[i] = output[i + 1] = ' '; blockComment = true; i++; }
-                else if (c == '\'') { output[i] = ' '; quoted = true; }
-                else if (c == '"') doubleQuoted = true;
-                else if (c == '[') bracketed = true;
+                else if (c == '-' && next == '-') { output[i] = ' '; if (i + 1 < output.Length) output[i + 1] = ' '; lineComment = true; i++; masked = true; }
+                else if (c == '/' && next == '*') { output[i] = ' '; if (i + 1 < output.Length) output[i + 1] = ' '; blockComment = true; i++; masked = true; }
+                else if (c == '\'') { output[i] = ' '; quoted = true; masked = true; }
+                else if (c == '"') { doubleQuoted = true; masked = false; }
+                else if (c == '[') { bracketed = true; masked = false; }
+                else masked = false;
+                lastMasked = masked;
             }
+            inside = lineComment || blockComment || quoted || doubleQuoted || bracketed;
             return output.ToString();
+        }
+
+        public static string MaskCommentsAndStrings(string sql)
+        {
+            if (string.IsNullOrEmpty(sql)) return string.Empty;
+            return Scan(sql, sql.Length, out bool _, out bool __);
         }
 
         public static bool IsInsideCommentOrString(string sql, int offset)
@@ -176,50 +288,7 @@ namespace MSSQLTool.Completion
         /// </summary>
         public static void ScanState(string sql, int offset, out bool inside, out bool lastMasked)
         {
-            string value = sql ?? string.Empty;
-            int limit = Math.Max(0, Math.Min(offset, value.Length));
-            bool lineComment = false, blockComment = false, quoted = false, doubleQuoted = false, bracketed = false;
-            bool masked = false;
-            for (int i = 0; i < limit; i++)
-            {
-                char c = value[i], next = i + 1 < limit ? value[i + 1] : '\0';
-                if (lineComment)
-                {
-                    if (c == '\r' || c == '\n') { lineComment = false; masked = false; }
-                    else masked = true;
-                }
-                else if (blockComment)
-                {
-                    if (c == '*' && next == '/') { blockComment = false; i++; masked = true; }
-                    else masked = true;
-                }
-                else if (quoted)
-                {
-                    if (c == '\'' && next == '\'') { i++; masked = true; }
-                    else if (c == '\'') { quoted = false; masked = true; }
-                    else masked = true;
-                }
-                else if (doubleQuoted)
-                {
-                    if (c == '"' && next == '"') i++;
-                    else if (c == '"') doubleQuoted = false;
-                    masked = false;
-                }
-                else if (bracketed)
-                {
-                    if (c == ']' && next == ']') i++;
-                    else if (c == ']') bracketed = false;
-                    masked = false;
-                }
-                else if (c == '-' && next == '-') { lineComment = true; i++; masked = true; }
-                else if (c == '/' && next == '*') { blockComment = true; i++; masked = true; }
-                else if (c == '\'') { quoted = true; masked = true; }
-                else if (c == '"') { doubleQuoted = true; masked = false; }
-                else if (c == '[') { bracketed = true; masked = false; }
-                else masked = false;
-            }
-            inside = lineComment || blockComment || quoted || doubleQuoted || bracketed;
-            lastMasked = limit > 0 && masked;
+            Scan(sql, offset, out inside, out lastMasked);
         }
 
         /// <summary>Replaces the per-line GO regex in suffix scanning.</summary>

@@ -831,6 +831,9 @@ namespace MSSQLTool
                         }
 
                         newColumn.ExtendedProperties.Add("columnName", columnName);
+                        // Caption is the display name: the grid keeps the synthetic Column_N name so
+                        // existing lookups stay stable, while every consumer can show the real field.
+                        newColumn.Caption = columnName;
                         newColumn.ExtendedProperties.Add("sqlType", sqlDataTypeName);
                         if (columnSizes.Count > c + 1)
                         {

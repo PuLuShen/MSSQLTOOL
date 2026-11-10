@@ -265,3 +265,6 @@ __pycache__/
 /MSSQLTool/RegressionTests/
 /local/
 /local-audit/
+
+# Internal engineering notes (kept out of version control on purpose)
+/docs/内联补全-复盘.md

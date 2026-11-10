@@ -4,6 +4,8 @@
 
 [![Install from VSIX Gallery](https://ssmsgallery.azurewebsites.net/badge/MSSQLTool.svg)](https://ssmsgallery.azurewebsites.net/extension/MSSQLTool/) [![Open VSIX Gallery](https://www.vsixgallery.com/badge/MSSQLTool.svg)](https://www.vsixgallery.com/extension/MSSQLTool)
 
+🔥 **100+ downloads and counting — thank you for the support!**
+
 ## Links
 
 GitHub repository

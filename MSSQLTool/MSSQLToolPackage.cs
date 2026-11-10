@@ -27,6 +27,7 @@ using Microsoft.Data.SqlClient;
 using System.Data;
 using System.Linq;
 using MSSQLTool.Properties;
+using MSSQLTool.Commands;
 
 namespace MSSQLTool
 {
@@ -65,7 +66,10 @@ namespace MSSQLTool
     [ProvideToolWindow(typeof(DatabaseScripterToolWindow))]
     [ProvideToolWindow(typeof(DataImportWindow))]
     [ProvideToolWindow(typeof(QuickSearchWindow))]
+    [ProvideToolWindow(typeof(QueryTextHistoryWindow))]
     [ProvideToolWindow(typeof(SnippetManagerWindow))]
+    [ProvideToolWindow(typeof(MSSQLTool.Rendering.AnalysisResultsWindow))]
+[ProvideOptionPage(typeof(MSSQLTool.Modules.AnalysisOptionsPage), "MSSQL Tool", "Code Analysis", 0, 0, true)]
     [ProvideToolWindow(typeof(QueryTemplateWindow))]
     public sealed class MSSQLToolPackage : AsyncPackage
     {
@@ -379,6 +383,9 @@ namespace MSSQLTool
                 await ResultGridCopyAsInsertCommand.InitializeAsync(this);
                 await SqlServerBuildsWindowCommand.InitializeAsync(this);
                 await QueryHistoryWindowCommand.InitializeAsync(this);
+            await QueryTextHistoryWindowCommand.InitializeAsync(this);
+            await RenameSymbolCommand.InitializeAsync(this);
+            await QualifyObjectNamesCommand.InitializeAsync(this);
                 await SchemaCompareWindowCommand.InitializeAsync(this);
                 ShortcutManager.ApplyQueryHistoryShortcut(SettingsManager.GetQueryHistoryShortcut(), out _);
                 ShortcutManager.ApplyScriptObjectShortcut(SettingsManager.GetScriptObjectShortcut(), out _);
@@ -389,6 +396,8 @@ namespace MSSQLTool
                 await SelectCurrentStatementCommand.InitializeAsync(this);
                 await ToggleBlockCommentCommand.InitializeAsync(this);
                 await QueryTemplateWindowCommand.InitializeAsync(this);
+            await MSSQLTool.Rendering.AnalysisResultsCommand.InitializeAsync(this);
+            await MSSQLTool.Rendering.FixAtCaretCommand.InitializeAsync(this);
                 await MSSQLTool.Results.ResultsPanelCommand.InitializeAsync(this);
 
                 UpdateChecker.ScheduleCheck(this, SettingsManager.GetEnableUpdateChecks());
@@ -417,6 +426,11 @@ namespace MSSQLTool
                 _windowEvents.WindowActivated += new _dispWindowEvents_WindowActivatedEventHandler(WindowActivated_Event);
                 _windowEvents.WindowClosing += new _dispWindowEvents_WindowClosingEventHandler(WindowClosing_Event);
 
+                // Text history needs the same DTE instance; it is attached after the shell events
+                // exist so a failure there cannot stop the package from loading.
+                try { QueryTextCaptureService.Initialize(this, application); }
+                catch (Exception captureError) { _logger?.Error(captureError, "Query text capture could not start."); }
+
                 // "File.ConnectObjectExplorer"
                 // "Query.Connect"
                 // 
@@ -434,6 +448,7 @@ namespace MSSQLTool
                 // VSCT captions are fixed at package build time.  Rewrite our menu/toolbar labels
                 // after the command bars exist so the chosen UI language also applies to the shell.
                 ShellLocalization.Apply();
+                EditorContextMenuInstaller.Install(application, profferCommands3);
                 try
                 {
                     var shellTimer = new System.Windows.Threading.DispatcherTimer
@@ -444,6 +459,7 @@ namespace MSSQLTool
                     {
                         shellTimer.Stop();
                         try { ShellLocalization.Apply(); } catch (Exception) { }
+                        try { EditorContextMenuInstaller.Install(application, profferCommands3); } catch (Exception) { }
                     };
                     shellTimer.Start();
                 }
@@ -528,6 +544,7 @@ namespace MSSQLTool
                     m_queryExecuteEvent = null;
                 }
                 QueryTemplateLibrary.Instance.Dispose();
+                QueryTextCaptureService.Shutdown();
                 AppDomain.CurrentDomain.AssemblyResolve -= CurrentDomain_AssemblyResolve;
                 GridAccess.RestoreNativeAppearance();
                 FlushQueryHistory(TimeSpan.FromSeconds(3));

@@ -203,55 +203,175 @@
             </TabItem>
 
             <TabItem Header="SQL Completion">
-                <StackPanel Margin="16" MaxWidth="620" HorizontalAlignment="Left">
-                    <TextBlock Text="Smart SQL completion" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                    <CheckBox x:Name="UseSqlCompletion" Content="Enable smart SQL completion" Margin="0,4"/>
-                    <StackPanel IsEnabled="{Binding IsChecked, ElementName=UseSqlCompletion}">
-                        <CheckBox x:Name="AutomaticSqlCompletion"
-                                  Content="Show completion automatically while typing" Margin="0,4"/>
-                        <CheckBox x:Name="CompletionTrustServerCertificate"
-                                  Content="Trust the SQL Server certificate for completion metadata" Margin="0,4"
-                                  ToolTip="Applies only to the background connection used to load completion metadata."/>
-                        <StackPanel Orientation="Horizontal" Margin="0,4">
-                            <CheckBox x:Name="CompletionSquareBrackets" Content="Insert square brackets"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <Grid Margin="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0" Width="480" HorizontalAlignment="Left">
+                            <TextBlock Text="Smart SQL completion" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <CheckBox x:Name="UseSqlCompletion" Content="Enable smart SQL completion" Margin="0,2,0,6"/>
+
+                            <StackPanel IsEnabled="{Binding IsChecked, ElementName=UseSqlCompletion}">
+                                <TextBlock Text="Behaviour" FontWeight="SemiBold" Margin="0,8,0,4"/>
+                                <UniformGrid Columns="2">
+                                    <CheckBox x:Name="AutomaticSqlCompletion"
+                                              Content="Show completion automatically while typing" Margin="0,3,12,3"/>
+                                    <CheckBox x:Name="CompletionSquareBrackets" Content="Insert square brackets" Margin="0,3,12,3"/>
+                                    <CheckBox x:Name="CompletionTrustServerCertificate"
+                                              Content="Trust the SQL Server certificate" Margin="0,3,12,3"
+                                              ToolTip="Applies only to the background connection used to load completion metadata."/>
+                                    <CheckBox x:Name="CompletionAutoRefreshMetadata" Content="Refresh metadata after schema changes" Margin="0,3,12,3"/>
+                                    <CheckBox x:Name="CompletionShowObjectDetails" Content="Show object details" Margin="0,3,12,3"/>
+                                    <CheckBox x:Name="CompletionColumnPicker" Content="Enable categorized column picker" Margin="0,3,12,3"/>
+                                    <CheckBox x:Name="CompletionAutoAliases" Content="Add table aliases automatically" Margin="0,3,12,3"/>
+                                </UniformGrid>
+
+                                <TextBlock Text="Alias and JOIN rules" FontWeight="SemiBold" Margin="0,14,0,4"/>
+                                <TextBlock Text="Alias prefixes to ignore (comma separated):" Margin="0,0,0,2"/>
+                                <TextBox x:Name="CompletionAliasPrefixes" MaxWidth="480"/>
+                                <TextBlock Text="Custom aliases (Object=alias; ...):" Margin="0,6,0,2"/>
+                                <TextBox x:Name="CompletionCustomAliases" MaxWidth="480"/>
+                                <TextBlock Text="JOIN rules (Source.Column=Target.Column; ...):" Margin="0,6,0,2"/>
+                                <TextBox x:Name="CompletionJoinRules" MaxWidth="480"/>
+
+                                <TextBlock Text="Keywords and timing" FontWeight="SemiBold" Margin="0,14,0,4"/>
+                                <TextBlock Text="Additional completion keywords (one per line or separated by ;):" Margin="0,0,0,2"/>
+                                <TextBox x:Name="CompletionAdditionalKeywords" MaxWidth="480"
+                                         AcceptsReturn="True"
+                                         Height="52"
+                                         VerticalScrollBarVisibility="Auto"
+                                         ToolTip="Added to the built-in keyword list, so constructs such as WITH (NOLOCK) or your own house-style statements can be completed too."/>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="Popup delay (ms):" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="CompletionDelay" Width="60" Margin="8,0,0,0"/>
+                                    <TextBlock Text="Maximum matches:" VerticalAlignment="Center" Margin="18,0,0,0"/>
+                                    <TextBox x:Name="CompletionMaximumItems" Width="60" Margin="8,0,0,0"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="Insert with:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="CompletionCommitKey" Width="140" Margin="8,0,0,0">
+                                        <ComboBoxItem Content="Tab"/>
+                                        <ComboBoxItem Content="Enter"/>
+                                        <ComboBoxItem Content="Tab or Enter"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,4">
-                            <CheckBox x:Name="CompletionAutoRefreshMetadata" Content="Refresh metadata after schema changes"/>
-                            <CheckBox x:Name="CompletionShowObjectDetails" Content="Show object details" Margin="18,0,0,0"/>
+
+                        <StackPanel Grid.Row="0" Grid.Column="1" Margin="28,0,0,0"
+                                    IsEnabled="{Binding IsChecked, ElementName=UseSqlCompletion}">
+                            <TextBlock Text="Recently used suggestions" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <CheckBox x:Name="CompletionPreferRecent" Content="Prefer recently used suggestions" Margin="0,2,0,6"
+                                      ToolTip="Adds a small ranking bonus to suggestions accepted before in the same database."/>
+                            <ListBox x:Name="CompletionRecentList" Height="260" MinHeight="160"
+                                     HorizontalContentAlignment="Stretch"
+                                     DisplayMemberPath="Summary"/>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Content="Remove selected" Width="120" Click="Button_RemoveRecentCompletion_Click"/>
+                                <Button Grid.Column="1" Content="Clear history" Width="100" Margin="8,0,0,0"
+                                        Click="Button_ClearRecentCompletions_Click"/>
+                                <Button Grid.Column="2" Content="Clear and refresh completion cache"
+                                        HorizontalAlignment="Right" MinWidth="220"
+                                        Click="Button_RefreshCompletionMetadata_Click"/>
+                            </Grid>
+                            <TextBlock x:Name="CompletionMetadataStatus" TextWrapping="Wrap" Opacity="0.8" Margin="0,10,0,0"/>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,4">
-                            <CheckBox x:Name="CompletionColumnPicker" Content="Enable categorized column picker"/>
-                            <CheckBox x:Name="CompletionAutoAliases" Content="Add table aliases automatically" Margin="18,0,0,0"/>
+
+                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,18,0,0">
+                            <Button Content="Save" Click="Button_SaveSqlCompletion_Click"
+                                    Style="{DynamicResource PrimaryButtonStyle}"
+                                    Width="90" Height="26"/>
+                            <TextBlock MaxWidth="620" Margin="14,0,0,0" VerticalAlignment="Center"
+                                       TextWrapping="Wrap" Opacity="0.8"
+                                       Text="The setting applies immediately. Ctrl+Space can still open completion when automatic popup is disabled."/>
                         </StackPanel>
-                        <TextBlock Text="Alias prefixes to ignore (comma separated):" Margin="0,6,0,2"/>
-                        <TextBox x:Name="CompletionAliasPrefixes"/>
-                        <TextBlock Text="Custom aliases (Object=alias; ...):" Margin="0,6,0,2"/>
-                        <TextBox x:Name="CompletionCustomAliases"/>
-                        <TextBlock Text="JOIN rules (Source.Column=Target.Column; ...):" Margin="0,6,0,2"/>
-                        <TextBox x:Name="CompletionJoinRules"/>
-                        <TextBlock Text="Additional completion keywords (one per line or separated by ;):" Margin="0,6,0,2"/>
-                        <TextBox x:Name="CompletionAdditionalKeywords"
-                                 AcceptsReturn="True"
-                                 Height="52"
-                                 VerticalScrollBarVisibility="Auto"
-                                 ToolTip="Added to the built-in keyword list, so constructs such as WITH (NOLOCK) or your own house-style statements can be completed too."/>
-                        <StackPanel Orientation="Horizontal" Margin="0,4">
-                            <TextBlock Text="Popup delay (ms):" VerticalAlignment="Center"/>
-                            <TextBox x:Name="CompletionDelay" Width="60" Margin="8,0,0,0"/>
-                            <TextBlock Text="Maximum matches:" VerticalAlignment="Center" Margin="18,0,0,0"/>
-                            <TextBox x:Name="CompletionMaximumItems" Width="60" Margin="8,0,0,0"/>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Editor">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <Grid Margin="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Width="540" HorizontalAlignment="Left">
+                            <TextBlock Text="Editor background image" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <CheckBox x:Name="EditorBackgroundEnabled" Content="Show a background image in SQL editor windows" Margin="0,4"/>
+
+                            <TextBlock Text="Picture" Margin="0,12,0,4"/>
+                            <WrapPanel x:Name="EditorBackgroundPresetPanel" Orientation="Horizontal"
+                                       MaxWidth="540" HorizontalAlignment="Left"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="Browse..." Width="84" Height="26"
+                                        Click="Button_ChooseEditorBackground_Click"/>
+                                <Button Content="Clear" Width="70" Height="26" Margin="6,0,0,0"
+                                        Click="Button_ClearEditorBackground_Click"/>
+                            </StackPanel>
+                            <TextBlock x:Name="EditorBackgroundPath" Opacity="0.7" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                            <TextBlock Text="Transparency" Margin="0,14,0,4"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Slider x:Name="EditorBackgroundTransparency" Width="240" Minimum="0" Maximum="95"
+                                        TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                        ValueChanged="EditorBackgroundTransparency_ValueChanged"/>
+                                <TextBlock x:Name="EditorBackgroundTransparencyText" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <TextBlock Text="Fill mode" Margin="0,14,0,4"/>
+                            <ComboBox x:Name="EditorBackgroundFit" Width="240" Height="26" HorizontalAlignment="Left"
+                                      SelectionChanged="EditorBackgroundFit_SelectionChanged">
+                                <ComboBoxItem Content="Crop to fill (recommended)" Tag="UniformToFill"/>
+                                <ComboBoxItem Content="Stretch to fill" Tag="Fill"/>
+                                <ComboBoxItem Content="Fit inside the window" Tag="Uniform"/>
+                                <ComboBoxItem Content="Tile" Tag="Tile"/>
+                            </ComboBox>
+
+                            <CheckBox x:Name="EditorBackgroundDimOnDark" Content="Dim the picture on dark themes"
+                                      Margin="0,10,0,0" Click="EditorBackgroundPreviewOption_Changed"/>
+
+                            <CheckBox x:Name="EditorBackgroundBackdrop"
+                                      Content="Draw the picture as one layer behind the editor"
+                                      ToolTip="One picture covers the code area, the margins and the strip below the text, so there is no seam. Turn this off if the editor turns black on this build; the picture is then painted into the text layer instead."
+                                      Margin="0,8,0,0" Click="EditorBackgroundPreviewOption_Changed"/>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                <Button Content="Save" Width="90" Height="26"
+                                        Style="{DynamicResource PrimaryButtonStyle}"
+                                        Click="Button_SaveEditorBackground_Click"/>
+                                <Button Content="Use the theme background" Width="180" Height="26" Margin="8,0,0,0"
+                                        Click="Button_DefaultEditorBackground_Click"/>
+                            </StackPanel>
+
+                            <TextBlock TextWrapping="Wrap" Opacity="0.8" Margin="0,10,0,0"
+                                       Text="The picture is painted behind the code only; the query text and its colours are unchanged. Keep the transparency high so syntax colours stay readable. The setting applies to every open SQL editor immediately."/>
                         </StackPanel>
-                        <Button Content="Clear and refresh completion cache"
-                                Click="Button_RefreshCompletionMetadata_Click" Margin="0,8,0,0"
-                                Width="220" HorizontalAlignment="Left"/>
-                        <TextBlock x:Name="CompletionMetadataStatus" TextWrapping="Wrap" Opacity="0.8" Margin="0,8,0,0"/>
-                    </StackPanel>
-                    <Button Content="Save" Click="Button_SaveSqlCompletion_Click"
-                            Style="{DynamicResource PrimaryButtonStyle}"
-                            Width="90" HorizontalAlignment="Left" Margin="0,14,0,0"/>
-                    <TextBlock Text="The setting applies immediately. Ctrl+Space can still open completion when automatic popup is disabled."
-                               TextWrapping="Wrap" Opacity="0.8" Margin="0,10,0,0"/>
-                </StackPanel>
+
+                        <StackPanel Grid.Column="1" Margin="24,0,0,0">
+                            <TextBlock Text="Preview" Margin="0,12,0,4"/>
+                            <Border BorderThickness="1" BorderBrush="{DynamicResource ToolThemeBorderBrush}"
+                                    Background="{DynamicResource ToolThemeBackgroundBrush}"
+                                    MinWidth="320" Height="320" ClipToBounds="True" SnapsToDevicePixels="True">
+                                <Image x:Name="EditorBackgroundPreview" Stretch="UniformToFill"/>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="Result panel">
@@ -265,6 +385,26 @@
                     <Button Content="Save" Click="Button_SaveResultsPanel_Click"
                             Style="{DynamicResource PrimaryButtonStyle}"
                             Width="90" HorizontalAlignment="Left" Margin="0,14,0,0"/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Code Analysis" Tag="Code Analysis">
+                <StackPanel Margin="16" MaxWidth="620" HorizontalAlignment="Left">
+                    <TextBlock Text="SQL analysis" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                    <CheckBox x:Name="AnalysisEnabled" Content="Enable code analysis" Margin="0,4"
+                              Checked="AnalysisFlag_Changed" Unchecked="AnalysisFlag_Changed"/>
+                    <CheckBox x:Name="AnalysisSquiggles" Content="Underline findings in the editor (squiggles)" Margin="0,4"
+                              Checked="AnalysisFlag_Changed" Unchecked="AnalysisFlag_Changed"/>
+                    <CheckBox x:Name="AnalysisInfoSquiggles" Content="Also underline Info-level findings" Margin="18,0,0,4"/>
+                    <CheckBox x:Name="AnalysisHover" Content="Show the rule explanation when hovering a squiggle" Margin="0,4"/>
+                    <TextBlock Text="The Code Analysis tool window always lists findings; these switches only control what the editor draws."
+                               TextWrapping="Wrap" Opacity="0.8" Margin="0,8,0,0"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button Content="Save" Click="Button_SaveAnalysisSettings_Click"
+                                Style="{DynamicResource PrimaryButtonStyle}" Width="90"/>
+                        <Button Content="Manage rules and severities..." Click="Button_ManageAnalysisRules_Click"
+                                Width="200" Margin="10,0,0,0"/>
+                    </StackPanel>
                 </StackPanel>
             </TabItem>
 

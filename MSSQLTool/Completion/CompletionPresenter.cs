@@ -7,6 +7,8 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.VisualStudio.PlatformUI;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
+using System.Diagnostics;
 using System.Linq;
 using System.Drawing.Drawing2D;
 
@@ -20,12 +22,22 @@ namespace MSSQLTool.Completion
         [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref NativePoint point);
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+        [DllImport("kernel32.dll")] private static extern uint GetCurrentProcessId();
 
         private const uint SwpNoSize = 0x0001;
+        private const uint SwpNoZorder = 0x0004;
         private const uint SwpNoActivate = 0x0010;
         private const uint SwpShowWindow = 0x0040;
+        private const uint GaRoot = 2;
 
         private readonly Form window;
+        private IntPtr ownerHandle;
+        private int anchorLine = -1;
+        private int anchorColumn = 0;
+        private int anchorFirstVisible = 0;
         private readonly SplitContainer contentSplit;
         private readonly ListBox list;
         private readonly ComboBox category;
@@ -33,6 +45,10 @@ namespace MSSQLTool.Completion
         private readonly RichTextBox parameterInfo;
         private readonly Label footer;
         private readonly Font iconFont;
+        private Font matchFont;
+        private string lastFilterPrefix = string.Empty;
+        private const TextFormatFlags ItemTextFlags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+            | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
         private IReadOnlyList<CompletionItem> items;
         private List<CompletionItem> allItems = new List<CompletionItem>();
         private IVsTextView lastTextView;
@@ -40,6 +56,15 @@ namespace MSSQLTool.Completion
         private CompletionContext lastContext;
         private bool updatingCategory;
         private bool updatingSplitter;
+        // True only after the user moved the highlight with the arrow keys or the mouse.  A
+        // refresh triggered by typing must not keep an older row selected: the first row is the
+        // best match and has to stay the default until the user chooses something else.
+        private bool userMovedSelection;
+        private string lastParameterText = string.Empty;
+        private float lastParameterWidth = -1;
+
+        /// <summary>True once the user picked a row with the keyboard or mouse in this session.</summary>
+        public bool HasUserNavigated => userMovedSelection;
         private int textLineHeight;
         private int parameterMinHeight;
         private Font parameterBoldFont;
@@ -146,6 +171,7 @@ namespace MSSQLTool.Completion
             window.Controls.Add(category);
             window.Controls.Add(footer);
             list.DoubleClick += (_, __) => CommitRequested?.Invoke();
+            list.MouseDown += (_, __) => userMovedSelection = true;
             list.DrawItem += DrawCompletionItem;
             list.SelectedIndexChanged += (_, __) => UpdateDetails();
             category.SelectedIndexChanged += (_, __) =>
@@ -202,6 +228,20 @@ namespace MSSQLTool.Completion
         {
             if (!themeResolved) ApplySsmsTheme();
 
+            // The list is refreshed on every keystroke.  Keeping the row the user moved to is part
+            // of the editing feel: only a brand-new popup starts at the first row.
+            CompletionItem previousItem = list.SelectedItem as CompletionItem;
+            string previousKey = previousItem != null ? ItemKey(previousItem) : null;
+            int previousIndex = list.SelectedIndex;
+            bool sessionContinues = window.Visible && lastContext != null && context != null
+                && lastContext.Kind == context.Kind
+                && string.Equals(lastContext.CurrentStatement ?? string.Empty, context.CurrentStatement ?? string.Empty, StringComparison.Ordinal);
+            // Typing replaces the manual choice.  The flag used to survive for the whole session, so
+            // one earlier arrow press made every later preview get force-cleared as "navigated",
+            // and the highlight stayed on a row the new prefix no longer matched.
+            bool prefixChanged = !string.Equals(lastFilterPrefix, context?.Prefix ?? string.Empty, StringComparison.Ordinal);
+            lastFilterPrefix = context?.Prefix ?? string.Empty;
+
             lastTextView = textView;
             lastMetadata = metadata;
             lastContext = context;
@@ -212,7 +252,9 @@ namespace MSSQLTool.Completion
             var completionSettings = SettingsManager.GetSqlCompletionSettings();
             list.SelectionMode = completionSettings.enableColumnPicker && string.Equals(category.SelectedItem as string, "Columns", StringComparison.Ordinal)
                 ? SelectionMode.MultiExtended : SelectionMode.One;
-            contentSplit.Panel2Collapsed = !completionSettings.showObjectDetails;
+            bool showDetails = completionSettings.showObjectDetails;
+            if (contentSplit.Panel2Collapsed == showDetails)
+                contentSplit.Panel2Collapsed = !showDetails;
             UpdateParameterInfo(metadata, context);
             list.BeginUpdate();
             try
@@ -235,10 +277,11 @@ namespace MSSQLTool.Completion
             finally { list.EndUpdate(); }
             if (list.Items.Count == 0 && !parameterInfo.Visible) { Hide(); return; }
 
-            // The highlight always sits on the first row: neither the row the user moved to earlier
-            // nor a remembered value from a previous popup is restored, so the list never opens with
-            // the selection parked further down.
-            list.SelectedIndex = InitialSelectionIndex(list.Items.Count);
+            // A popup that was already open keeps the selected row when it survives the filter;
+            // a new popup starts at the first row.  Without an explicit arrow/mouse move the
+            // refresh always returns to the first row, which is the best match for the new input.
+            if (!KeepsManualSelection(sessionContinues, prefixChanged)) userMovedSelection = false;
+            list.SelectedIndex = ChooseSelectionIndex(sessionContinues, userMovedSelection, items, previousKey, previousIndex);
             UpdateDetails();
             int maximumItems = SettingsManager.GetSqlCompletionSettings().maximumItems;
             footer.Text = newItems.Count >= maximumItems
@@ -253,8 +296,16 @@ namespace MSSQLTool.Completion
 
             PositionAndShow(textView);
             // The strip wraps against the popup width, so its height is only final once the
-            // window has the size it is shown with.
-            UpdateParameterInfoHeight();
+            // window has the size it is shown with.  Re-measuring every keystroke forces a full
+            // layout pass, so only the visible text or the width triggers it.
+            string parameterText = parameterInfo.Text ?? string.Empty;
+            if (!string.Equals(parameterText, lastParameterText, StringComparison.Ordinal)
+                || window.Width != lastParameterWidth)
+            {
+                lastParameterText = parameterText;
+                lastParameterWidth = window.Width;
+                UpdateParameterInfoHeight();
+            }
         }
 
         /// <summary>
@@ -326,22 +377,104 @@ namespace MSSQLTool.Completion
                 caretTop,
                 lineHeight);
 
+            bool sizeChanged = window.Width != layout.Size.Width || window.Height != layout.Size.Height;
             window.MinimumSize = layout.MinimumSize;
             if (window.Width != layout.Size.Width) window.Width = layout.Size.Width;
             if (window.Height != layout.Size.Height) window.Height = layout.Size.Height;
             ApplyDetailsWidth();
 
-            window.Location = layout.Location;
-            if (!window.Visible)
-                window.Show(new NativeWindowOwner(handle));
+            bool locationChanged = window.Location != layout.Location;
+            if (locationChanged) window.Location = layout.Location;
 
-            // WinForms DPI auto-scaling can adjust a form's bounds while its handle is created, so
-            // the exact position is re-asserted on the handle itself. This also refreshes the
-            // Z-order: a non-activating owned form can stay Visible yet fall behind SSMS after an
-            // application switch.
-            SetWindowPos(window.Handle, IntPtr.Zero, layout.Location.X, layout.Location.Y, 0, 0,
-                SwpNoSize | SwpNoActivate | SwpShowWindow);
+            IntPtr owner = ResolveOwnerWindow(handle);
+            bool ownerChanged = owner != ownerHandle;
+            bool wasVisible = window.Visible;
+            if (ownerChanged && wasVisible)
+            {
+                // A WinForms form cannot change its native owner while it is visible.  Recreate
+                // the ownership so the popup is tied to the visible SSMS frame, not the hidden
+                // HwndlessEditorFakeHwndWrapper that reports itself as the editor window.
+                window.Hide();
+                wasVisible = false;
+            }
+            if (!wasVisible)
+                window.Show(new NativeWindowOwner(owner));
+            ownerHandle = owner;
+
+            // The editor HWND is a hidden HwndlessEditorFakeHwndWrapper.  A popup owned by that
+            // window is still below the visible SSMS frame, so SWP_NOZORDER alone leaves it
+            // invisible.  Raise it only while the real owner is foreground; when the user switches
+            // to another application, the session timer dismisses it instead of leaving it on top.
+            bool ownerForeground = IsOwnerForeground(owner);
+            if (!wasVisible || ownerChanged || locationChanged || sizeChanged || ownerForeground)
+            {
+                uint flags = SwpNoSize | SwpNoActivate | SwpShowWindow;
+                if (!ownerForeground) flags |= SwpNoZorder;
+                SetWindowPos(window.Handle, IntPtr.Zero, layout.Location.X, layout.Location.Y, 0, 0, flags);
+            }
+            CaptureAnchor(textView);
         }
+
+        /// <summary>
+        /// The visible SSMS frame, not the editor's hidden fake HWND, owns the popup.  Owning the
+        /// popup to the real frame keeps it above SSMS without forcing it above other applications.
+        /// </summary>
+        private static IntPtr ResolveOwnerWindow(IntPtr editorHandle)
+        {
+            try
+            {
+                var uiShell = Package.GetGlobalService(typeof(SVsUIShell)) as IVsUIShell;
+                if (uiShell != null
+                    && uiShell.GetDialogOwnerHwnd(out IntPtr owner) == VSConstants.S_OK
+                    && owner != IntPtr.Zero)
+                    return owner;
+            }
+            catch (Exception) { }
+
+            try
+            {
+                IntPtr foreground = GetForegroundWindow();
+                if (foreground != IntPtr.Zero && BelongsToCurrentProcess(foreground))
+                {
+                    IntPtr root = GetAncestor(foreground, GaRoot);
+                    if (root != IntPtr.Zero) return root;
+                }
+            }
+            catch (Exception) { }
+
+            try
+            {
+                using (Process process = Process.GetCurrentProcess())
+                {
+                    process.Refresh();
+                    if (process.MainWindowHandle != IntPtr.Zero) return process.MainWindowHandle;
+                }
+            }
+            catch (Exception) { }
+
+            return editorHandle;
+        }
+
+        private static bool BelongsToCurrentProcess(IntPtr window)
+        {
+            GetWindowThreadProcessId(window, out uint processId);
+            return processId == GetCurrentProcessId();
+        }
+
+        private static bool IsOwnerForeground(IntPtr owner)
+        {
+            if (owner == IntPtr.Zero) return false;
+            IntPtr foreground = GetForegroundWindow();
+            if (foreground == IntPtr.Zero) return false;
+            if (foreground == owner) return true;
+            // A child of the SSMS frame (the editor, a toolbar) is still owned by that frame.
+            // A modal dialog is deliberately not: the timer then dismisses the popup instead of
+            // raising it above the dialog.
+            return GetAncestor(foreground, GaRoot) == owner;
+        }
+
+        /// <summary>True while the popup's real owner is the foreground window.</summary>
+        public bool OwnerIsForeground => IsOwnerForeground(ownerHandle);
 
         /// <summary>
         /// Resolves the visual top-left corner of the caret in screen coordinates together with
@@ -407,8 +540,8 @@ namespace MSSQLTool.Completion
                 CycleCategory(commandId == (uint)VSConstants.VSStd2KCmdID.RIGHT ? 1 : -1);
                 return true;
             }
-            if (commandId == (uint)VSConstants.VSStd2KCmdID.UP) { list.SelectedIndex = Math.Max(0, list.SelectedIndex - 1); return true; }
-            if (commandId == (uint)VSConstants.VSStd2KCmdID.DOWN) { list.SelectedIndex = Math.Min(list.Items.Count - 1, list.SelectedIndex + 1); return true; }
+            if (commandId == (uint)VSConstants.VSStd2KCmdID.UP) { userMovedSelection = true; list.SelectedIndex = Math.Max(0, list.SelectedIndex - 1); return true; }
+            if (commandId == (uint)VSConstants.VSStd2KCmdID.DOWN) { userMovedSelection = true; list.SelectedIndex = Math.Min(list.Items.Count - 1, list.SelectedIndex + 1); return true; }
             if (commandId == (uint)VSConstants.VSStd2KCmdID.PAGEUP) { MoveSelection(-VisibleItemCount); return true; }
             if (commandId == (uint)VSConstants.VSStd2KCmdID.PAGEDN) { MoveSelection(VisibleItemCount); return true; }
             // HOME/END and BOL/EOL stay with the editor: hijacking them for list
@@ -423,16 +556,64 @@ namespace MSSQLTool.Completion
         private void MoveSelection(int offset)
         {
             if (list.Items.Count == 0) return;
+            userMovedSelection = true;
             list.SelectedIndex = Math.Max(0, Math.Min(list.Items.Count - 1, list.SelectedIndex + offset));
         }
 
-        private static string ItemKey(CompletionItem item) => item == null ? null : item.Kind + "|" + item.DisplayText;
+        private static string ItemKey(CompletionItem item) => item?.Key;
 
         /// <summary>
         /// The row a refreshed list selects.  Always the first one: the popup never restores a row
         /// the user moved to earlier, so the highlight cannot end up parked further down the list.
         /// </summary>
         internal static int InitialSelectionIndex(int itemCount) => itemCount <= 0 ? -1 : 0;
+
+        /// <summary>
+        /// True only while a manual arrow/mouse choice still describes the current input.  A new
+        /// prefix makes the filter's own best match authoritative again; keeping the old row there
+        /// left the list highlighting a word the caret no longer typed, and the inline preview was
+        /// force-cleared as "navigated" on every keystroke that followed.
+        /// </summary>
+        internal static bool KeepsManualSelection(bool sessionContinues, bool prefixChanged)
+            => sessionContinues && !prefixChanged;
+
+        /// <summary>
+        /// The row a refreshed list selects: the same item when it survived the new filter, the
+        /// closest index otherwise.  Never row 0 when the user had moved elsewhere.
+        /// </summary>
+        internal static int ResolveSelectionIndex(IReadOnlyList<CompletionItem> current, string previousKey, int previousIndex)
+        {
+            if (current == null || current.Count == 0) return -1;
+            if (!string.IsNullOrEmpty(previousKey))
+            {
+                for (int i = 0; i < current.Count; i++)
+                    if (string.Equals(ItemKey(current[i]), previousKey, StringComparison.Ordinal)) return i;
+            }
+
+            return Math.Max(0, Math.Min(current.Count - 1, previousIndex));
+        }
+
+        /// <summary>
+        /// The highlight after a refresh: a row the user picked with the keyboard or the mouse is
+        /// preserved when it survives the filter, otherwise the first row (the best match) wins.
+        /// Typing therefore never leaves the highlight parked on an earlier, now less relevant row.
+        /// </summary>
+        internal static int ChooseSelectionIndex(bool sessionContinues, bool userMovedSelection,
+            IReadOnlyList<CompletionItem> current, string previousKey, int previousIndex)
+        {
+            if (!sessionContinues || !userMovedSelection) return InitialSelectionIndex(current?.Count ?? 0);
+            if (current == null || current.Count == 0) return -1;
+
+            // Keep the row the user moved to only while it is still part of the list; when it was
+            // filtered out, the best match takes over so the highlight is never arbitrary.
+            if (!string.IsNullOrEmpty(previousKey))
+            {
+                for (int i = 0; i < current.Count; i++)
+                    if (string.Equals(ItemKey(current[i]), previousKey, StringComparison.Ordinal)) return i;
+            }
+
+            return InitialSelectionIndex(current.Count);
+        }
 
         private void UpdateCategories()
         {
@@ -552,10 +733,63 @@ namespace MSSQLTool.Completion
             int iconTop = bounds.Top + Math.Max(2, (bounds.Height - iconSize) / 2);
             DrawKindIcon(e.Graphics, new Rectangle(iconLeft, iconTop, iconSize, iconSize), item.Kind);
             int textLeft = iconLeft + iconSize + 6;
-            TextRenderer.DrawText(e.Graphics, item.DisplayText ?? string.Empty, list.Font,
-                new Rectangle(textLeft, bounds.Top, Math.Max(0, bounds.Right - textLeft - 7), bounds.Height), primary,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            var textBounds = new Rectangle(textLeft, bounds.Top, Math.Max(0, bounds.Right - textLeft - 7), bounds.Height);
+            DrawItemText(e.Graphics, item.DisplayText ?? string.Empty, textBounds, primary, selected);
             e.DrawFocusRectangle();
+        }
+
+        private void DrawItemText(Graphics graphics, string text, Rectangle bounds, Color color, bool selected)
+        {
+            int hit = FindHighlight(text, lastFilterPrefix, out int hitLength);
+            if (hit < 0)
+            {
+                TextRenderer.DrawText(graphics, text, list.Font, bounds, color, ItemTextFlags);
+                return;
+            }
+
+            if (matchFont == null) matchFont = new Font(list.Font, FontStyle.Bold);
+            int x = bounds.Left;
+            if (hit > 0)
+            {
+                string before = text.Substring(0, hit);
+                DrawSegment(graphics, before, ref x, bounds, color, list.Font);
+            }
+
+            string match = text.Substring(hit, hitLength);
+            DrawSegment(graphics, match, ref x, bounds, GetMatchColor(selected, color), matchFont);
+
+            string after = text.Substring(hit + hitLength);
+            if (after.Length > 0)
+                DrawSegment(graphics, after, ref x, bounds, color, list.Font);
+        }
+
+        private static void DrawSegment(Graphics graphics, string text, ref int x, Rectangle bounds, Color color, Font font)
+        {
+            Size measured = TextRenderer.MeasureText(graphics, text, font, new Size(int.MaxValue, bounds.Height),
+                TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+            var segment = new Rectangle(x, bounds.Top, measured.Width, bounds.Height);
+            TextRenderer.DrawText(graphics, text, font, segment, color,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+            x += measured.Width;
+        }
+
+        private static int FindHighlight(string text, string prefix, out int length)
+        {
+            length = 0;
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(prefix)) return -1;
+            string needle = prefix.TrimStart('@');
+            if (needle.Length == 0) return -1;
+            int index = text.IndexOf(needle, StringComparison.OrdinalIgnoreCase);
+            if (index < 0) return -1;
+            length = needle.Length;
+            return index;
+        }
+
+        private Color GetMatchColor(bool selected, Color primary)
+        {
+            // Selected rows already use a light foreground; bolding alone marks the match without
+            // hurting contrast.  Unselected rows get an accent on the matched run.
+            return selected ? primary : Color.FromArgb(0x0A, 0x5C, 0xB0);
         }
 
         private void DrawKindIcon(Graphics graphics, Rectangle bounds, CompletionItemKind kind)
@@ -779,8 +1013,56 @@ namespace MSSQLTool.Completion
 
         public void Hide()
         {
+            userMovedSelection = false;
             if (!window.Visible) return;
             window.Hide();
+        }
+
+        /// <summary>
+        /// Re-anchors a visible popup after the editor scrolled, was resized or switched to a
+        /// split view.  The caret has not moved, but the screen position it maps to has.
+        /// </summary>
+        public void Reposition(IVsTextView textView)
+        {
+            try
+            {
+                if (window == null || !window.Visible) return;
+                IVsTextView target = textView ?? lastTextView;
+                if (target == null) return;
+                if (IsAnchorCurrent(target)) return;
+                PositionAndShow(target);
+            }
+            catch (Exception ex)
+            {
+                FeatureDiagnostics.Report("SQL Completion", "The completion popup could not be repositioned", ex);
+                try { window.Hide(); } catch { }
+            }
+        }
+
+        private bool IsAnchorCurrent(IVsTextView textView)
+        {
+            int line = -1, column = 0, firstVisible = 0;
+            try
+            {
+                if (textView.GetCaretPos(out line, out column) != VSConstants.S_OK) return false;
+                if (textView.GetScrollInfo(1, out _, out _, out _, out firstVisible) != VSConstants.S_OK) firstVisible = 0;
+            }
+            catch (Exception) { return false; }
+            return line == anchorLine && column == anchorColumn && firstVisible == anchorFirstVisible && anchorLine >= 0;
+        }
+
+        private void CaptureAnchor(IVsTextView textView)
+        {
+            try
+            {
+                if (textView.GetCaretPos(out int line, out int column) == VSConstants.S_OK)
+                {
+                    anchorLine = line;
+                    anchorColumn = column;
+                    anchorFirstVisible = textView.GetScrollInfo(1, out _, out _, out _, out int firstVisible) == VSConstants.S_OK ? firstVisible : 0;
+                }
+            }
+            catch (Exception) { }
         }
         public void Dispose()
         {

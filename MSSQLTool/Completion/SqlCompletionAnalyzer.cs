@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using MSSQLTool.Model;
 using System.IO;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
@@ -14,16 +15,12 @@ namespace MSSQLTool.Completion
 
         // Patterns on the per-keystroke path are precompiled; interpreted
         // matching dominated profile time on large statements.
-        private static readonly Regex PrefixPattern = new Regex(@"(?<prefix>[@#\w$\[\]]*)$", RegexOptions.Compiled);
         private static readonly Regex InsertColumnListPattern = new Regex(@"\bINSERT\s+(?:INTO\s+)?(?<target>(?:" + Id + @"(?:\s*\.\s*" + Id + @"){0,3}|" + Id + @"(?:\s*\.\s*" + Id + @")?\s*\.\s*\.\s*" + Id + @"))\s*\([^)]*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex CompletedInsertTargetPattern = new Regex(@"\bINSERT\s+INTO\s+(?<target>" + Id + @"(?:\s*\.\s*" + Id + @"){0,3})\s+$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex InsertBodyPattern = new Regex(@"\bINSERT\s+INTO\s+(?<target>" + Id + @"(?:\s*\.\s*" + Id + @"){0,3})\s+$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static readonly Regex OmittedSchemaMemberPattern = new Regex(@"(?<qual>" + Id + @"(?:\s*\.\s*" + Id + @")?)\s*\.\s*\.\s*(?<prefix>" + Id + @")?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static readonly Regex MemberPattern = new Regex(@"(?<qual>" + Id + @"(?:\s*\.\s*" + Id + @"){0,2})\s*\.\s*(?<prefix>" + Id + @")?$", RegexOptions.Compiled);
-        private static readonly Regex JoinSourcePattern = new Regex(@"\bJOIN\s+" + Id + @"(?:\s*\.\s*" + Id + @"){0,2}\s*\.\s*(?:" + Id + @")?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        // The tail of a join target with nothing after it: the ON clause is still missing.
         private static readonly Regex UpdateSetPattern = new Regex(@"\bUPDATE\s+(?<target>" + Id + @"(?:\s*\.\s*" + Id + @"){0,3})(?:\s+(?:AS\s+)?" + Id + @")?\s+SET\s+[^;]*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex DmlTailPattern = new Regex(@"\b(?:MERGE|TRUNCATE\s+TABLE|DELETE\s+FROM)\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static readonly Regex PredicateColumnPattern = new Regex(@"(?<column>" + Id + @"(?:\s*\.\s*" + Id + @")?)\s*(?:=|<>|!=|>=|<=|>|<|LIKE|IN|BETWEEN)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex FunctionTargetTailPattern = new Regex(@"(?<target>" + Id + @"(?:\s*\.\s*" + Id + @"){0,3})\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex NonFunctionBeforeTargetPattern = new Regex(@"\b(?:INSERT(?:\s+INTO)?|CREATE\s+TABLE|ALTER\s+TABLE|REFERENCES)\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex WindowOverPattern = new Regex(@"\bOVER\s*\((?<body>[^()]*)$", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
@@ -51,7 +48,6 @@ namespace MSSQLTool.Completion
         private static readonly Regex ArgumentPrefixPattern = new Regex(@"(?<prefix>[@#\w$]*)$", RegexOptions.Compiled);
         private static readonly Regex DeclareTablePattern = new Regex(@"\bDECLARE\s+(?<name>@\w+)\s+TABLE\s*\((?<cols>[^;]*)\)", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
         private static readonly Regex TempCreatePattern = new Regex(@"\bCREATE\s+TABLE\s+(?<name>\#\#?\w+)\s*\((?<cols>[^;]*)\)", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
-        private static readonly Regex SelectIntoPattern = new Regex(@"\bSELECT\s+(?<select>.*?)\s+INTO\s+(?<name>\#\#?\w+)", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
         private static readonly Regex TempAlterPattern = new Regex(@"\bALTER\s+TABLE\s+(?<name>\#\#?\w+)\s+ADD\s+(?<cols>[^;]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex TempDropPattern = new Regex(@"\bDROP\s+TABLE(?:\s+IF\s+EXISTS)?\s+(?<name>\#\#?\w+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex DefinitionColumnPattern = new Regex(@"^(?<name>" + Id + @")\s+(?<type>[\w]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -67,7 +63,8 @@ namespace MSSQLTool.Completion
         private static readonly Regex InsertKeywordPattern = new Regex(@"\bINSERT\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex DeleteKeywordPattern = new Regex(@"\bDELETE\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        public static CompletionContext Analyze(string textBeforeCaret, int caretColumn, string textAfterCaret = null)
+        public static CompletionContext Analyze(string textBeforeCaret, int caretColumn, string textAfterCaret = null,
+            IReadOnlyList<DatabaseObjectMetadata> sessionLocalObjects = null, int compatibilityLevel = 170)
         {
             string source = textBeforeCaret ?? string.Empty;
             // One mask pass over the full session text (text before the caret
@@ -81,7 +78,7 @@ namespace MSSQLTool.Completion
             SqlTextContext text = SqlTextContext.Create(source, maskedSource);
             string statement = text.StatementText;
             string masked = text.MaskedStatement;
-            var context = new CompletionContext { Kind = CompletionContextKind.General, CurrentStatement = statement, CurrentBatch = text.BatchText, MaskedStatement = masked };
+            var context = new CompletionContext { Kind = CompletionContextKind.General, CurrentStatement = statement, CurrentBatch = text.BatchText, MaskedStatement = masked, DocumentText = sessionText, CaretOffset = source.Length };
             bool insideCommentOrString, lastMasked;
             SqlTextContext.ScanState(source, source.Length, out insideCommentOrString, out lastMasked);
             if (insideCommentOrString)
@@ -95,39 +92,58 @@ namespace MSSQLTool.Completion
                 return context;
             }
             string semanticText = statement + suffix;
+            // The editor hands in a line-relative column, and the caret may sit before the end of the
+            // statement (text after the caret on the same line).  The column becomes an offset once,
+            // here; everything below uses offsets and never treats a column as one.
+            int caretLineStart = source.LastIndexOf('\n') + 1;
+            int caretInSource = Math.Min(source.Length, caretLineStart + Math.Max(0, caretColumn));
+            int caretInStatement = Math.Max(0, Math.Min(statement.Length, caretInSource - text.StatementStart));
+            context.CaretOffset = caretInSource;
             // Session-scoped #temp tables survive GO, so inspect all text before
-            // the caret rather than only the current batch.
+            // the caret rather than only the current batch.  The window scanner hands the
+            // declarations from previous statements in, so this pass only sees the current
+            // statement (and stays cheap on a large script).
+            AddSessionLocalObjects(context, sessionLocalObjects);
             AddLocalObjects(sessionText, maskedSession, text.BatchText, text.MaskedBatch, context);
-            SqlSemanticModel semanticModel = SqlSemanticModel.Create(semanticText, statement.Length);
+            SqlSemanticModel semanticModel = SqlSemanticModel.Create(semanticText, caretInStatement, compatibilityLevel);
+            // The scan above splits on semicolons and line-leading starters only.  Two statements on
+            // one line are visible in the tree, and the tree is already parsed, so it supplies the
+            // boundary instead of a second parser pass over the same text.
+            if (semanticModel.StatementStart > 0)
+            {
+                int statementShift = semanticModel.StatementStart;
+                text.AdvanceStatement(statementShift);
+                statement = text.StatementText;
+                masked = text.MaskedStatement;
+                caretInStatement = Math.Max(0, caretInStatement - statementShift);
+                context.CurrentStatement = statement;
+                context.MaskedStatement = masked;
+                semanticModel = SqlSemanticModel.Create(statement + suffix, caretInStatement, compatibilityLevel);
+            }
             semanticModel.CopyAliasesTo(context);
             foreach (string column in semanticModel.ReferencedColumns) context.ReferencedColumns.Add(column);
             foreach (string column in semanticModel.GroupByColumns) context.GroupByColumns.Add(column);
             context.SelectAliases.AddRange(semanticModel.SelectAliases);
             context.Diagnostics.AddRange(semanticModel.Diagnostics);
             context.HasParseErrors = semanticModel.HasParseErrors;
-            // Session-scoped temp tables are added above, so the alias map is already non-empty.
-            // The statement's real FROM aliases still have to be merged in; the old Count==0 guard
-            // meant "WHERE Y" after a temp-table statement only offered the temp table's columns.
-            AddAliases(masked, context);
-            // The FROM clause can sit after the caret (SELECT * | FROM dbo.X).  Include the
-            // semantic suffix so aliases that have not been typed yet still resolve.
-            AddAliases(masked + suffix, context);
-            PruneAliasesToCurrentStatement(context, masked + suffix);
+            // FROM/JOIN aliases come from the parse (CopyAliasesTo above) with the scoping the query
+            // actually has, so the text scan only runs when the parse produced nothing usable.
+            if (context.Aliases.Count == 0) AddAliases(masked + suffix, context);
             if (context.Aliases.Count == 0) AddAliases(maskedSession, context);
-            Match word = PrefixPattern.Match(statement);
-            context.Prefix = Clean(word.Groups["prefix"].Value);
-            context.ReplacementStartColumn = Math.Max(0, caretColumn - word.Groups["prefix"].Length);
-            ClauseScan clauseScan = null;
+            PruneAliasesToCurrentStatement(context, masked + suffix);
+            // The word being typed comes from the position resolver's character walk, so the prefix
+            // the popup replaces and the prefix the member qualifier is read against are one string.
+            context.Prefix = Clean(semanticModel.Position?.Prefix);
+            context.ReplacementStartColumn = Math.Max(0, caretColumn - context.Prefix.Length);
 
             bool snippetsEnabled = SettingsManager.GetSnippetSettings().useSnippets;
             if (snippetsEnabled && IsExactSnippetPrefix(context.Prefix, true, SnippetService.GetAllSnippets()))
             {
-                // Snippets are editor constructs, not EXEC positional values. An
-                // exact prefix therefore wins in every SQL context so Ctrl+Space
-                // can present and replace it just like the configured Tab key.
-                context.Kind = CompletionContextKind.General;
-                context.TargetObject = null;
-                return context;
+                // An exact prefix still wins in every SQL context (a snippet is an editor construct,
+                // not an EXEC positional value), but it no longer replaces the resolved position
+                // with "general": that switch offered columns and functions at a table source, so
+                // "FROM dbo.T t LJ" showed the table's LXTJGID among the join snippets.
+                context.ExactSnippetPrefix = context.Prefix;
             }
             if (TryAnalyzeDetachedStatementOrSnippet(statement, masked, caretColumn, context)) return context;
             if (TryAnalyzeExecute(masked, caretColumn, context)) return context;
@@ -164,149 +180,159 @@ namespace MSSQLTool.Completion
                 return context;
             }
 
-            Match omittedSchemaMember = OmittedSchemaMemberPattern.Match(statement);
-            if (omittedSchemaMember.Success)
+            // Member access, including "SELECT c." where ScriptDOM dropped the trailing dot: the
+            // position resolver already read the qualifier, the prefix and whether the member is
+            // itself a table source, so there is nothing left to match here.
+            SqlCaretPosition caretPosition = semanticModel.Position;
+            if (caretPosition != null && caretPosition.Kind == SqlCaretKind.Member)
             {
                 context.Kind = CompletionContextKind.Member;
-                context.Qualifier = CleanQualified(omittedSchemaMember.Groups["qual"].Value);
-                context.Prefix = Clean(omittedSchemaMember.Groups["prefix"].Value);
-                context.ReplacementStartColumn = Math.Max(0, caretColumn - omittedSchemaMember.Groups["prefix"].Length);
-                context.HasOmittedSchemaQualifier = true;
-                context.IsDataSourceMember = IsDataSourceMemberContext(masked, omittedSchemaMember.Index, ref clauseScan);
+                context.Qualifier = CleanQualified(caretPosition.Qualifier);
+                context.Prefix = Clean(caretPosition.Prefix);
+                context.ReplacementStartColumn = Math.Max(0, caretColumn - context.Prefix.Length);
+                context.HasOmittedSchemaQualifier = caretPosition.OmittedSchemaQualifier;
+                context.IsJoinSource = caretPosition.IsJoinSource;
+                context.IsDataSourceMember = caretPosition.IsDataSourceMember;
                 return context;
             }
 
-            Match member = MemberPattern.Match(statement);
-            if (member.Success)
-            {
-                context.Kind = CompletionContextKind.Member;
-                context.IsJoinSource = JoinSourcePattern.IsMatch(masked);
-                context.IsDataSourceMember = context.IsJoinSource || IsDataSourceMemberContext(masked, member.Index, ref clauseScan);
-                context.Qualifier = CleanQualified(member.Groups["qual"].Value);
-                context.Prefix = Clean(member.Groups["prefix"].Value);
-                context.ReplacementStartColumn = Math.Max(0, caretColumn - member.Groups["prefix"].Length);
-                return context;
-            }
-
-            // ScriptDom drops a trailing dot, so "SELECT c." arrives here as "SELECT c" and the member
-            // branch above never fires.  When the text before the caret ends in a dot whose qualifier is
-            // an alias of the statement, that is a member access: inserting the bare column then keeps
-            // the alias the user typed instead of prefixing the real table name.
-            string beforeCaret = masked.Substring(0, Math.Min(Math.Max(0, caretColumn), masked.Length));
-            Match rawMember = MemberPattern.Match(beforeCaret);
-            if (rawMember.Success)
-            {
-                string rawQualifier = CleanQualified(rawMember.Groups["qual"].Value);
-                if (context.Aliases.ContainsKey(rawQualifier) || rawQualifier.IndexOf('.') >= 0)
-                {
-                    context.Kind = CompletionContextKind.Member;
-                    context.IsJoinSource = JoinSourcePattern.IsMatch(masked);
-                    context.IsDataSourceMember = context.IsJoinSource || IsDataSourceMemberContext(masked, rawMember.Index, ref clauseScan);
-                    context.Qualifier = rawQualifier;
-                    context.Prefix = Clean(rawMember.Groups["prefix"].Value);
-                    context.ReplacementStartColumn = Math.Max(0, caretColumn - rawMember.Groups["prefix"].Length);
-                    return context;
-                }
-            }
-
-            string withoutPrefix = statement.Substring(0, Math.Max(0, statement.Length - word.Groups["prefix"].Length));
+            string withoutPrefix = statement.Substring(0, Math.Max(0, statement.Length - context.Prefix.Length));
             Match insertBody = InsertBodyPattern.Match(masked);
             Match update = UpdateSetPattern.Match(masked);
             if (insertBody.Success) { context.Kind = CompletionContextKind.InsertBody; context.TargetObject = CleanQualified(insertBody.Groups["target"].Value); }
             else if (update.Success) { context.Kind = CompletionContextKind.UpdateSet; context.TargetObject = ResolveAlias(CleanQualified(update.Groups["target"].Value), context); }
             else if (DmlTailPattern.IsMatch(withoutPrefix)) context.Kind = CompletionContextKind.DataSource;
-            else context.Kind = DetectClauseContext(withoutPrefix, masked, ref clauseScan);
+
+            // The parse tree answers "where is the caret": the same tree resolved the aliases and the
+            // columns, so the three cannot disagree.  When it has nothing to say, the resolver reads
+            // the tokens it already has behind the caret — there is no second classifier here.
+            ApplyParserPosition(context, semanticModel);
+            // Everything the item lists need to know about the position, published once.  A list must
+            // read these facts instead of re-reading the text.
+            SqlCaretPosition resolved = semanticModel.Position;
+            context.ResolvedKind = resolved?.Kind ?? SqlCaretKind.Unknown;
+            context.EnclosingClause = resolved?.EnclosingClause;
+            context.StatementKind = semanticModel.StatementKind;
+
+            string predicateSql = statement;
+            if (!string.IsNullOrEmpty(context.Prefix) && !context.Prefix.All(char.IsDigit))
+                predicateSql = statement.Substring(0, Math.Max(0, statement.Length - context.Prefix.Length));
+
             if (context.Kind == CompletionContextKind.Predicate)
             {
-                Match activeColumn = PredicateColumnPattern.Matches(masked).Cast<Match>().LastOrDefault();
-                if (activeColumn != null && activeColumn.Success) context.ActiveColumn = CleanQualified(activeColumn.Groups["column"].Value);
+                context.PredicateState = SqlPredicateStateClassifier.Classify(predicateSql, out int predicateDepth);
+                context.PredicateDepth = predicateDepth;
+                // The column the condition compares comes from the position resolver's tokens, not
+                // from a second regex over the masked text.
+                context.ActiveColumn = caretPosition?.ActiveColumn;
+                context.PredicateOwner = caretPosition?.PredicateOwner;
             }
             return context;
         }
 
         /// <summary>
-        /// Clause context derived from one shared tokenization of the masked
-        /// statement. The token stream of any prefix of the statement is the
-        /// prefix of the token stream (analyze boundaries always land between
-        /// tokens), so a single scan answers member-context and tail-context
-        /// questions without re-running the parser per call.
+        /// Translates the resolved position into the context the item builder understands.  Only the
+        /// generic positions are taken over; specialised contexts (INSERT column list, EXEC
+        /// arguments, MERGE target, window clauses, PIVOT...) keep the detection that carries their
+        /// extra data.
         /// </summary>
-        private sealed class ClauseScan
+        private static void ApplyParserPosition(CompletionContext context, SqlSemanticModel model)
         {
-            private readonly List<TSqlParserToken> tokens = new List<TSqlParserToken>();
-            private readonly List<int> depths = new List<int>();
-
-            public ClauseScan(string maskedSql)
+            SqlCaretPosition position = model?.Position;
+            if (position == null || position.Kind == SqlCaretKind.Unknown) return;
+            // The SET list assigns with "=", so ScriptDOM may call that position a predicate.
+            // Keep UPDATE SET only for that ambiguous case; a resolved SELECT list or data
+            // source belongs to a nested query or the next statement and must win.
+            if (context.Kind == CompletionContextKind.UpdateSet
+                && position.Kind == SqlCaretKind.Predicate
+                && !position.InPredicateClause) return;
+            switch (context.Kind)
             {
-                try
-                {
-                    var parser = new TSql170Parser(true);
-                    IList<TSqlParserToken> all = parser.GetTokenStream(new StringReader(maskedSql ?? string.Empty), out IList<ParseError> _);
-                    int depth = 0;
-                    foreach (TSqlParserToken token in all)
-                    {
-                        if (token.TokenType == TSqlTokenType.WhiteSpace || token.TokenType == TSqlTokenType.SingleLineComment
-                            || token.TokenType == TSqlTokenType.MultilineComment || token.TokenType == TSqlTokenType.EndOfFile) continue;
-                        if (token.TokenType == TSqlTokenType.RightParenthesis) depth = Math.Max(0, depth - 1);
-                        depths.Add(depth);
-                        tokens.Add(token);
-                        if (token.TokenType == TSqlTokenType.LeftParenthesis) depth++;
-                    }
-                }
-                catch { }
+                case CompletionContextKind.General:
+                case CompletionContextKind.Predicate:
+                case CompletionContextKind.SelectList:
+                case CompletionContextKind.DataSource:
+                case CompletionContextKind.Join:
+                case CompletionContextKind.MergeSource:
+                case CompletionContextKind.TableSourceTail:
+                case CompletionContextKind.JoinSourceTail:
+                case CompletionContextKind.GroupBy:
+                case CompletionContextKind.OrderBy:
+                case CompletionContextKind.UpdateSet:
+                    break;
+                default:
+                    return;
             }
 
-            public CompletionContextKind KindAt(int maxOffset)
+            CompletionContextKind? mapped = MapCaretKind(position.Kind);
+            if (mapped == null) return;
+            CompletionContextKind kind = mapped.Value;
+            CompletionContextKind previousKind = context.Kind;
+            context.Kind = kind;
+            // A target captured from a preceding UPDATE must not scope a different query.
+            if (previousKind == CompletionContextKind.UpdateSet
+                && kind != CompletionContextKind.UpdateSet
+                && kind != CompletionContextKind.Predicate)
+                context.TargetObject = null;
+            context.PositionResolved = true;
+            context.PositionDecidedByTree = position.DecidedByTree;
+            if (kind == CompletionContextKind.TableSourceTail || kind == CompletionContextKind.JoinSourceTail)
             {
-                try
-                {
-                    int count = tokens.Count;
-                    while (count > 0 && tokens[count - 1].Offset + (tokens[count - 1].Text?.Length ?? 0) > maxOffset) count--;
-                    if (count == 0) return CompletionContextKind.General;
-                    int caretDepth = depths[count - 1] + (tokens[count - 1].TokenType == TSqlTokenType.LeftParenthesis ? 1 : 0);
-                    int clause = -1;
-                    for (int i = 0; i < count; i++)
-                        if (depths[i] == caretDepth && IsClauseToken(tokens[i].Text)) clause = i;
-                    if (clause < 0) return CompletionContextKind.General;
-                    string word = tokens[clause].Text.ToUpperInvariant();
-                    string previous = clause > 0 && depths[clause - 1] == caretDepth ? tokens[clause - 1].Text.ToUpperInvariant() : string.Empty;
-                    bool atClauseStart = clause == count - 1;
-                    bool afterSeparator = count > 0 && (tokens[count - 1].Text == "," || tokens[count - 1].Text.Equals("APPLY", StringComparison.OrdinalIgnoreCase));
-                    if (word == "JOIN" && atClauseStart) return CompletionContextKind.Join;
-                    if ((word == "FROM" || word == "APPLY" || word == "UPDATE" || word == "INTO") && (atClauseStart || afterSeparator)) return CompletionContextKind.DataSource;
-                    if (word == "MERGE" && atClauseStart) return CompletionContextKind.DataSource;
-                    if (word == "USING" && atClauseStart) return CompletionContextKind.MergeSource;
-                    if (word == "WHERE" || word == "HAVING" || word == "ON") return CompletionContextKind.Predicate;
-                    if (word == "BY" && previous == "GROUP") return CompletionContextKind.GroupBy;
-                    if (word == "BY" && previous == "ORDER") return CompletionContextKind.OrderBy;
-                    if (word == "SELECT") return CompletionContextKind.SelectList;
-                    return CompletionContextKind.General;
-                }
-                catch { return CompletionContextKind.General; }
+                context.TableSourceName = position.SourceName;
+                context.TableAliasWritten = position.AliasWritten;
+                // ON only belongs to a join that takes one (not CROSS JOIN / APPLY).
+                context.AwaitingJoinPredicate = kind == CompletionContextKind.JoinSourceTail && position.TakesOn;
+            }
+            else
+            {
+                context.AwaitingJoinPredicate = false;
             }
         }
 
-        private static CompletionContextKind DetectClauseContext(string sql, string maskedStatementForScan, ref ClauseScan scan)
+        /// <summary>
+        /// The context a resolved caret kind stands for.  Null when that answer has no generic
+        /// context: member access is handled before this point and needs its qualifier, not a kind.
+        /// Keeping the mapping in one place is what lets a test prove the answer was not replaced.
+        /// </summary>
+        internal static CompletionContextKind? MapCaretKind(SqlCaretKind kind)
         {
-            // `sql` and `maskedStatementForScan` are the same length (masking
-            // preserves offsets), so the shared token stream covers both.
-            ClauseScan value = scan;
-            if (value == null)
+            switch (kind)
             {
-                value = new ClauseScan(maskedStatementForScan ?? sql);
-                scan = value;
+                case SqlCaretKind.DataSource: return CompletionContextKind.DataSource;
+                case SqlCaretKind.Join: return CompletionContextKind.Join;
+                case SqlCaretKind.MergeSource: return CompletionContextKind.MergeSource;
+                case SqlCaretKind.TableSourceTail: return CompletionContextKind.TableSourceTail;
+                case SqlCaretKind.JoinSourceTail: return CompletionContextKind.JoinSourceTail;
+                case SqlCaretKind.SelectList: return CompletionContextKind.SelectList;
+                case SqlCaretKind.Predicate: return CompletionContextKind.Predicate;
+                case SqlCaretKind.GroupBy: return CompletionContextKind.GroupBy;
+                case SqlCaretKind.OrderBy: return CompletionContextKind.OrderBy;
+                default: return null;
             }
-            return value.KindAt((sql ?? string.Empty).Length);
         }
 
-        private static bool IsClauseToken(string value) => ClauseTokens.Contains(value ?? string.Empty);
-        private static readonly HashSet<string> ClauseTokens = new HashSet<string>(new[]
-        { "SELECT", "FROM", "JOIN", "APPLY", "WHERE", "HAVING", "ON", "GROUP", "ORDER", "BY", "UNION", "EXCEPT", "INTERSECT", "OPTION", "UPDATE", "INTO", "SET", "VALUES", "USING", "WHEN", "MERGE" }, StringComparer.OrdinalIgnoreCase);
-
-        private static bool IsDataSourceMemberContext(string maskedStatement, int memberStart, ref ClauseScan scan)
+        /// <summary>
+        /// The bare ON token, plus the space that separates it from the alias.  Inserting it asks for
+        /// the continuation popup (<see cref="CompletionController.ShouldRequestCompletionAfterCommit"/>)
+        /// so the key columns are offered as soon as ON is in the document.
+        /// </summary>
+        private static CompletionItem JoinPredicateItem(CompletionContext context)
         {
-            CompletionContextKind kind = DetectClauseContext(maskedStatement?.Substring(0, Math.Min(memberStart, maskedStatement.Length)) ?? string.Empty, maskedStatement, ref scan);
-            return kind == CompletionContextKind.DataSource || kind == CompletionContextKind.Join || kind == CompletionContextKind.MergeSource;
+            string text = context?.DocumentText ?? string.Empty;
+            int caret = context?.CaretOffset ?? -1;
+            bool needsLeadingSpace = caret > 0 && caret <= text.Length && !char.IsWhiteSpace(text[caret - 1]);
+            return new CompletionItem
+            {
+                DisplayText = "ON",
+                InsertText = needsLeadingSpace ? " ON " : "ON ",
+                Kind = CompletionItemKind.Join,
+                Description = Doc(
+                    "Starts the join condition.",
+                    "Tab accepts it and the key columns of both sources are offered right away.",
+                    "Pair the new table's key with the existing one."),
+                // Above the table hints: ON is the only mandatory token at a join target.
+                Score = 260
+            };
         }
 
         private static bool TryAnalyzeAdvancedContext(string masked, int caretColumn, CompletionContext context)
@@ -336,6 +362,20 @@ namespace MSSQLTool.Completion
             if (HasUnclosedClause(masked, "PIVOT") || HasUnclosedClause(masked, "UNPIVOT"))
             {
                 context.Kind = CompletionContextKind.Pivot;
+                return true;
+            }
+
+            // "FROM dbo.T WITH (|" and "... OPTION (|" are the bodies of the hint clauses.  The
+            // parenthesis belongs to the clause keyword, so it is neither a function call nor a table
+            // source: only the hint name is missing and the closing parenthesis is typed after it.
+            if (HasUnclosedClause(masked, "WITH"))
+            {
+                context.Kind = CompletionContextKind.TableHint;
+                return true;
+            }
+            if (HasUnclosedClause(masked, "OPTION"))
+            {
+                context.Kind = CompletionContextKind.QueryHint;
                 return true;
             }
 
@@ -500,7 +540,16 @@ namespace MSSQLTool.Completion
         private static readonly HashSet<string> NonFunctionParentheses = new HashSet<string>(new[]
         {
             "VALUES", "IN", "EXISTS", "IF", "WHILE", "CHECK", "CONSTRAINT", "PRIMARY", "FOREIGN",
-            "REFERENCES", "TABLE", "BEGIN", "OVER", "WITHIN", "GROUPING", "RETURN", "THROW", "RAISERROR"
+            "REFERENCES", "TABLE", "BEGIN", "OVER", "WITHIN", "GROUPING", "RETURN", "THROW", "RAISERROR",
+            // "WHERE (a = 1 AND |" is a boolean group, not a function call: the clause keyword owns the
+            // parenthesis, so offering function arguments there is wrong.
+            "WHERE", "HAVING", "ON", "AND", "OR", "NOT", "SELECT", "WHEN", "THEN", "ELSE", "SET",
+            // A source keyword opens a derived table: "FROM (SELECT ...", "JOIN (SELECT ...",
+            // "OUTER APPLY (SELECT ...".  They used to be read as calls named FROM / JOIN / APPLY, so
+            // the popup offered function arguments and data types instead of the tables of the inner
+            // query.  The same reading applies to the other clauses that own a parenthesis.
+            "FROM", "JOIN", "APPLY", "USING", "INTO", "MERGE", "PIVOT", "UNPIVOT", "TABLESAMPLE",
+            "WITH", "OPTION"
         }, StringComparer.OrdinalIgnoreCase);
 
         private static bool TryAnalyzeExecute(string masked, int caretColumn, CompletionContext context)
@@ -612,10 +661,34 @@ namespace MSSQLTool.Completion
             => threadCompletionSettings ?? SettingsManager.GetSqlCompletionSettings();
 
         public static List<CompletionItem> BuildItems(CompletionContext context, MetadataSnapshot metadata)
+            => FilterCandidates(BuildCandidates(context, metadata), context?.Prefix);
+
+        /// <summary>
+        /// Every candidate the context can offer, independent of the typed prefix.  Caching this
+        /// list lets the editor re-filter on the UI thread for each keystroke instead of re-running
+        /// the parser and rebuilding the whole candidate set.
+        /// </summary>
+        internal static List<CompletionItem> BuildCandidates(CompletionContext context, MetadataSnapshot metadata)
         {
             metadata = metadata ?? MetadataSnapshot.Empty;
             var result = new List<CompletionItem>();
-            var objects = metadata.Objects.Concat(context.LocalObjects).ToList();
+            if (!string.IsNullOrEmpty(context.ExactSnippetPrefix))
+            {
+                // The snippet the user already named in full goes on top of what the position allows.
+                SnippetItem exact = SnippetService.GetAllSnippets()
+                    .FirstOrDefault(s => string.Equals(s.Prefix, context.ExactSnippetPrefix, StringComparison.OrdinalIgnoreCase));
+                if (exact != null)
+                    result.Add(new CompletionItem
+                    {
+                        DisplayText = exact.Prefix, InsertText = exact.Body, Kind = CompletionItemKind.Snippet,
+                        Description = exact.Description, Score = 300
+                    });
+            }
+            // Local (temp/CTE) tables are usually absent; only build the combined list when there
+            // is something to combine.
+            List<DatabaseObjectMetadata> objects = context.LocalObjects.Count == 0
+                ? metadata.Objects
+                : metadata.Objects.Concat(context.LocalObjects).ToList();
             try
             {
                 threadCompletionSettings = SettingsManager.GetSqlCompletionSettings();
@@ -624,7 +697,7 @@ namespace MSSQLTool.Completion
                 switch (context.Kind)
                 {
                     case CompletionContextKind.ExecuteObject:
-                        result.AddRange(metadata.Objects.Where(o => o.Kind == CompletionItemKind.Procedure && MatchesContainer(o, context.Qualifier)).Select(o => ObjectItem(o, o.IsSystem ? 25 : 120, !string.IsNullOrEmpty(context.Qualifier)))); break;
+                        result.AddRange(metadata.GetIndex().Procedures.Where(o => MatchesContainer(o, context.Qualifier)).Select(o => ObjectItem(o, o.IsSystem ? 25 : 120, !string.IsNullOrEmpty(context.Qualifier)))); break;
                     case CompletionContextKind.ExecuteArguments: AddParameters(result, context, metadata); break;
                     case CompletionContextKind.ExecuteArgumentValue: AddValues(result, context, metadata); break;
                     case CompletionContextKind.FunctionArguments: AddFunctionArguments(result, context, metadata, objects); break;
@@ -632,19 +705,32 @@ namespace MSSQLTool.Completion
                         if (context.IsJoinSource) result.AddRange(BuildJoinItems(context, metadata));
                         else AddMembers(result, context, objects, metadata);
                         break;
-                    case CompletionContextKind.Join: result.AddRange(BuildJoinItems(context, metadata)); break;
+                    case CompletionContextKind.Join: result.AddRange(BuildJoinItems(context, metadata)); AddCteNames(result, context, 100); break;
                     case CompletionContextKind.InsertColumns:
                     case CompletionContextKind.UpdateSet: AddWritableColumns(result, context, metadata); break;
                     case CompletionContextKind.InsertBody: AddInsertTemplate(result, context, metadata); break;
                     case CompletionContextKind.DataSource:
-                        result.AddRange(objects.Where(IsDataSource).Select(o => DataSourceItem(o, context, 40)));
-                        result.AddRange(metadata.Schemas.Select(s => ContainerItem(s, CompletionItemKind.Schema, 60)));
-                        result.AddRange(metadata.Databases.Select(d => ContainerItem(d, CompletionItemKind.Database, 35)));
-                        result.AddRange(metadata.LinkedServers.Select(s => ContainerItem(s, CompletionItemKind.Server, 30)));
-                        AddBuiltInTableFunctions(result, metadata.CompatibilityLevel);
+                        AddDataSourceItems(result, context, metadata);
                         break;
+                    case CompletionContextKind.TableSourceTail:
+                    case CompletionContextKind.JoinSourceTail:
+                        // A source slot takes the next join, a hint, an alias or the next clause.  A
+                        // column cannot follow a source here (its ON operands are reached through
+                        // the predicate context), so offering one only added noise: "FROM dbo.T t
+                        // LJ" used to suggest the table's LXTJGID through the fuzzy channel.
+                        AddTableSourceTailItems(result, context, metadata);
+                        break;
+                    case CompletionContextKind.TableHint: AddTableHintBodyItems(result); break;
+                    case CompletionContextKind.QueryHint: AddQueryHintItems(result); break;
                     case CompletionContextKind.MergeSource: result.AddRange(objects.Where(IsDataSource).Select(o => ObjectItem(o, 55, false))); break;
-                    case CompletionContextKind.Predicate: AddScopedColumns(result, context, metadata, 85, false); AddPredicateItems(result); AddTypedValues(result, context, metadata); break;
+                    case CompletionContextKind.Predicate:
+                        AddScopedColumns(result, context, metadata, 85, false);
+                        // "UPDATE dbo.T SET ... WHERE |" has no FROM clause, so the target table is the
+                        // only source of columns there.
+                        if (!string.IsNullOrEmpty(context.TargetObject)) AddWritableColumns(result, context, metadata);
+                        AddPredicateItems(result, context);
+                        AddTypedValues(result, context, metadata);
+                        break;
                     case CompletionContextKind.SelectList: AddSelectListItems(result, context, metadata, objects); break;
                     case CompletionContextKind.WindowPartitionBy:
                     case CompletionContextKind.WindowOrderBy: AddWindowItems(result, context, metadata, objects); break;
@@ -660,18 +746,85 @@ namespace MSSQLTool.Completion
                     default: AddGeneral(result, context, metadata, objects); break;
                 }
 
+                // "FROM dbo.A a JOIN dbo.B b |": everything the statement can say next hinges on ON,
+                // so it outranks the columns instead of being one keyword among many.
+                if (context.AwaitingJoinPredicate) result.Add(JoinPredicateItem(context));
+
                 // Data types belong wherever an expression or a declaration can appear: DECLARE, CAST and
                 // CONVERT targets, column definitions.  They do not belong in a WHERE/ON/HAVING
                 // predicate list.
                 if (context.Kind != CompletionContextKind.Member
                     && context.Kind != CompletionContextKind.DataSource
-                    && context.Kind != CompletionContextKind.Predicate)
+                    && context.Kind != CompletionContextKind.Predicate
+                    && context.Kind != CompletionContextKind.TableHint
+                    && context.Kind != CompletionContextKind.QueryHint)
                     result.AddRange(DataTypes.Select(t => new CompletionItem { DisplayText = t, InsertText = t, Kind = CompletionItemKind.Type, Description = "data type", Score = 18 }));
             }
             finally { threadCompletionSettings = null; }
             foreach (CompletionItem item in result) item.ScopeKey = context.MetadataScope;
-            return FilterAndSort(result.GroupBy(i => i.Kind + "|" + i.DisplayText + "|" + i.InsertText, StringComparer.OrdinalIgnoreCase).Select(g => g.First()), context.Prefix);
+            return MergeDuplicates(result);
         }
+
+        /// <summary>
+        /// One row per name.  In a SELECT list SUM used to appear three times — the snippet "SUM(",
+        /// the built-in function and the keyword — and only the function carried the usage text, so
+        /// the list looked broken.  Language elements (keyword, function, snippet) merge on the bare
+        /// name; the highest score wins (the snippet that inserts the parentheses) and the
+        /// documentation is carried across from whichever duplicate has it.
+        /// Columns, tables and other name spaces keep their own key: a column called SUM is not the
+        /// SUM function.
+        /// </summary>
+        private static List<CompletionItem> MergeDuplicates(List<CompletionItem> items)
+        {
+            var order = new List<string>();
+            var byKey = new Dictionary<string, CompletionItem>(StringComparer.OrdinalIgnoreCase);
+            foreach (CompletionItem item in items)
+            {
+                if (item == null) continue;
+                string key = DuplicateKey(item);
+                CompletionItem existing;
+                if (!byKey.TryGetValue(key, out existing))
+                {
+                    byKey[key] = item;
+                    order.Add(key);
+                    continue;
+                }
+
+                CompletionItem keep = existing.Score >= item.Score ? existing : item;
+                CompletionItem drop = ReferenceEquals(keep, existing) ? item : existing;
+                if (string.IsNullOrWhiteSpace(keep.DetailText) && !string.IsNullOrWhiteSpace(drop.DetailText))
+                {
+                    keep.DetailText = drop.DetailText;
+                    keep.Description = drop.Description;
+                }
+                byKey[key] = keep;
+            }
+
+            var merged = new List<CompletionItem>(order.Count);
+            foreach (string key in order) merged.Add(byKey[key]);
+            return merged;
+        }
+
+        private static string DuplicateKey(CompletionItem item)
+        {
+            string text = item.DisplayText ?? string.Empty;
+            bool languageElement = item.Kind == CompletionItemKind.Keyword
+                                   || item.Kind == CompletionItemKind.Function
+                                   || item.Kind == CompletionItemKind.Snippet;
+            if (!languageElement) return item.Kind + "|" + text;
+            // Only a snippet spells the call form in its display text ("SUM("); a hint keeps its
+            // parentheses ("WITH (NOLOCK)") or every hint would collapse into one "WITH" row.
+            if (item.Kind == CompletionItemKind.Snippet)
+            {
+                int paren = text.IndexOf('(');
+                if (paren > 0) text = text.Substring(0, paren);
+            }
+            return "L|" + text.Trim();
+        }
+
+        /// <summary>Prefix filter and ranking over an already-built candidate list.</summary>
+        internal static List<CompletionItem> FilterCandidates(IEnumerable<CompletionItem> candidates, string prefix)
+            => FilterAndSort(candidates ?? Enumerable.Empty<CompletionItem>(), prefix);
 
         /// <summary>
         /// Resolves a name the way the previous linear
@@ -737,21 +890,36 @@ namespace MSSQLTool.Completion
         private static void AddBuiltInTableFunctions(List<CompletionItem> result, int compatibilityLevel)
         {
             foreach (string name in new[] { "OPENXML" })
-                result.Add(new CompletionItem { DisplayText = name, InsertText = name, Kind = CompletionItemKind.Function, Description = "SQL Server table-valued function", Score = 48 });
+                result.Add(TableFunctionItem(name));
             if (compatibilityLevel >= 130)
                 foreach (string name in new[] { "OPENJSON", "STRING_SPLIT" })
-                    result.Add(new CompletionItem { DisplayText = name, InsertText = name, Kind = CompletionItemKind.Function, Description = "SQL Server table-valued function", Score = 48 });
+                    result.Add(TableFunctionItem(name));
             if (compatibilityLevel >= 160)
-                result.Add(new CompletionItem { DisplayText = "GENERATE_SERIES", InsertText = "GENERATE_SERIES", Kind = CompletionItemKind.Function, Description = "SQL Server table-valued function", Score = 48 });
+                result.Add(TableFunctionItem("GENERATE_SERIES"));
         }
+
+        /// <summary>
+        /// A built-in table-valued function carries the same usage note as a scalar function: the
+        /// signature says it is called in FROM, and the example shows the WITH column clause.
+        /// </summary>
+        private static CompletionItem TableFunctionItem(string name) => new CompletionItem
+        {
+            DisplayText = name,
+            InsertText = name,
+            Kind = CompletionItemKind.Function,
+            Description = "SQL Server table-valued function",
+            DetailTextProvider = () => FunctionDocumentation(name),
+            Score = 48
+        };
 
         private static void AddSelectListItems(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata, List<DatabaseObjectMetadata> objects)
         {
             AddGeneral(result, context, metadata, objects);
             AddScopedColumns(result, context, metadata, 95);
             var columns = new List<string>();
-            bool qualify = context.Aliases.Count > 1;
-            foreach (var source in context.Aliases)
+            var sources = ScopedSources(context);
+            bool qualify = sources.Count > 1;
+            foreach (var source in sources)
             {
                 DatabaseObjectMetadata item = FindObject(context, metadata, source.Value);
                 if (item == null) continue;
@@ -780,7 +948,8 @@ namespace MSSQLTool.Completion
 
         private static void AddOutputItems(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata, List<DatabaseObjectMetadata> objects)
         {
-            DatabaseObjectMetadata target = FindObject(context, metadata, context.TargetObject);
+            var target = FindObject(context, metadata, context.TargetObject);
+            if (target == null) target = FindObject(context, metadata, ModelTarget(context));
             if (target == null) return;
             string statement = context.MaskedStatement ?? context.CurrentStatement ?? string.Empty;
             var qualifiers = !string.IsNullOrWhiteSpace(context.Qualifier) ? new[] { context.Qualifier }
@@ -849,7 +1018,11 @@ namespace MSSQLTool.Completion
         }
 
         private static DatabaseObjectMetadata FindTarget(CompletionContext context, MetadataSnapshot metadata)
-            => FindObject(context, metadata, context.TargetObject);
+        {
+            DatabaseObjectMetadata target = FindObject(context, metadata, context.TargetObject);
+            if (target == null) target = FindObject(context, metadata, ModelTarget(context));
+            return target;
+        }
 
         private static readonly HashSet<string> BuiltInFunctions = new HashSet<string>(new[]
         {
@@ -868,14 +1041,106 @@ namespace MSSQLTool.Completion
             "SUSER_SNAME", "USER_NAME", "XACT_STATE"
         }, StringComparer.OrdinalIgnoreCase);
 
-        private static void AddScopedColumns(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata, int score, bool excludeReferenced = false)
+        /// <summary>
+        /// Sources visible at the caret according to the shared document model.  The heuristic
+        /// alias map is built from the text before the parser runs, so it can miss an alias that
+        /// is declared inside a nested subquery; the model knows the declaration depth.
+        /// </summary>
+        private static List<KeyValuePair<string, string>> ModelScopeSources(CompletionContext context)
         {
-            // The alias map holds both "A" and "YGDAH" for the same table (the bare name is registered so
-            // that "YGDAH." works without an alias).  Iterating it directly made every column appear twice
-            // and, because the map then looked like "more than one table", prefixed the insert with the
-            // table name.  Collapse to one entry per object and prefer the short user alias.
+            var result = new List<KeyValuePair<string, string>>();
+            if (context == null || string.IsNullOrEmpty(context.DocumentText)) return result;
+            // Completion runs on the UI thread; the model build is linear but this keeps a huge
+            // script from paying for it during a keystroke.  Analysis already owns the big-file path.
+            if (context.DocumentText.Length > 150000) return result;
+            int caret = context.CaretOffset;
+            if (caret < 0 || caret > context.DocumentText.Length) caret = context.DocumentText.Length;
+            try
+            {
+                SqlDocumentModel model = SqlDocumentModel.Get(context.DocumentText);
+                SqlStatementRange statement = model.StatementAt(caret);
+                if (statement == null) return result;
+                SqlScopeTree scope = model.ScopeOf(statement);
+                foreach (SqlSource source in scope.VisibleAt(caret))
+                {
+                    if (string.IsNullOrEmpty(source.Alias) || string.IsNullOrEmpty(source.ObjectName)) continue;
+                    result.Add(new KeyValuePair<string, string>(source.Alias, source.ObjectName));
+                    string bare = LastPart(source.ObjectName);
+                    if (!string.IsNullOrEmpty(bare) && !string.Equals(bare, source.Alias, StringComparison.OrdinalIgnoreCase))
+                        result.Add(new KeyValuePair<string, string>(bare, source.ObjectName));
+                }
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug("COMPLETION model scope fallback failed: " + ex.Message);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// The table the caret statement writes to, from the token scanner.  Used only when the
+        /// regex inference produced a name that metadata cannot resolve (bracketed names, a CTE
+        /// before the INSERT, a half-typed statement).
+        /// </summary>
+        private static string ModelTarget(CompletionContext context, SqlTargetKind? expected = null)
+        {
+            if (context == null || string.IsNullOrEmpty(context.DocumentText)) return null;
+            if (context.DocumentText.Length > 150000) return null;
+            try
+            {
+                SqlDocumentModel model = SqlDocumentModel.Get(context.DocumentText);
+                int caret = context.CaretOffset;
+                if (caret < 0 || caret > context.DocumentText.Length) caret = context.DocumentText.Length;
+                SqlStatementRange statement = model.StatementAt(caret);
+                if (statement == null) return null;
+                SqlTargetReference target = SqlTargetScanner.Find(context.DocumentText, statement.Start, statement.Length);
+                if (target == null) return null;
+                if (expected.HasValue && target.Kind != expected.Value) return null;
+                return target.Name;
+            }
+            catch (Exception) { return null; }
+        }
+
+        private static SqlSource ResolveModelSource(CompletionContext context, string name)
+        {
+            if (context == null || string.IsNullOrEmpty(name) || string.IsNullOrEmpty(context.DocumentText)) return null;
+            if (context.DocumentText.Length > 150000) return null;
+            int caret = context.CaretOffset;
+            if (caret < 0 || caret > context.DocumentText.Length) caret = context.DocumentText.Length;
+            try
+            {
+                SqlDocumentModel model = SqlDocumentModel.Get(context.DocumentText);
+                SqlStatementRange statement = model.StatementAt(caret);
+                if (statement == null) return null;
+                return model.ScopeOf(statement).Resolve(name, caret);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// The alias map with the model's scoped sources merged in, collapsed to one entry per
+        /// object.  Shared by every context that lists scoped columns, so a nested subquery sees
+        /// the same set whether it completes a member, a predicate or a SELECT list.
+        /// </summary>
+        private static List<KeyValuePair<string, string>> ScopedSources(CompletionContext context)
+        {
+            // The parser knows which aliases are in scope at the caret.  Prefer that answer when it
+            // has one: the heuristic map keeps aliases from sibling subqueries, which used to leak
+            // columns into an outer SELECT after the nested query ended.  Only fall back to the
+            // text map when the statement is too incomplete for the scope tree to contribute.
+            List<KeyValuePair<string, string>> modelSources = ModelScopeSources(context);
+            var candidates = modelSources.Count > 0
+                ? new List<KeyValuePair<string, string>>(modelSources)
+                : new List<KeyValuePair<string, string>>(context.Aliases);
+            // The parser's scope tree is the authority whenever it contributed a source.  Merging
+            // the text alias map back in used to keep a same-table alias from a nested subquery,
+            // which made "i.Id" suggest columns that are out of scope at the caret.
+
             var scopes = new List<KeyValuePair<string, string>>();
-            foreach (var source in context.Aliases)
+            foreach (var source in candidates)
             {
                 int existing = scopes.FindIndex(s => string.Equals(s.Value, source.Value, StringComparison.OrdinalIgnoreCase));
                 if (existing < 0) { scopes.Add(source); continue; }
@@ -884,19 +1149,52 @@ namespace MSSQLTool.Completion
                 bool candidateIsAlias = !string.Equals(LastPart(source.Value), source.Key, StringComparison.OrdinalIgnoreCase);
                 if (existingIsTableName && candidateIsAlias) scopes[existing] = source;
             }
+            return scopes;
+        }
 
-            bool qualify = scopes.Count > 1;
+        private static void AddScopedColumns(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata, int score, bool excludeReferenced = false)
+        {
+            // The alias map holds both "A" and "YGDAH" for the same table (the bare name is registered so
+            // that "YGDAH." works without an alias).  Collapse to one entry per object and prefer the
+            // short user alias.
+            var scopes = ScopedSources(context);
+            // The alias map can hold several keys for one table ("A" and the bare name), and the same
+            // alias may appear with and without the schema.  Counting those as separate sources used
+            // to qualify every column — a unique "KSBM" came out as "WDDDB.KSBM" just because the
+            // statement happened to read two tables.  Collapse by the object each entry resolves to.
+            var resolved = new List<KeyValuePair<string, DatabaseObjectMetadata>>();
+            var seenObjects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var source in scopes)
             {
                 DatabaseObjectMetadata obj = FindObject(context, metadata, source.Value);
                 if (obj == null) continue;
+                if (!seenObjects.Add(CleanQualified(obj.QualifiedName))) continue;
+                resolved.Add(new KeyValuePair<string, DatabaseObjectMetadata>(source.Key, obj));
+            }
+            if (resolved.Count == 0) return;
+
+            // Only a name that two in-scope tables both own needs the qualifier; a unique column
+            // reads better bare and stays valid SQL.
+            var ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (resolved.Count > 1)
+            {
+                var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var source in resolved)
+                    foreach (ColumnMetadata column in source.Value.Columns)
+                        if (!seenNames.Add(column.Name)) ambiguous.Add(column.Name);
+            }
+
+            foreach (var source in resolved)
+            {
+                DatabaseObjectMetadata obj = source.Value;
                 foreach (ColumnMetadata column in obj.Columns)
                 {
-                    if (excludeReferenced && IsGroupedColumn(context, source.Key, source.Value, column.Name)) continue;
+                    if (excludeReferenced && IsGroupedColumn(context, source.Key, obj.QualifiedName, column.Name)) continue;
                     CompletionItem item = ColumnItem(column, score, obj);
-                    if (qualify)
+                    if (ambiguous.Contains(column.Name))
                     {
                         item.InsertText = Quote(source.Key) + "." + Quote(column.Name);
+                        item.DisplayText = source.Key + "." + column.Name;
                         item.Description = (item.Description ?? string.Empty) + " · " + source.Key;
                     }
                     result.Add(item);
@@ -937,36 +1235,180 @@ namespace MSSQLTool.Completion
                 result.Add(new CompletionItem { DisplayText = "NULL", InsertText = "NULL", Kind = CompletionItemKind.Keyword, Description = type, Score = 80 });
         }
 
-        private static void AddPredicateItems(List<CompletionItem> result)
+        private static void AddPredicateItems(List<CompletionItem> result, CompletionContext context)
         {
-            foreach (string value in new[] { "=", "<>", ">", ">=", "<", "<=", "LIKE", "IN", "BETWEEN", "IS NULL", "IS NOT NULL", "EXISTS" })
-                result.Add(new CompletionItem { DisplayText = value, InsertText = value, Kind = CompletionItemKind.Keyword, Description = "predicate", Score = 45 });
+            switch (context.PredicateState)
+            {
+                case SqlPredicateState.LogicalExpected:
+                    // The predicate is complete: the next useful tokens are the boolean connectors
+                    // and the clause that follows the WHERE/ON/HAVING block.
+                    AddKeyword(result, "AND", 126, "boolean operator");
+                    AddKeyword(result, "OR", 124, "boolean operator");
+                    if (context.PredicateDepth > 0) AddKeyword(result, ")", 118, "close the predicate group");
+                    if (string.Equals(context.PredicateOwner, "ON", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // A finished ON predicate can be followed by another join, which is why the
+                        // join forms belong here; GROUP BY / ORDER BY / HAVING cannot follow a join
+                        // condition, so they are replaced instead of ranked lower.
+                        AddJoinContinuationItems(result, 104);
+                        AddKeyword(result, "WHERE", 82, "clause");
+                    }
+                    else
+                    {
+                        AddKeyword(result, "GROUP BY", 78, "clause");
+                        AddKeyword(result, "ORDER BY", 78, "clause");
+                        AddKeyword(result, "HAVING", 62, "clause");
+                    }
+                    AddKeyword(result, "UNION", 52, "set operator");
+                    AddKeyword(result, "UNION ALL", 50, "set operator");
+                    AddKeyword(result, "OPTION", 38, "query hint");
+                    AddKeyword(result, "FOR JSON", 30, "output clause");
+                    AddKeyword(result, "FOR XML", 30, "output clause");
+                    break;
+                case SqlPredicateState.BetweenLowerBound:
+                    AddKeyword(result, "AND", 132, "BETWEEN range");
+                    break;
+                case SqlPredicateState.OperatorExpected:
+                    AddComparisonOperators(result);
+                    break;
+                case SqlPredicateState.OperandExpected:
+                    AddOperandStarters(result);
+                    // Operators stay available but rank below columns/functions here; the existing
+                    // "WHERE |" behaviour relied on them being reachable.
+                    AddComparisonOperators(result, -70);
+                    break;
+                default:
+                    AddComparisonOperators(result);
+                    AddOperandStarters(result);
+                    break;
+            }
+
+            if (context.PredicateState == SqlPredicateState.OperandExpected
+                || context.PredicateState == SqlPredicateState.Unknown)
+            {
+                // Predicate operands may be function calls; without these, "WHERE ISN" offered
+                // nothing even though ISNULL is one of the most common predicates in T-SQL.
+                foreach (string name in BuiltInFunctions)
+                    result.Add(new CompletionItem
+                    {
+                        DisplayText = name, InsertText = name, Kind = CompletionItemKind.Function,
+                        Description = FunctionSignature(name), Score = 45
+                    });
+            }
+        }
+
+        private static void AddComparisonOperators(List<CompletionItem> result, int scoreOffset = 0)
+        {
+            AddKeyword(result, "=", 112 + scoreOffset, "comparison");
+            AddKeyword(result, "<>", 110 + scoreOffset, "comparison");
+            AddKeyword(result, ">", 108 + scoreOffset, "comparison");
+            AddKeyword(result, ">=", 108 + scoreOffset, "comparison");
+            AddKeyword(result, "<", 108 + scoreOffset, "comparison");
+            AddKeyword(result, "<=", 108 + scoreOffset, "comparison");
+            AddKeyword(result, "LIKE", 106 + scoreOffset, "pattern match");
+            AddKeyword(result, "IS NULL", 106 + scoreOffset, "null test");
+            AddKeyword(result, "IS NOT NULL", 106 + scoreOffset, "null test");
+            AddKeyword(result, "IN", 104 + scoreOffset, "set membership");
+            AddKeyword(result, "BETWEEN", 102 + scoreOffset, "range");
+            AddKeyword(result, "NOT LIKE", 98 + scoreOffset, "negated pattern match");
+            AddKeyword(result, "NOT IN", 96 + scoreOffset, "negated set membership");
+            AddKeyword(result, "NOT BETWEEN", 94 + scoreOffset, "negated range");
+        }
+
+        private static void AddOperandStarters(List<CompletionItem> result)
+        {
+            AddKeyword(result, "NOT", 95, "negation");
+            AddKeyword(result, "EXISTS", 90, "subquery test");
+            AddKeyword(result, "(", 88, "predicate group");
+            AddKeyword(result, "NULL", 70, "null literal");
+            AddKeyword(result, "CASE", 60, "conditional expression");
+        }
+
+        private static void AddKeyword(List<CompletionItem> result, string text, int score, string description)
+        {
+            result.Add(new CompletionItem
+            {
+                DisplayText = text, InsertText = text, Kind = CompletionItemKind.Keyword,
+                Description = description, Score = score
+            });
         }
 
         private static void AddSelectAliases(List<CompletionItem> result, CompletionContext context)
         {
-            foreach (string semanticAlias in context.SelectAliases)
-                result.Add(new CompletionItem { DisplayText = semanticAlias, InsertText = Quote(semanticAlias), Kind = CompletionItemKind.Column, Description = "SELECT alias", Score = 105 });
-            Match select = SelectFromListPattern.Match(context.MaskedStatement ?? SqlTextContext.MaskCommentsAndStrings(context.CurrentStatement ?? string.Empty));
-            if (!select.Success) return;
-            foreach (string expression in SplitTopLevel(select.Groups["list"].Value))
+            var aliases = new List<string>();
+            foreach (string alias in ModelSelectAliases(context)) AddAlias(aliases, alias);
+            foreach (string semanticAlias in context.SelectAliases) AddAlias(aliases, semanticAlias);
+
+            // Text fallback only when neither the model nor the parser found an alias; it is what
+            // keeps "expr AS name" working in a half-typed statement.
+            if (aliases.Count == 0)
             {
-                Match alias = SelectAliasInListPattern.Match(expression);
-                string aliasName = alias.Groups["equals"].Success ? Clean(alias.Groups["equals"].Value) : Clean(alias.Groups["name"].Value);
-                if (alias.Success) result.Add(new CompletionItem { DisplayText = aliasName, InsertText = Quote(aliasName), Kind = CompletionItemKind.Column, Description = "SELECT alias", Score = 105 });
+                Match select = SelectFromListPattern.Match(context.MaskedStatement ?? SqlTextContext.MaskCommentsAndStrings(context.CurrentStatement ?? string.Empty));
+                if (select.Success)
+                {
+                    foreach (string expression in SplitTopLevel(select.Groups["list"].Value))
+                    {
+                        Match alias = SelectAliasInListPattern.Match(expression);
+                        if (!alias.Success) continue;
+                        string aliasName = alias.Groups["equals"].Success ? Clean(alias.Groups["equals"].Value) : Clean(alias.Groups["name"].Value);
+                        AddAlias(aliases, aliasName);
+                    }
+                }
             }
+
+            foreach (string aliasName in aliases)
+                result.Add(new CompletionItem { DisplayText = aliasName, InsertText = Quote(aliasName), Kind = CompletionItemKind.Column, Description = "SELECT alias", Score = 105 });
+        }
+
+        private static void AddAlias(List<string> aliases, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            if (aliases.Any(a => string.Equals(a, value, StringComparison.OrdinalIgnoreCase))) return;
+            aliases.Add(value);
+        }
+
+        private static List<string> ModelSelectAliases(CompletionContext context)
+        {
+            var result = new List<string>();
+            if (context == null || string.IsNullOrEmpty(context.DocumentText)) return result;
+            if (context.DocumentText.Length > 150000) return result;
+            int caret = context.CaretOffset;
+            if (caret < 0 || caret > context.DocumentText.Length) caret = context.DocumentText.Length;
+            try
+            {
+                SqlDocumentModel model = SqlDocumentModel.Get(context.DocumentText);
+                SqlStatementRange statement = model.StatementAt(caret);
+                if (statement == null) return result;
+                result.AddRange(model.ScopeOf(statement).SelectAliases);
+            }
+            catch (Exception) { }
+            return result;
+        }
+
+        /// <summary>
+        /// The procedure whose parameters are being completed.  The regex-derived target wins
+        /// when metadata knows it; otherwise the EXEC target scanned from the caret statement is
+        /// used, which covers bracketed names and EXEC preceded by other tokens.
+        /// </summary>
+        private static string RoutineTarget(CompletionContext context, MetadataSnapshot metadata)
+        {
+            string target = context.TargetObject;
+            if (!string.IsNullOrWhiteSpace(target)
+                && metadata.Parameters.Any(p => ObjectMatches(p.ObjectName, target))) return target;
+            return ModelTarget(context, SqlTargetKind.Exec) ?? target;
         }
 
         private static void AddParameters(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
         {
-            var parameters = metadata.Parameters.Where(p => ObjectMatches(p.ObjectName, context.TargetObject) && !context.UsedParameters.Contains(p.Name) && !string.IsNullOrEmpty(p.Name)).ToList();
+            string routine = RoutineTarget(context, metadata);
+            var parameters = metadata.Parameters.Where(p => ObjectMatches(p.ObjectName, routine) && !context.UsedParameters.Contains(p.Name) && !string.IsNullOrEmpty(p.Name)).ToList();
             result.AddRange(parameters.Select(p => new CompletionItem { DisplayText = p.Name, InsertText = p.Name + " = ", Kind = CompletionItemKind.Parameter, Description = p.TypeDisplay + (p.HasDefaultValue ? " optional" : string.Empty) + (p.IsOutput ? " OUTPUT" : string.Empty), Score = 100 }));
             if (parameters.Count > 1 && context.UsedParameters.Count == 0) result.Add(new CompletionItem { DisplayText = "(all parameters)", InsertText = string.Join(", ", parameters.Select((p, i) => p.Name + " = ${" + (i + 1) + ":" + (p.HasDefaultValue ? "DEFAULT" : "NULL") + "}" + (p.IsOutput ? " OUTPUT" : string.Empty))), Kind = CompletionItemKind.Snippet, Description = parameters.Count + " parameters", Score = 130 });
         }
 
         private static void AddValues(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
         {
-            var matching = metadata.Parameters.Where(x => ObjectMatches(x.ObjectName, context.TargetObject)).OrderBy(x => x.Ordinal).ToList();
+            var matching = metadata.Parameters.Where(x => ObjectMatches(x.ObjectName, RoutineTarget(context, metadata))).OrderBy(x => x.Ordinal).ToList();
             var p = !string.IsNullOrWhiteSpace(context.ActiveParameter)
                 ? matching.FirstOrDefault(x => string.Equals(x.Name, context.ActiveParameter, StringComparison.OrdinalIgnoreCase))
                 : matching.ElementAtOrDefault(context.ArgumentIndex);
@@ -1022,6 +1464,11 @@ namespace MSSQLTool.Completion
                 return;
             }
             var obj = FindObject(context, metadata, resolved);
+            if (obj == null)
+            {
+                SqlSource scoped = ResolveModelSource(context, context.Qualifier);
+                if (scoped != null) obj = FindObject(context, metadata, scoped.ObjectName);
+            }
             if (obj != null) result.AddRange(obj.Columns.Select(c => ColumnItem(c, 90, obj)));
             else
             {
@@ -1041,6 +1488,7 @@ namespace MSSQLTool.Completion
         private static void AddWritableColumns(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
         {
             var target = FindObject(context, metadata, context.TargetObject);
+            if (target == null) target = FindObject(context, metadata, ModelTarget(context));
             if (target == null)
             {
                 // The target may be a temp table, a name the metadata has not seen, or an alias the
@@ -1063,6 +1511,7 @@ namespace MSSQLTool.Completion
         private static void AddInsertTemplate(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
         {
             var target = FindObject(context, metadata, context.TargetObject);
+            if (target == null) target = FindObject(context, metadata, ModelTarget(context));
             if (target == null)
             {
                 // The target may be a temp table, a name the metadata has not seen, or an alias the
@@ -1094,16 +1543,19 @@ namespace MSSQLTool.Completion
             result.AddRange(BuiltInFunctions.Select(name => new CompletionItem
             {
                 DisplayText = name, InsertText = name, Kind = CompletionItemKind.Function,
-                Description = FunctionSignature(name), DetailTextProvider = () => FunctionDocumentation(name), Score = 35
+                // Built on first read: a select list carries ~200 candidates and only the selected
+                // row ever asks for its text.
+                DescriptionProvider = () => FunctionSignature(name),
+                DetailTextProvider = () => FunctionDocumentation(name), Score = 35
             }));
-            result.AddRange(AllKeywords(CompletionSettings()).Select(k => new CompletionItem { DisplayText = k, InsertText = k, Kind = CompletionItemKind.Keyword, Description = KeywordDescription(k), Score = 20 }));
+            result.AddRange(AllKeywords(CompletionSettings()).Select(k => new CompletionItem
+            {
+                DisplayText = k, InsertText = k, Kind = CompletionItemKind.Keyword,
+                DescriptionProvider = () => KeywordDescription(k), Score = 20
+            }));
             foreach (var s in SnippetService.GetAllSnippets()) result.Add(new CompletionItem { DisplayText = s.Prefix, InsertText = s.Body, Kind = CompletionItemKind.Snippet, Description = s.Description, Score = 30 });
         }
 
-        /// <summary>
-        /// Built-in keywords plus the user's own list from the completion settings, de-duplicated.  The
-        /// extra list is what makes the keyword coverage a configuration rather than a fixed table.
-        /// </summary>
         /// <summary>
         /// Data types offered as completions (kind Type).  They belong in type positions: a declaration,
         /// a CAST/CONVERT target or a CREATE/ALTER TABLE column.
@@ -1116,24 +1568,50 @@ namespace MSSQLTool.Completion
             "HIERARCHYID", "GEOGRAPHY", "GEOMETRY", "TABLE"
         };
 
+        /// <summary>
+        /// Built-in keywords plus the user's own list from the completion settings, de-duplicated.  The
+        /// extra list is what makes the keyword coverage a configuration rather than a fixed table.
+        /// The result only changes when that setting changes, so it is cached by the setting text:
+        /// re-trimming and re-hashing ~150 names on every keystroke was pure waste.
+        /// </summary>
         internal static IEnumerable<string> AllKeywords(SettingsManager.SqlCompletionSettings settings)
+            => KeywordsFor(settings?.additionalKeywords);
+
+        private sealed class KeywordTable
         {
+            public string Extra;
+            public string[] Words;
+        }
+
+        private static volatile KeywordTable keywordTable;
+
+        internal static string[] KeywordsFor(string extra)
+        {
+            string key = extra ?? string.Empty;
+            KeywordTable cached = keywordTable;
+            if (cached != null && string.Equals(cached.Extra, key, StringComparison.Ordinal)) return cached.Words;
+
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var words = new List<string>();
             foreach (string keyword in Keywords)
                 if (!string.IsNullOrWhiteSpace(keyword) && seen.Add(keyword.Trim()))
-                    yield return keyword.Trim();
+                    words.Add(keyword.Trim());
 
-            string extra = settings?.additionalKeywords;
-            if (string.IsNullOrWhiteSpace(extra)) yield break;
-
-            foreach (string keyword in extra.Split(new[] { ';', '\r', '\n', '|' }, StringSplitOptions.RemoveEmptyEntries))
+            if (!string.IsNullOrWhiteSpace(extra))
             {
-                string trimmed = keyword.Trim();
-                // The list is compared as one whole keyword, so a trailing separator would look wrong.
-                trimmed = trimmed.TrimEnd(';', '|', ',').Trim();
-                if (trimmed.Length == 0 || trimmed.Length > 200) continue;
-                if (seen.Add(trimmed)) yield return trimmed;
+                foreach (string keyword in extra.Split(new[] { ';', '\r', '\n', '|' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string trimmed = keyword.Trim();
+                    // The list is compared as one whole keyword, so a trailing separator would look wrong.
+                    trimmed = trimmed.TrimEnd(';', '|', ',').Trim();
+                    if (trimmed.Length == 0 || trimmed.Length > 200) continue;
+                    if (seen.Add(trimmed)) words.Add(trimmed);
+                }
             }
+
+            string[] built = words.ToArray();
+            keywordTable = new KeywordTable { Extra = key, Words = built };
+            return built;
         }
 
         private static string KeywordDescription(string keyword)
@@ -1192,8 +1670,82 @@ namespace MSSQLTool.Completion
             ["SYSDATETIME"] = new[] { "SYSDATETIME()", "current datetime2 with higher precision", "SELECT SYSDATETIME();" },
             ["TRY_CAST"] = new[] { "TRY_CAST(expression AS data_type[(length)])", "like CAST but returns NULL instead of failing", "SELECT TRY_CAST('not a date' AS date);  -- NULL" },
             ["TRY_CONVERT"] = new[] { "TRY_CONVERT(data_type[(length)], expression [, style])", "like CONVERT but returns NULL instead of failing", "SELECT TRY_CONVERT(int, '12x');  -- NULL" },
-            ["UPPER"] = new[] { "UPPER(string)", "upper case", "SELECT UPPER('mssqltool');  -- MSSQLTOOL" }
+            ["UPPER"] = new[] { "UPPER(string)", "upper case", "SELECT UPPER('mssqltool');  -- MSSQLTOOL" },
+            ["MAX"] = new[] { "MAX([ALL|DISTINCT] expression)", "largest value in the group, ignores NULL", "SELECT MAX(OrderDate) FROM dbo.SalesOrderHeader;" },
+            ["MIN"] = new[] { "MIN([ALL|DISTINCT] expression)", "smallest value in the group, ignores NULL", "SELECT MIN(OrderDate) FROM dbo.SalesOrderHeader;" },
+
+            // Text functions.
+            ["ASCII"] = new[] { "ASCII(character_expression)", "code point of the first character", "SELECT ASCII('A');  -- 65" },
+            ["CHAR"] = new[] { "CHAR(integer_expression)", "character for an ASCII code (0-255)", "SELECT CHAR(65);  -- A" },
+            ["NCHAR"] = new[] { "NCHAR(integer_expression)", "Unicode character for a code point", "SELECT NCHAR(20013);  -- 中" },
+            ["UNICODE"] = new[] { "UNICODE(nchar_expression)", "Unicode code point of the first character", "SELECT UNICODE('中');  -- 20013" },
+            ["DATALENGTH"] = new[] { "DATALENGTH(expression)", "bytes used, including trailing spaces and Unicode width", "SELECT DATALENGTH(N'abc');  -- 6" },
+            ["DIFFERENCE"] = new[] { "DIFFERENCE(expression, expression)", "0-4 how similar two SOUNDEX values are", "SELECT DIFFERENCE('Smith', 'Smyth');  -- 4" },
+            ["SOUNDEX"] = new[] { "SOUNDEX(string)", "phonetic code for English names", "SELECT SOUNDEX('Smith');  -- S530" },
+            ["QUOTENAME"] = new[] { "QUOTENAME(name [, quote_char])", "wraps an identifier in brackets so it is safe to build SQL", "SELECT QUOTENAME('Order Header');  -- [Order Header]" },
+            ["REPLICATE"] = new[] { "REPLICATE(string, count)", "repeats a string", "SELECT REPLICATE('ab', 3);  -- ababab" },
+            ["REVERSE"] = new[] { "REVERSE(string)", "the string backwards", "SELECT REVERSE('abc');  -- cba" },
+            ["SPACE"] = new[] { "SPACE(count)", "a run of spaces", "SELECT 'a' + SPACE(3) + 'b';" },
+            ["STR"] = new[] { "STR(float [, length [, decimal_places]])", "number to text, padded to a fixed width", "SELECT STR(12.345, 8, 2);  -- '   12.35'" },
+            ["STRING_ESCAPE"] = new[] { "STRING_ESCAPE(text, 'json')", "escapes characters for JSON output", "SELECT STRING_ESCAPE('a\"b', 'json');" },
+            ["STRING_SPLIT"] = new[] { "STRING_SPLIT(string, separator)", "splits a delimited string into rows (2016+)", "SELECT value FROM STRING_SPLIT('a,b,c', ',');" },
+            ["STUFF"] = new[] { "STUFF(string, start, length, replacement)", "overwrites part of a string with another", "SELECT STUFF('abcdef', 2, 3, 'X');  -- aXef" },
+            ["TRANSLATE"] = new[] { "TRANSLATE(string, from, to)", "replaces characters one for one, like REPLACE per character", "SELECT TRANSLATE('2*[3+4]', '[]', '()');" },
+            ["TRIM"] = new[] { "TRIM([characters FROM] string)", "removes leading and trailing spaces (2017+)", "SELECT TRIM('  abc  ');" },
+            ["LTRIM"] = new[] { "LTRIM(string)", "removes leading spaces", "SELECT LTRIM('   abc');" },
+            ["RIGHT"] = new[] { "RIGHT(string, number_of_characters)", "last n characters", "SELECT RIGHT('MSSQLTOOL', 4);  -- TOOL" },
+
+            // Date and time construction.
+            ["DATEFROMPARTS"] = new[] { "DATEFROMPARTS(year, month, day)", "builds a date, error when the parts are invalid", "SELECT DATEFROMPARTS(2026, 1, 31);" },
+            ["DATETIMEFROMPARTS"] = new[] { "DATETIMEFROMPARTS(year, month, day, hour, minute, seconds, milliseconds)", "builds a datetime", "SELECT DATETIMEFROMPARTS(2026, 1, 31, 13, 45, 30, 500);" },
+            ["DATETIME2FROMPARTS"] = new[] { "DATETIME2FROMPARTS(year, month, day, hour, minute, seconds, fractions, precision)", "builds a datetime2", "SELECT DATETIME2FROMPARTS(2026, 1, 31, 13, 45, 30, 500, 3);" },
+            ["SMALLDATETIMEFROMPARTS"] = new[] { "SMALLDATETIMEFROMPARTS(year, month, day, hour, minute)", "builds a smalldatetime (minute precision)", "SELECT SMALLDATETIMEFROMPARTS(2026, 1, 31, 13, 45);" },
+            ["DATETIMEOFFSETFROMPARTS"] = new[] { "DATETIMEOFFSETFROMPARTS(year, month, day, hour, minute, seconds, fractions, hour_offset, minute_offset, precision)", "builds a datetimeoffset with its time zone offset", "SELECT DATETIMEOFFSETFROMPARTS(2026, 1, 31, 13, 45, 30, 0, 8, 0, 0);" },
+            ["TIMEFROMPARTS"] = new[] { "TIMEFROMPARTS(hour, minute, seconds, fractions, precision)", "builds a time value", "SELECT TIMEFROMPARTS(13, 45, 30, 0, 0);" },
+            ["DAY"] = new[] { "DAY(date)", "day of the month (1-31)", "SELECT DAY('2026-01-31');  -- 31" },
+            ["MONTH"] = new[] { "MONTH(date)", "month number (1-12)", "SELECT MONTH('2026-01-31');  -- 1" },
+            ["YEAR"] = new[] { "YEAR(date)", "four digit year", "SELECT YEAR('2026-01-31');  -- 2026" },
+            ["ISDATE"] = new[] { "ISDATE(expression)", "1 when the value converts to a date, 0 otherwise", "SELECT ISDATE('2026-02-30');  -- 0" },
+            ["SWITCHOFFSET"] = new[] { "SWITCHOFFSET(datetimeoffset, '+hh:mm')", "same instant in another offset", "SELECT SWITCHOFFSET(SYSDATETIMEOFFSET(), '+08:00');" },
+            ["TODATETIMEOFFSET"] = new[] { "TODATETIMEOFFSET(datetime, '+hh:mm')", "attaches the offset that makes a datetime a datetimeoffset", "SELECT TODATETIMEOFFSET(GETDATE(), '+08:00');" },
+            ["SYSDATETIMEOFFSET"] = new[] { "SYSDATETIMEOFFSET()", "current datetimeoffset of the server", "SELECT SYSDATETIMEOFFSET();" },
+            ["SYSUTCDATETIME"] = new[] { "SYSUTCDATETIME()", "current UTC datetime2, higher precision than GETUTCDATE", "SELECT SYSUTCDATETIME();" },
+
+            // JSON.
+            ["CHOOSE"] = new[] { "CHOOSE(index, value1, value2, ...)", "1-based pick from a list, NULL outside the range", "SELECT CHOOSE(2, 'a', 'b', 'c');  -- b" },
+            ["ISJSON"] = new[] { "ISJSON(expression)", "1 when the text is valid JSON", "SELECT ISJSON('{\"a\":1}');  -- 1" },
+            ["JSON_MODIFY"] = new[] { "JSON_MODIFY(json, path, value)", "returns a new JSON text with one value changed", "SELECT JSON_MODIFY('{\"a\":1}', '$.a', 2);" },
+            ["JSON_QUERY"] = new[] { "JSON_QUERY(json, path)", "an object or array out of JSON, as JSON", "SELECT JSON_QUERY('{\"a\":[1,2]}', '$.a');" },
+            ["JSON_VALUE"] = new[] { "JSON_VALUE(json, path)", "scalar value out of JSON as text", "SELECT JSON_VALUE('{\"a\":1}', '$.a');  -- 1" },
+
+            // Server and security context.
+            ["APP_NAME"] = new[] { "APP_NAME()", "application name of the current connection", "SELECT APP_NAME();" },
+            ["CONNECTIONPROPERTY"] = new[] { "CONNECTIONPROPERTY(property)", "connection attributes such as net_transport or client_net_address", "SELECT CONNECTIONPROPERTY('client_net_address');" },
+            ["DB_ID"] = new[] { "DB_ID([database_name])", "database id, current database when omitted", "SELECT DB_ID();" },
+            ["DB_NAME"] = new[] { "DB_NAME([database_id])", "database name by id", "SELECT DB_NAME(DB_ID());" },
+            ["HOST_NAME"] = new[] { "HOST_NAME()", "client computer name", "SELECT HOST_NAME();" },
+            ["OBJECT_ID"] = new[] { "OBJECT_ID(name [, type])", "object id; NULL when the object does not exist", "SELECT OBJECT_ID('dbo.SalesOrderHeader', 'U');" },
+            ["OBJECT_NAME"] = new[] { "OBJECT_NAME(object_id [, database_id])", "object name by id", "SELECT OBJECT_NAME(OBJECT_ID('dbo.SalesOrderHeader'));" },
+            ["ORIGINAL_LOGIN"] = new[] { "ORIGINAL_LOGIN()", "the login that opened the connection, even after EXECUTE AS", "SELECT ORIGINAL_LOGIN();" },
+            ["SCHEMA_ID"] = new[] { "SCHEMA_ID([schema_name])", "schema id", "SELECT SCHEMA_ID('dbo');" },
+            ["SCHEMA_NAME"] = new[] { "SCHEMA_NAME([schema_id])", "schema name by id", "SELECT SCHEMA_NAME();" },
+            ["SERVERPROPERTY"] = new[] { "SERVERPROPERTY(property)", "server attributes such as ProductVersion or Collation", "SELECT SERVERPROPERTY('ProductVersion');" },
+            ["SUSER_SNAME"] = new[] { "SUSER_SNAME([server_user_sid])", "login name behind the security context", "SELECT SUSER_SNAME();" },
+            ["USER_NAME"] = new[] { "USER_NAME([user_id])", "database user name of the current context", "SELECT USER_NAME();" },
+            ["XACT_STATE"] = new[] { "XACT_STATE()", "1 open, -1 doomed, 0 none: decides whether to commit or roll back", "IF XACT_STATE() = 1 COMMIT;" },
+
+            // Table-valued functions: they are FROM sources, so the signature is how they are called.
+            ["OPENJSON"] = new[] { "OPENJSON(json [, path]) [WITH (column type 'path' [,...])]", "table-valued: one row per JSON array element; WITH turns named paths into columns", "SELECT j.Id, j.Name FROM OPENJSON(@payload) WITH (Id int '$.id', Name nvarchar(50) '$.name') AS j;" },
+            ["OPENXML"] = new[] { "OPENXML(document_handle, rowpattern [, flags]) [WITH (column type 'path' [,...])]", "table-valued: reads XML through a handle from sp_xml_preparedocument; release it with sp_xml_removedocument", "DECLARE @h int; EXEC sp_xml_preparedocument @h OUTPUT, @xml; SELECT * FROM OPENXML(@h, '/Orders/Order') WITH (Id int '@Id');" },
+            ["STRING_SPLIT"] = new[] { "STRING_SPLIT(string, separator [, enable_ordinal])", "table-valued: one row per part, column value (plus ordinal when enabled_ordinal = 1)", "SELECT value FROM STRING_SPLIT('a,b,c', ',');" },
+            ["GENERATE_SERIES"] = new[] { "GENERATE_SERIES(start, stop [, step])", "table-valued: numeric sequence, column value (SQL Server 2022, compatibility level 160)", "SELECT value FROM GENERATE_SERIES(1, 10, 2);" }
         };
+
+        /// <summary>Names the popup offers as built-in functions; each one must carry a usage note.</summary>
+        internal static IEnumerable<string> BuiltInFunctionNames => BuiltInFunctions;
+
+        /// <summary>True when the function has a usage note of its own instead of the generic fallback.</summary>
+        internal static bool HasUsageNotes(string name) => FunctionDocs.ContainsKey(name ?? string.Empty);
 
         internal static string FunctionSignature(string name)
         {
@@ -1208,13 +1760,328 @@ namespace MSSQLTool.Completion
                 return LocalizationManager.Format("{0}: SQL Server built-in function.", name) + Environment.NewLine
                     + LocalizationManager.T("No usage notes are available for this function yet.");
 
-            return doc[0] + Environment.NewLine + doc[1] + Environment.NewLine + LocalizationManager.T("Example:") + " " + doc[2];
+            return doc[0] + Environment.NewLine + LocalizationManager.T(doc[1]) + Environment.NewLine
+                + LocalizationManager.T("Example:") + " " + doc[2];
+        }
+
+        /// <summary>Function names that carry a usage note, so the tests can prove each one is translated.</summary>
+        internal static IEnumerable<string> DocumentedFunctions => FunctionDocs.Keys;
+
+        private static void AddCteNames(List<CompletionItem> result, CompletionContext context, int score)
+        {
+            foreach (string name in ModelCteNames(context))
+            {
+                result.Add(new CompletionItem
+                {
+                    DisplayText = name,
+                    InsertText = Quote(name),
+                    Kind = CompletionItemKind.Table,
+                    Description = "CTE",
+                    Score = score
+                });
+            }
+        }
+
+        private static List<string> ModelCteNames(CompletionContext context)
+        {
+            var result = new List<string>();
+            if (context == null || string.IsNullOrEmpty(context.DocumentText)) return result;
+            if (context.DocumentText.Length > 150000) return result;
+            int caret = context.CaretOffset;
+            if (caret < 0 || caret > context.DocumentText.Length) caret = context.DocumentText.Length;
+            try
+            {
+                SqlDocumentModel model = SqlDocumentModel.Get(context.DocumentText);
+                SqlStatementRange statement = model.StatementAt(caret);
+                if (statement == null) return result;
+                result.AddRange(model.ScopeOf(statement).CteNames);
+            }
+            catch (Exception) { }
+            return result;
+        }
+
+        /// <summary>
+        /// FROM/JOIN source list.  Kept as one unit so the DataSource branch stays readable and
+        /// so the completion tests can exercise it without going through BuildItems.
+        /// </summary>
+        private static void AddDataSourceItems(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
+        {
+            foreach (DatabaseObjectMetadata source in metadata.GetIndex().DataSources)
+                result.Add(DataSourceItem(source, context, 40));
+            // Session-local tables (#temp, derived) are not part of the snapshot index, so add
+            // the ones the current statement can see; the list is usually tiny.
+            foreach (DatabaseObjectMetadata local in context.LocalObjects)
+                if (IsDataSource(local)) result.Add(DataSourceItem(local, context, 45));
+            // The shortest way to write a handful of fixed rows is a table value constructor;
+            // it belongs in the source list because that is where it is written.
+            result.Add(new CompletionItem
+            {
+                DisplayText = "VALUES (...)",
+                InsertText = "(" + Environment.NewLine
+                    + "    VALUES (${1:1}, ${2:2})" + Environment.NewLine
+                    + ") AS ${3:t} (${4:c1}, ${5:c2})",
+                Kind = CompletionItemKind.Snippet,
+                Description = "table value constructor",
+                DetailTextProvider = () => Doc(
+                    "A few fixed rows written inline, without a temporary table.",
+                    "SQL Server needs the column list after AS; every VALUES row must carry the same number of values."),
+                Score = 38
+            });
+            result.AddRange(metadata.Schemas.Select(s => ContainerItem(s, CompletionItemKind.Schema, 60)));
+            result.AddRange(metadata.Databases.Select(d => ContainerItem(d, CompletionItemKind.Database, 35)));
+            result.AddRange(metadata.LinkedServers.Select(s => ContainerItem(s, CompletionItemKind.Server, 30)));
+            AddBuiltInTableFunctions(result, metadata.CompatibilityLevel);
+            AddCteNames(result, context, 105);
+        }
+
+        /// <summary>
+        /// Every join form that can follow a written source, ranked from <paramref name="firstScore"/>
+        /// downwards.  They are the continuation of a source ("FROM dbo.T t |") and of a finished ON
+        /// predicate.  The APPLY forms belong here as well: they join a derived table or a table-valued
+        /// function to every row of the source, and leave only CROSS / OUTER to be typed.
+        /// </summary>
+        private static void AddJoinContinuationItems(List<CompletionItem> result, int firstScore)
+        {
+            AddKeyword(result, "INNER JOIN", firstScore, Doc(
+                "Keeps only rows that match on both sides.",
+                "Write the ON condition right after it."));
+            AddKeyword(result, "LEFT JOIN", firstScore - 2, Doc(
+                "Keeps every row of the left source; the right side is NULL when nothing matches.",
+                "A filter on the right table belongs in ON, not in WHERE."));
+            AddKeyword(result, "LEFT OUTER JOIN", firstScore - 3, Doc(
+                "Keeps every row of the left source; the right side is NULL when nothing matches.",
+                "OUTER is optional: LEFT JOIN means the same thing to SQL Server."));
+            AddKeyword(result, "RIGHT JOIN", firstScore - 4, Doc(
+                "Keeps every row of the right source; the left side is NULL when nothing matches.",
+                "Most code rewrites it as a LEFT JOIN."));
+            AddKeyword(result, "RIGHT OUTER JOIN", firstScore - 5, Doc(
+                "Keeps every row of the right source; the left side is NULL when nothing matches.",
+                "OUTER is optional: RIGHT JOIN means the same thing to SQL Server."));
+            AddKeyword(result, "FULL JOIN", firstScore - 6, Doc(
+                "Keeps unmatched rows from both sides, NULL-filled.",
+                "Rarely what a report wants: it hides missing keys."));
+            AddKeyword(result, "FULL OUTER JOIN", firstScore - 7, Doc(
+                "Keeps unmatched rows from both sides, NULL-filled.",
+                "OUTER is optional: FULL JOIN means the same thing to SQL Server."));
+            AddKeyword(result, "CROSS JOIN", firstScore - 8, Doc(
+                "Pairs every row of the left source with every row of the right one.",
+                "It takes no ON clause and multiplies the row count."));
+            AddKeyword(result, "CROSS APPLY", firstScore - 9, Doc(
+                "Runs the right side once for every row of the left source.",
+                "The right side can reference columns of the left source, so a derived table or a table-valued function sees the current row.",
+                "It takes no ON clause; left rows the right side returns nothing for are dropped."));
+            AddKeyword(result, "OUTER APPLY", firstScore - 10, Doc(
+                "Runs the right side once for every row of the left source, like CROSS APPLY.",
+                "A left row whose right side returns nothing is kept with NULLs instead of being dropped.",
+                "It takes no ON clause."));
+        }
+
+        /// <summary>
+        /// "FROM dbo.Orders |" and "FROM dbo.Orders o |": table hints, joins and the alias come
+        /// first because they are the only grammar that can follow a written source; the columns
+        /// stay underneath, at a low score, as a reminder of what the table holds.
+        /// A hint goes after the alias ("FROM dbo.Orders o WITH (NOLOCK)"), so both positions get
+        /// the same list.
+        /// </summary>
+        private static void AddTableSourceTailItems(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
+        {
+            AddTableHintItems(result);
+
+            AddJoinContinuationItems(result, 220);
+
+            if (!context.TableAliasWritten)
+            {
+                DatabaseObjectMetadata source = FindObject(context, metadata, context.TableSourceName);
+                string alias = source == null ? null : MakeAlias(source, context.Aliases.Keys);
+                string aliasText = string.IsNullOrEmpty(alias) ? "AS" : "AS " + alias;
+                result.Add(new CompletionItem
+                {
+                    DisplayText = aliasText, InsertText = aliasText,
+                    // Below every join / APPLY form: the alias names the source that is already written,
+                    // so a join is the more likely continuation.
+                    Kind = CompletionItemKind.Keyword, Score = 200,
+                    Description = Doc(
+                        "Names this source so its columns can be written as alias.Column.",
+                        "A short alias keeps long joins readable.")
+                });
+            }
+
+            AddKeyword(result, "WHERE", 120, Doc(
+                "Filters rows after the joins.",
+                "On an outer join a WHERE condition on the right table turns it into an inner join.",
+                "Write that filter in ON instead."));
+            AddKeyword(result, "GROUP BY", 116, Doc(
+                "Collapses rows into groups before the aggregates run.",
+                "Every non-aggregated SELECT column must be listed here."));
+            AddKeyword(result, "ORDER BY", 112, Doc(
+                "Sorts the final result.",
+                "TOP and paging need it to be stable."));
+        }
+
+        /// <summary>
+        /// The table hints worth typing at a source: the locking behaviour is what people actually
+        /// reach for, and the description explains when each one is right and what it costs.  The
+        /// list is short on purpose — the popup is not a T-SQL reference.
+        /// </summary>
+        private static void AddTableHintItems(List<CompletionItem> result)
+        {
+            foreach (TableHintDefinition hint in TableHints)
+                AddTableHint(result, hint.DisplayText, hint.InsertText, hint.Score, hint.Description);
+        }
+
+        /// <summary>
+        /// The same hints inside "WITH (|": the wrapper is already in the document, so only the hint
+        /// name is inserted and the user closes the parenthesis.
+        /// </summary>
+        private static void AddTableHintBodyItems(List<CompletionItem> result)
+        {
+            foreach (TableHintDefinition hint in TableHints)
+                result.Add(new CompletionItem
+                {
+                    DisplayText = hint.BodyDisplay,
+                    InsertText = hint.BodyText,
+                    Kind = CompletionItemKind.Keyword,
+                    Description = Doc(hint.Description),
+                    Score = hint.Score
+                });
+        }
+
+        /// <summary>
+        /// "... OPTION (|": the query hints that change the plan, each with the situation it is for.
+        /// The names are the body of the clause; the closing parenthesis is typed by the user.
+        /// </summary>
+        private static void AddQueryHintItems(List<CompletionItem> result)
+        {
+            AddKeyword(result, "RECOMPILE", 240, Doc(
+                "Recompiles the plan for this statement instead of reusing the cached one.",
+                "Use it when parameter sniffing produces a bad plan.",
+                "It costs a compile on every execution."));
+            AddKeyword(result, "MAXDOP 1", 238, Doc(
+                "Runs this statement on one CPU.",
+                "Use it to keep a small OLTP query from going parallel.",
+                "The cap applies only to this statement."));
+            AddKeyword(result, "FAST 100", 236, Doc(
+                "Returns the first 100 rows as soon as they are ready.",
+                "Use it for the first screen of a large report.",
+                "The full result still takes just as long."));
+            AddKeyword(result, "HASH JOIN", 234, Doc(
+                "Forces hash joins for this statement.",
+                "Use it to test a plan; the optimizer usually chooses better."));
+            AddKeyword(result, "MERGE JOIN", 232, Doc(
+                "Forces merge joins for this statement.",
+                "Both inputs must already be sorted on the join key."));
+            AddKeyword(result, "LOOP JOIN", 230, Doc(
+                "Forces nested-loop joins for this statement.",
+                "Works well for a few rows with an index on the inner side."));
+            AddKeyword(result, "FORCE ORDER", 228, Doc(
+                "Keeps the join order exactly as written.",
+                "Use it to compare plans, not as a permanent fix."));
+            AddKeyword(result, "KEEP PLAN", 226, Doc(
+                "Stops the plan being recompiled because of statistics updates.",
+                "Use it for a statement whose plan keeps changing."));
+            AddKeyword(result, "OPTIMIZE FOR UNKNOWN", 224, Doc(
+                "Compiles with averaged statistics instead of the parameter values.",
+                "Use it when one plan has to serve very different values."));
+        }
+
+        private sealed class TableHintDefinition
+        {
+            public string DisplayText;
+            public string InsertText;
+            public string BodyDisplay;
+            public string BodyText;
+            public int Score;
+            public string[] Description;
+        }
+
+        private static readonly TableHintDefinition[] TableHints =
+        {
+            new TableHintDefinition { DisplayText = "WITH (NOLOCK)", BodyDisplay = "NOLOCK", BodyText = "NOLOCK", Score = 240, Description = new[] {
+                "Read uncommitted: no shared locks, so readers never wait for writers.",
+                "Use it on a busy OLTP table for reports where approximate counts are fine.",
+                "Risk: dirty reads, and rows read twice or skipped during page splits.",
+                "Never use it for balances or anything you will write back.",
+                "Same as WITH (READUNCOMMITTED)." } },
+            new TableHintDefinition { DisplayText = "WITH (READPAST)", BodyDisplay = "READPAST", BodyText = "READPAST", Score = 238, Description = new[] {
+                "Skips rows another transaction has locked instead of waiting for them.",
+                "Use it on work queues together with UPDLOCK and ROWLOCK.",
+                "Two workers then never pick up the same row.",
+                "Skipped rows stay in the queue and must be retried later.",
+                "Ignored under the SNAPSHOT isolation level." } },
+            new TableHintDefinition { DisplayText = "WITH (UPDLOCK)", BodyDisplay = "UPDLOCK", BodyText = "UPDLOCK", Score = 236, Description = new[] {
+                "Reads the row with an update lock held until the transaction ends.",
+                "Use it when you SELECT a row and then UPDATE it.",
+                "It stops two sessions upgrading to exclusive locks at once (a deadlock).",
+                "Other readers still get through: it does not block plain SELECTs.",
+                "Add HOLDLOCK when the pattern is check-then-insert." } },
+            new TableHintDefinition { DisplayText = "WITH (HOLDLOCK)", BodyDisplay = "HOLDLOCK", BodyText = "HOLDLOCK", Score = 234, Description = new[] {
+                "Applies SERIALIZABLE to this table for the whole transaction.",
+                "Range locks stop anyone inserting a row that matches what you just read.",
+                "Use it for 'insert if not exists' on a unique value.",
+                "Without it two sessions can both find nothing and both insert.",
+                "Keep the transaction short: it blocks inserts in the locked range." } },
+            new TableHintDefinition { DisplayText = "WITH (ROWLOCK)", BodyDisplay = "ROWLOCK", BodyText = "ROWLOCK", Score = 232, Description = new[] {
+                "Asks for row-level locks instead of page or table locks.",
+                "Unrelated rows on the same page then stop waiting on each other.",
+                "Use it on queue tables together with UPDLOCK and READPAST.",
+                "It is a preference: a scan can still escalate to a table lock." } },
+            new TableHintDefinition { DisplayText = "WITH (TABLOCK)", BodyDisplay = "TABLOCK", BodyText = "TABLOCK", Score = 230, Description = new[] {
+                "Takes a shared table lock for the statement.",
+                "Use it for a full-table read that must see one consistent snapshot.",
+                "It also stops lock escalation deciding when to take the table lock.",
+                "Blocks every writer while it runs; on a hot table prefer NOLOCK or SNAPSHOT.",
+                "TABLOCKX takes an exclusive lock instead." } },
+            new TableHintDefinition { DisplayText = "WITH (SNAPSHOT)", BodyDisplay = "SNAPSHOT", BodyText = "SNAPSHOT", Score = 228, Description = new[] {
+                "Reads the last committed version of each row from tempdb.",
+                "Readers see one consistent snapshot and never block writers.",
+                "Requires ALLOW_SNAPSHOT_ISOLATION ON for the database.",
+                "The consistent replacement for NOLOCK; it costs tempdb version-store space." } },
+            new TableHintDefinition { DisplayText = "WITH (NOWAIT)", BodyDisplay = "NOWAIT", BodyText = "NOWAIT", Score = 226, Description = new[] {
+                "Fails at once with error 1222 when a needed lock is held.",
+                "Without it the statement waits for LOCK_TIMEOUT and then fails.",
+                "Use it for screens or jobs that should report 'busy, retry'." } },
+            new TableHintDefinition { DisplayText = "WITH (FORCESEEK)", BodyDisplay = "FORCESEEK", BodyText = "FORCESEEK", Score = 224, Description = new[] {
+                "Forces an index seek, on the given index or on any usable one.",
+                "Use it when stale statistics push the optimizer into a scan.",
+                "It fails with error 8622 when no seek plan exists, so keep it out of shared code." } },
+            new TableHintDefinition { DisplayText = "WITH (INDEX(...))", InsertText = "WITH (INDEX(", BodyDisplay = "INDEX(...)", BodyText = "INDEX(", Score = 222, Description = new[] {
+                "Pins the index this statement uses, e.g. WITH (INDEX(IX_Orders_CustomerId)).",
+                "Use it to test a plan or to work around a bad one.",
+                "Type the index name, then the closing parenthesis.",
+                "INDEX(0) forces a heap scan." } }
+        };
+
+        /// <summary>
+        /// Joins the lines of a description and translates each of them.  One line per dictionary
+        /// entry keeps the Chinese text readable (and keeps zh-TW working through the same table)
+        /// instead of translating one long block the layout has to survive.
+        /// </summary>
+        internal static string Doc(params string[] lines)
+        {
+            if (lines == null || lines.Length == 0) return string.Empty;
+            return string.Join(Environment.NewLine, lines.Select(LocalizationManager.T));
+        }
+
+        private static void AddTableHint(List<CompletionItem> result, string displayText, string insertText,
+            int score, params string[] descriptionLines)
+        {
+            result.Add(new CompletionItem
+            {
+                DisplayText = displayText,
+                // Hints end in a space so the statement keeps flowing; the index hint stops at the
+                // open parenthesis so the index name can be typed straight away.
+                InsertText = insertText ?? displayText + " ",
+                Kind = CompletionItemKind.Keyword,
+                Description = Doc(descriptionLines),
+                Score = score
+            });
         }
 
         private static IEnumerable<CompletionItem> BuildJoinItems(CompletionContext context, MetadataSnapshot metadata)
         {
-            var sources = context.Aliases.Where(p => !string.Equals(p.Key, LastPart(p.Value), StringComparison.OrdinalIgnoreCase)).ToList();
-            if (sources.Count == 0) sources = context.Aliases.ToList();
+            var allSources = ScopedSources(context);
+            var sources = allSources.Where(p => !string.Equals(p.Key, LastPart(p.Value), StringComparison.OrdinalIgnoreCase)).ToList();
+            if (sources.Count == 0) sources = allSources;
             if (sources.Count == 0) yield break;
             // Prefilter: ObjectMatches can only succeed when the last name parts
             // are equal, so a hash set of source name tails avoids running the
@@ -1238,34 +2105,126 @@ namespace MSSQLTool.Completion
                         && sources.Any(s => ObjectMatches(f.ParentObject, s.Value) || ObjectMatches(f.ReferencedObject, s.Value))).ToList();
                 string targetQualifier = autoAddAliases ? Quote(alias) : Quote(target.Name);
                 string targetInsert = QualifiedInsert(target) + (autoAddAliases ? " AS " + Quote(alias) : string.Empty);
+
+                bool prefixComplete = PrefixCompletesName(context.Prefix, target);
+                bool nameWritten = !prefixComplete && NameAlreadyWritten(context, target);
+
+                if (!prefixComplete && !nameWritten)
+                {
+                    // Still picking a table: offer the name and nothing else.
+                    yield return new CompletionItem
+                    {
+                        DisplayText = DisplayQualifiedName(target), InsertText = targetInsert,
+                        Kind = CompletionItemKind.Join,
+                        Description = "table",
+                        DetailTextProvider = () => ObjectDetail(target), Score = 115
+                    };
+                    continue;
+                }
+
+                // The name is already in the document, so the popup was raised right after it and
+                // only the ON clause is missing; otherwise the entry has to carry the name too.
+                string onInsert = nameWritten ? " ON " : targetInsert + " ON ";
+                int onBaseScore = nameWritten ? 130 : 75;
+                if (!nameWritten)
+                {
+                    yield return new CompletionItem
+                    {
+                        DisplayText = DisplayQualifiedName(target), InsertText = targetInsert,
+                        Kind = CompletionItemKind.Join,
+                        Description = "table",
+                        DetailTextProvider = () => ObjectDetail(target), Score = 115
+                    };
+                }
+
                 if (relationships.Count == 0)
                 {
                     foreach (var source in sources)
                     {
                         DatabaseObjectMetadata sourceObject = FindObject(context, metadata, source.Value);
                         List<JoinColumnMatch> inferred = InferJoinColumns(sourceObject, target);
-                        if (inferred.Count == 0) continue;
-                        string conditions = string.Join(" AND ", inferred.Select(p => Quote(source.Key) + "." + Quote(p.SourceColumn)
-                            + " = " + targetQualifier + "." + Quote(p.TargetColumn)));
-                        yield return new CompletionItem
+                        foreach (JoinColumnMatch match in inferred)
                         {
-                            DisplayText = DisplayQualifiedName(target), InsertText = targetInsert + " ON " + conditions,
-                            Kind = CompletionItemKind.Join,
-                            Description = inferred.Any(p => p.IsCustom) ? "custom-rule join" : "same-name column join",
-                            DetailTextProvider = () => ObjectDetail(target), Score = inferred.Any(p => p.IsCustom) ? 100 : 70
-                        };
+                            string condition = Quote(source.Key) + "." + Quote(match.SourceColumn)
+                                + " = " + targetQualifier + "." + Quote(match.TargetColumn);
+                            yield return new CompletionItem
+                            {
+                                DisplayText = "ON " + condition, InsertText = onInsert + condition,
+                                Kind = CompletionItemKind.Join,
+                                Description = match.IsCustom ? "join on (custom rule)" : "join on (same-name column)",
+                                DetailTextProvider = () => ObjectDetail(target),
+                                Score = match.IsCustom ? onBaseScore + 5 : onBaseScore
+                            };
+                        }
                     }
-                    yield return new CompletionItem { DisplayText = DisplayQualifiedName(target), InsertText = targetInsert, Kind = CompletionItemKind.Join, Description = "table (no known relationship)", DetailTextProvider = () => ObjectDetail(target), Score = 10 };
+
                     continue;
                 }
+
                 foreach (var fk in relationships)
                 {
                     var source = sources.First(s => ObjectMatches(fk.ParentObject, s.Value) || ObjectMatches(fk.ReferencedObject, s.Value));
                     bool sourceParent = ObjectMatches(fk.ParentObject, source.Value);
-                    var conditions = fk.ParentColumns.Select((c, i) => Quote(source.Key) + "." + Quote(sourceParent ? c : fk.ReferencedColumns[i]) + " = " + targetQualifier + "." + Quote(sourceParent ? fk.ReferencedColumns[i] : c));
-                    yield return new CompletionItem { DisplayText = DisplayQualifiedName(target), InsertText = targetInsert + " ON " + string.Join(" AND ", conditions), Kind = CompletionItemKind.Join, Description = "foreign-key join", DetailTextProvider = () => ObjectDetail(target), Score = 110 };
+
+                    // One entry per key column pair: DjGuid and DjLsh are separate choices.
+                    for (int i = 0; i < fk.ParentColumns.Count; i++)
+                    {
+                        string condition = Quote(source.Key) + "." + Quote(sourceParent ? fk.ParentColumns[i] : fk.ReferencedColumns[i])
+                            + " = " + targetQualifier + "." + Quote(sourceParent ? fk.ReferencedColumns[i] : fk.ParentColumns[i]);
+                        yield return new CompletionItem
+                        {
+                            DisplayText = "ON " + condition, InsertText = onInsert + condition,
+                            Kind = CompletionItemKind.Join,
+                            Description = "join on (foreign key)",
+                            DetailTextProvider = () => ObjectDetail(target), Score = onBaseScore + 10
+                        };
+                    }
                 }
             }
+        }
+
+        /// <summary>
+        /// True when the token being typed is already the whole table name (or the whole qualified
+        /// name), which is the point where the ON variants become useful.  A shorter prefix means the
+        /// user is still picking a table, so only the name is offered.
+        /// </summary>
+        private static bool PrefixCompletesName(string prefix, DatabaseObjectMetadata target)
+        {
+            if (string.IsNullOrEmpty(prefix) || target == null) return false;
+
+            string value = SqlTokenizer.Unquote(prefix.Trim().TrimEnd(']'));
+            if (value.Length == 0) return false;
+
+            if (string.Equals(LastPart(value), target.Name, StringComparison.OrdinalIgnoreCase)) return true;
+            return string.Equals(value, CleanQualified(target.QualifiedName), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// True when the token that ends right at the caret is already the whole table name, which is
+        /// the state after the name has been inserted: the only thing left to add is the ON clause.
+        /// </summary>
+        internal static bool NameAlreadyWritten(CompletionContext context, DatabaseObjectMetadata target)
+        {
+            if (context == null || target == null) return false;
+            string text = context.DocumentText;
+            int caret = context.CaretOffset;
+            if (string.IsNullOrEmpty(text) || caret <= 0 || caret > text.Length) return false;
+
+            int start = caret;
+            while (start > 0)
+            {
+                char c = text[start - 1];
+                if (char.IsLetterOrDigit(c) || c == '_' || c == '@' || c == '#' || c == '$'
+                    || c == ']' || c == '[' || c == '"' || c == '\'')
+                    start--;
+                else
+                    break;
+            }
+
+            if (start == caret) return false;
+
+            string token = text.Substring(start, caret - start).Trim('[', ']', '"', '\'');
+            return string.Equals(LastPart(token), target.Name, StringComparison.OrdinalIgnoreCase);
         }
 
         internal sealed class JoinColumnMatch { public string SourceColumn; public string TargetColumn; public bool IsCustom; }
@@ -1327,13 +2286,25 @@ namespace MSSQLTool.Completion
             };
         }
         private static CompletionItem ContainerItem(string name, CompletionItemKind kind, int score) => new CompletionItem { DisplayText = name, InsertText = Quote(name), Kind = kind, Description = kind.ToString(), Score = score };
-        private static CompletionItem ObjectItem(DatabaseObjectMetadata o, int score, bool omitSchema) => new CompletionItem { DisplayText = omitSchema ? o.Name : DisplayQualifiedName(o), InsertText = omitSchema ? Quote(o.Name) : QualifiedInsert(o), Kind = o.Kind, Description = o.DescriptionSummary, DetailTextProvider = () => ObjectDetail(o), Score = score };
+        private static CompletionItem ObjectItem(DatabaseObjectMetadata o, int score, bool omitSchema) => new CompletionItem { DisplayText = omitSchema ? o.Name : o.DisplayQualifiedName, ObjectSource = o, OmitSchema = omitSchema, Kind = o.Kind, Score = score };
         private static CompletionItem DataSourceItem(DatabaseObjectMetadata o, CompletionContext context, int score)
         {
             CompletionItem item = ObjectItem(o, score, false);
             if (CompletionSettings().autoAddAliases && (o.Kind == CompletionItemKind.Table || o.Kind == CompletionItemKind.View || o.Kind == CompletionItemKind.Synonym))
-                item.InsertText += " AS " + Quote(MakeAlias(o, context.Aliases.Keys));
+            {
+                item.AutoAlias = true;
+                item.AliasContext = context;
+            }
             return item;
+        }
+
+        internal static string ObjectInsertText(DatabaseObjectMetadata o, bool omitSchema, CompletionContext aliasContext)
+        {
+            string text = omitSchema ? Quote(o.Name) : QualifiedInsert(o);
+            if (aliasContext != null && CompletionSettings().autoAddAliases
+                && (o.Kind == CompletionItemKind.Table || o.Kind == CompletionItemKind.View || o.Kind == CompletionItemKind.Synonym))
+                text += " AS " + Quote(MakeAlias(o, aliasContext.Aliases.Keys));
+            return text;
         }
 
         private static string ColumnDetail(ColumnMetadata column)
@@ -1349,16 +2320,23 @@ namespace MSSQLTool.Completion
             return detail;
         }
 
-        private static string ObjectDetail(DatabaseObjectMetadata item)
+        internal static string ObjectDetail(DatabaseObjectMetadata item)
         {
             // The full detail string is memoized on the metadata object; detail
             // panels are only rendered for the selected candidate.
             if (item == null) return string.Empty;
+            if (item.Kind == CompletionItemKind.Function && item.IsTableValuedFunction)
+            {
+                // A table-valued function is a FROM source, not a value; say how it is called
+                // before the column list starts talking about its result shape.
+                return LocalizationManager.T("Table-valued function: call it in FROM/JOIN with its arguments, for example SELECT * FROM dbo.MyFunction(1) AS f.")
+                    + Environment.NewLine + item.CachedDetail;
+            }
             return item.CachedDetail;
         }
         private static string DisplayQualifiedName(DatabaseObjectMetadata o) => (o.IsExternal && !string.IsNullOrWhiteSpace(o.Server) ? o.Server + "." : "") + (o.IsExternal && !string.IsNullOrWhiteSpace(o.Database) ? o.Database + "." : "") + (string.IsNullOrEmpty(o.Schema) ? o.Name : o.Schema + "." + o.Name);
         private static string QualifiedInsert(DatabaseObjectMetadata o) => (o.IsExternal && !string.IsNullOrWhiteSpace(o.Server) ? Quote(o.Server) + "." : "") + (o.IsExternal && !string.IsNullOrWhiteSpace(o.Database) ? Quote(o.Database) + "." : "") + (string.IsNullOrEmpty(o.Schema) ? Quote(o.Name) : Quote(o.Schema) + "." + Quote(o.Name));
-        private static bool IsDataSource(DatabaseObjectMetadata o) => o.Kind == CompletionItemKind.Table || o.Kind == CompletionItemKind.View || (o.Kind == CompletionItemKind.Function && o.IsTableValuedFunction) || o.Kind == CompletionItemKind.Synonym;
+        internal static bool IsDataSource(DatabaseObjectMetadata o) => o.Kind == CompletionItemKind.Table || o.Kind == CompletionItemKind.View || (o.Kind == CompletionItemKind.Function && o.IsTableValuedFunction) || o.Kind == CompletionItemKind.Synonym;
         private static bool MatchesContainer(DatabaseObjectMetadata item, string qualifier)
         {
             if (string.IsNullOrWhiteSpace(qualifier)) return true;
@@ -1372,38 +2350,54 @@ namespace MSSQLTool.Completion
 
         private static List<CompletionItem> FilterAndSort(IEnumerable<CompletionItem> items, string prefix)
         {
-            prefix = Clean(prefix ?? string.Empty).TrimStart('@');
-            var settings = CompletionSettings();
-            // Ranking is purely contextual: the base score of the candidate plus how well it matches
-            // the typed prefix.  Nothing is learned from earlier insertions, so the order a list has
-            // for a given context is always the same.
-            return items.Select(i => new { Item = i, Match = MatchItem(i, prefix) }).Where(x => x.Match >= 0).OrderByDescending(x => x.Item.Score + x.Match).ThenBy(x => x.Item.DisplayText, StringComparer.OrdinalIgnoreCase).Take(settings.maximumItems).Select(x => x.Item).ToList();
+            List<CompletionItem> list = items as List<CompletionItem>;
+            if (list == null) list = items?.ToList() ?? new List<CompletionItem>();
+            return CompletionFilter.Filter(list, prefix, CompletionSettings().maximumItems);
         }
 
-        private static int MatchItem(CompletionItem item, string prefix)
+        internal static int MatchItem(CompletionItem item, string prefix)
+            => MatchItem(item, prefix, true);
+
+        internal static int MatchItem(CompletionItem item, string prefix, bool allowFuzzy)
         {
-            string display = (item.DisplayText ?? string.Empty).TrimStart('@');
-            int score = MatchScore(display, prefix);
-            int dot = display.LastIndexOf('.');
-            if (dot < 0) return score;
+            string display = item.MatchText;
+            int score = MatchScore(display, prefix, allowFuzzy);
+            if (score >= 40 || display.IndexOf('.') < 0) return score;
             // DataSource candidates display schema-qualified names such as
             // "dbo.WSDD". The acronym and substring channels must also see the
             // bare object name, or typing "WD" suggests "WsdData" after
             // "dbo." but nothing in the unqualified FROM position.
-            int bare = MatchScore(display.Substring(dot + 1), prefix);
+            int bare = MatchScore(item.BareMatchText, prefix, allowFuzzy);
             return Math.Max(score, bare);
         }
 
         private static int MatchScore(string value, string prefix)
+            => MatchScore(value, prefix, true);
+
+        private static int MatchScore(string value, string prefix, bool allowFuzzy)
         {
             if (string.IsNullOrEmpty(prefix)) return 0;
+            // A fully typed name must beat any longer name that merely starts with the same text,
+            // even when the longer one carries the whole history boost (bounded at 12 here against
+            // a 20 point gap).  Without this tier "WDDDH" sat behind "WDDDH_BAK" once that table
+            // had been used.
+            if (value.Equals(prefix, StringComparison.OrdinalIgnoreCase)) return 60;
             if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return 40;
+            int segment = value.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+            // A match at a name-segment boundary ("Name" in "CustomerName", after a dot or an
+            // underscore) is semantically stronger than a match buried in the middle of a word.
+            if (segment > 0 && IsSegmentStart(value, segment)) return 30;
             if (StartsWithInitials(value, prefix)) return 25;
-            if (value.IndexOf(prefix, StringComparison.OrdinalIgnoreCase) >= 0) return 10;
+            if (segment >= 0) return 10;
             // SQL LIKE %W%D% style: every typed character must appear in the
             // name in order, so "WD" still suggests "WSDD". Ranked below the
             // contiguous/acronym channels, above the typo-tolerance fallback.
             if (ContainsInOrder(value, prefix)) return 5;
+            if (!allowFuzzy) return -1;
+            // Fuzzy matching is only useful near the typed length.  Running the bounded
+            // Levenshtein loop for every one of 20k long table names made a single letter
+            // cost 16 ms; the length gate rejects those rows in O(1) instead.
+            if (Math.Abs(value.Length - prefix.Length) > 2) return -1;
             int window = value.Length > prefix.Length + 2 ? prefix.Length + 2 : value.Length;
             return LevenshteinBounded(value, window, prefix) <= Math.Max(1, prefix.Length / 3) ? 2 : -1;
         }
@@ -1423,6 +2417,14 @@ namespace MSSQLTool.Completion
                 }
             }
             return at == prefix.Length;
+        }
+
+        private static bool IsSegmentStart(string value, int index)
+        {
+            if (index <= 0) return true;
+            char previous = value[index - 1];
+            if (previous == '.' || previous == '_' || previous == ' ' || previous == '#' || previous == '@') return true;
+            return char.IsUpper(value[index]) && char.IsLower(previous);
         }
 
         private static bool ContainsInOrder(string value, string prefix)
@@ -1495,9 +2497,22 @@ namespace MSSQLTool.Completion
             if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(identifier)) return false;
             string value = Clean(identifier);
             if (value.Length == 0) return false;
-            return Regex.IsMatch(text, @"(?<![\w@#$])" + Regex.Escape(value) + @"(?![\w@#$])",
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            // A boundary walk instead of a dynamically built regex: the pattern would enter the
+            // static regex cache (15 entries) and push out every other identifier's pattern.
+            int index = 0;
+            while ((index = text.IndexOf(value, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                bool startsWord = index == 0 || !IsIdentifierCharacter(text[index - 1]);
+                int end = index + value.Length;
+                bool endsWord = end >= text.Length || !IsIdentifierCharacter(text[end]);
+                if (startsWord && endsWord) return true;
+                index++;
+            }
+            return false;
         }
+
+        private static bool IsIdentifierCharacter(char value) =>
+            char.IsLetterOrDigit(value) || value == '_' || value == '@' || value == '#' || value == '$';
 
         private static void AddAliases(string statement, CompletionContext context)
         {
@@ -1537,6 +2552,47 @@ namespace MSSQLTool.Completion
             return depth;
         }
 
+        private static void AddSessionLocalObjects(CompletionContext context, IReadOnlyList<DatabaseObjectMetadata> locals)
+        {
+            if (context == null || locals == null) return;
+            foreach (DatabaseObjectMetadata local in locals)
+            {
+                if (local == null || string.IsNullOrWhiteSpace(local.Name)) continue;
+                var copy = new DatabaseObjectMetadata
+                {
+                    Schema = local.Schema, Name = local.Name, Kind = local.Kind, IsSystem = local.IsSystem
+                };
+                foreach (ColumnMetadata column in local.Columns)
+                {
+                    copy.Columns.Add(new ColumnMetadata
+                    {
+                        Name = column.Name, DataType = column.DataType, IsNullable = column.IsNullable,
+                        IsIdentity = column.IsIdentity, IsComputed = column.IsComputed,
+                        IsPrimaryKey = column.IsPrimaryKey, IsForeignKey = column.IsForeignKey,
+                        IsUnique = column.IsUnique, Ordinal = column.Ordinal
+                    });
+                }
+                context.LocalObjects.RemoveAll(o => string.Equals(o.Name, copy.Name, StringComparison.OrdinalIgnoreCase));
+                context.LocalObjects.Add(copy);
+                context.Aliases[copy.Name] = copy.Name;
+            }
+        }
+
+        /// <summary>
+        /// Temp-table definitions declared before the caret statement.  The controller caches the
+        /// result by prefix hash, so a large script pays this regex pass only when the prefix
+        /// actually changes, not on every keystroke.
+        /// </summary>
+        internal static List<DatabaseObjectMetadata> CollectSessionLocalObjects(string sessionPrefix)
+        {
+            var context = new CompletionContext();
+            string text = sessionPrefix ?? string.Empty;
+            if (text.Length == 0) return context.LocalObjects;
+            string masked = SqlTextContext.MaskCommentsAndStrings(text);
+            AddLocalObjects(text, masked, text, masked, context);
+            return context.LocalObjects;
+        }
+
         private static void AddLocalObjects(string sessionText, string maskedSession, string currentBatch, string maskedBatch, CompletionContext context)
         {
             string batch = maskedBatch ?? SqlTextContext.MaskCommentsAndStrings(currentBatch ?? string.Empty);
@@ -1544,7 +2600,8 @@ namespace MSSQLTool.Completion
             string sql = maskedSession ?? SqlTextContext.MaskCommentsAndStrings(sessionText ?? string.Empty);
             var events = new List<LocalObjectEvent>();
             foreach (Match m in TempCreatePattern.Matches(sql)) events.Add(new LocalObjectEvent { Index = m.Index, Name = m.Groups["name"].Value, Columns = ParseDefinitions(m.Groups["cols"].Value).ToList() });
-            foreach (Match m in SelectIntoPattern.Matches(sql)) events.Add(new LocalObjectEvent { Index = m.Index, Name = m.Groups["name"].Value, Columns = ParseSelect(m.Groups["select"].Value).ToList() });
+            foreach (SelectIntoReference reference in SqlSelectIntoScanner.Find(sql))
+                events.Add(new LocalObjectEvent { Index = reference.Index, Name = reference.Name, Columns = ParseSelect(reference.SelectList).ToList() });
             foreach (Match m in TempAlterPattern.Matches(sql)) events.Add(new LocalObjectEvent { Index = m.Index, Name = m.Groups["name"].Value, Columns = ParseDefinitions(m.Groups["cols"].Value).ToList(), IsAlter = true });
             foreach (Match m in TempDropPattern.Matches(sql)) events.Add(new LocalObjectEvent { Index = m.Index, Name = m.Groups["name"].Value, IsDrop = true });
             foreach (LocalObjectEvent item in events.OrderBy(e => e.Index))
@@ -1584,7 +2641,7 @@ namespace MSSQLTool.Completion
         private static bool EndsWith(string a, string b) => string.Equals(CleanQualified(a), CleanQualified(b), StringComparison.OrdinalIgnoreCase) || CleanQualified(a).EndsWith("." + CleanQualified(b), StringComparison.OrdinalIgnoreCase);
         private static string LastPart(string value) => CleanQualified(value).Split('.').LastOrDefault() ?? string.Empty;
         private static string CleanQualified(string value) => DatabaseIdentifier.NormalizeSqlServer(value);
-        private static string Clean(string value) => DatabaseIdentifier.UnquoteSqlServerPart(value);
+        internal static string Clean(string value) => DatabaseIdentifier.UnquoteSqlServerPart(value);
         private static string Quote(string value) => CompletionSettings().useSquareBrackets ? "[" + (value ?? string.Empty).Replace("]", "]]" ) + "]" : value ?? string.Empty;
         internal static string MakeAlias(DatabaseObjectMetadata item, IEnumerable<string> existing, SettingsManager.SqlCompletionSettings settings = null)
         {
