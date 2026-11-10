@@ -6,6 +6,24 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.510
+
+### 中文
+
+- **`SELECT *` 的 Tab 展开支持嵌套查询**
+  - 上一版修复了补全弹窗里的 `(all SELECT columns)`，但专门的星号展开服务（关闭弹窗后直接按 Tab）只认语句最外层查询与 CTE，遇到 APPLY、派生表、子查询、UNION 分支里的 `*` 会直接不处理。
+  - 现在用语法树访问器定位**包含光标的那个查询块**，`SELECT *` 按该查询块自身的 `FROM` 展开。例如 `OUTER APPLY (SELECT * FROM dbo.DJKCZH B WHERE A.sptm = B.sptm)` 中，内层 `*` 只展开 `B` 的列，不再漏到外层 `A`；顶层 `*` 仍包含 APPLY 派生表的列。
+  - 嵌套位置不再用整条语句的 `SET FMTONLY` 元数据回退（否则会把外层列带回来），改为按表名从元数据缓存/服务器目录解析列。
+- **测试**：回归用例同时断言补全项与 Tab 展开路径（内层来源为 `B`、顶层为 `A,CC`）；全量 371 项通过。
+
+### English
+
+- **Tab expansion of `SELECT *` now works inside nested queries**
+  - The previous fix covered the `(all SELECT columns)` completion item, but the dedicated star-expansion service (Tab with the popup closed) only recognised the outermost query and CTEs, so a `*` inside an APPLY, derived table, subquery or UNION branch was left untouched.
+  - A syntax-tree visitor now locates the query block that contains the caret, and the star expands from that block's own `FROM`. Inside `OUTER APPLY (SELECT * FROM dbo.DJKCZH B WHERE A.sptm = B.sptm)` only `B`'s columns are emitted; a top-level `*` still includes the APPLY derived table's columns.
+  - Nested offsets no longer fall back to `SET FMTONLY` over the whole statement (which would reintroduce the outer columns); columns resolve per table from the metadata cache or the server catalog instead.
+- **Tests**: the regression case now covers both the completion item and the Tab path (inner sources `B`, top-level `A,CC`); all 371 tests pass.
+
 ## 5.509
 
 ### 中文

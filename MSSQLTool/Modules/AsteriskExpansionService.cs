@@ -407,6 +407,25 @@ namespace MSSQLTool
             return false;
         }
 
+        /// <summary>
+        /// Qualifiers of the FROM sources that the star at this offset expands.  Used by the
+        /// regression tests to prove a star inside APPLY resolves its own query, not the outer one.
+        /// </summary>
+        internal static List<string> GetAsteriskSourceTables(string fullText, int starOffset)
+        {
+            var result = new List<string>();
+            var parser = new TSql170Parser(false);
+            TSqlFragment parsed = parser.Parse(new StringReader(fullText ?? string.Empty), out IList<ParseError> errors);
+            var script = parsed as TSqlScript;
+            if (script == null || (errors != null && errors.Count > 0)) return result;
+            foreach (TSqlBatch batch in script.Batches)
+                foreach (TSqlStatement statement in batch.Statements)
+                    foreach (SelectStatement select in GetSelectStatements(statement))
+                        if (TryBuildSelectInfo(script, fullText, select, starOffset, out SelectInfo info))
+                            return info.Tables.ConvertAll(t => (t.Qualifier ?? string.Empty).TrimEnd('.'));
+            return result;
+        }
+
         private static bool TryBuildSelectInfo(TSqlScript script, string fullText, SelectStatement statement, int starOffset, out SelectInfo selectInfo)
         {
             selectInfo = null;
@@ -458,43 +477,39 @@ namespace MSSQLTool
             out QuerySpecification query,
             out SelectElement selectedStar)
         {
-            if (TryFindQueryWithStar(statement.QueryExpression, starOffset, out query, out selectedStar))
-                return true;
-
-            if (statement.WithCtesAndXmlNamespaces?.CommonTableExpressions == null)
-                return false;
-
-            foreach (CommonTableExpression cte in statement.WithCtesAndXmlNamespaces.CommonTableExpressions)
-            {
-                if (TryFindQueryWithStar(cte.QueryExpression, starOffset, out query, out selectedStar))
-                    return true;
-            }
-
-            return false;
+            // A star can sit anywhere in the statement: the top-level query, a CTE, a derived
+            // table, an APPLY subquery or a UNION branch.  Walking the tree keeps the deepest
+            // query that contains the offset, so the expansion uses that query's own FROM.
+            var finder = new StarQueryFinder(starOffset);
+            statement.Accept(finder);
+            query = finder.Query;
+            selectedStar = finder.Star;
+            return query != null && selectedStar != null;
         }
 
-        private static bool TryFindQueryWithStar(
-            QueryExpression queryExpression,
-            int starOffset,
-            out QuerySpecification query,
-            out SelectElement selectedStar)
+        private sealed class StarQueryFinder : TSqlFragmentVisitor
         {
-            query = queryExpression as QuerySpecification;
-            selectedStar = null;
+            private readonly int starOffset;
 
-            if (query == null || query.SelectElements == null || query.SelectElements.Count == 0)
-                return false;
-
-            foreach (SelectElement element in query.SelectElements)
+            public StarQueryFinder(int starOffset)
             {
-                if (element is SelectStarExpression && ContainsOffset(element, starOffset))
-                {
-                    selectedStar = element;
-                    return true;
-                }
+                this.starOffset = starOffset;
             }
 
-            return false;
+            /// <summary>Deepest query containing the offset, because children are visited last.</summary>
+            public QuerySpecification Query { get; private set; }
+
+            public SelectElement Star { get; private set; }
+
+            public override void Visit(QuerySpecification node)
+            {
+                if (ContainsOffset(node, starOffset)) Query = node;
+            }
+
+            public override void Visit(SelectStarExpression node)
+            {
+                if (ContainsOffset(node, starOffset)) Star = node;
+            }
         }
 
         private static bool ContainsOffset(TSqlFragment fragment, int offset)
