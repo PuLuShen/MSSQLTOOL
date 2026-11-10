@@ -916,8 +916,11 @@ namespace MSSQLTool.Completion
         {
             AddGeneral(result, context, metadata, objects);
             AddScopedColumns(result, context, metadata, 95);
+            // Only the caret query's own FROM feeds SELECT *; outer aliases stay visible for
+            // correlated references but must not be swept into the expansion.
+            List<KeyValuePair<string, string>> sources = OwnScopeSources(context);
+            if (sources.Count == 0) sources = ScopedSources(context);
             var columns = new List<string>();
-            var sources = ScopedSources(context);
             bool qualify = sources.Count > 1;
             foreach (var source in sources)
             {
@@ -1139,6 +1142,45 @@ namespace MSSQLTool.Completion
             // the text alias map back in used to keep a same-table alias from a nested subquery,
             // which made "i.Id" suggest columns that are out of scope at the caret.
 
+            return CollapseScopes(candidates);
+        }
+
+        /// <summary>
+        /// Sources of the query block that owns the caret, without the outer scopes a correlated
+        /// subquery can merely reference.  SELECT * must expand only what its own FROM declares:
+        /// inside OUTER APPLY (SELECT * FROM B WHERE A.x = B.x) the star is B's columns, not A's.
+        /// </summary>
+        private static List<KeyValuePair<string, string>> OwnScopeSources(CompletionContext context)
+        {
+            var result = new List<KeyValuePair<string, string>>();
+            if (context == null || string.IsNullOrEmpty(context.DocumentText)) return result;
+            if (context.DocumentText.Length > 150000) return result;
+            int caret = context.CaretOffset;
+            if (caret < 0 || caret > context.DocumentText.Length) caret = context.DocumentText.Length;
+            try
+            {
+                SqlDocumentModel model = SqlDocumentModel.Get(context.DocumentText);
+                SqlStatementRange statement = model.StatementAt(caret);
+                if (statement == null) return result;
+                SqlScopeTree scope = model.ScopeOf(statement);
+                foreach (SqlSource source in scope.OwnSourcesAt(caret))
+                {
+                    if (string.IsNullOrEmpty(source.Alias) || string.IsNullOrEmpty(source.ObjectName)) continue;
+                    result.Add(new KeyValuePair<string, string>(source.Alias, source.ObjectName));
+                    string bare = LastPart(source.ObjectName);
+                    if (!string.IsNullOrEmpty(bare) && !string.Equals(bare, source.Alias, StringComparison.OrdinalIgnoreCase))
+                        result.Add(new KeyValuePair<string, string>(bare, source.ObjectName));
+                }
+            }
+            catch (Exception ex)
+            {
+                MSSQLToolPackage._logger?.Debug("COMPLETION own scope failed: " + ex.Message);
+            }
+            return CollapseScopes(result);
+        }
+
+        private static List<KeyValuePair<string, string>> CollapseScopes(List<KeyValuePair<string, string>> candidates)
+        {
             var scopes = new List<KeyValuePair<string, string>>();
             foreach (var source in candidates)
             {

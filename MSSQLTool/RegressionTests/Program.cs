@@ -428,6 +428,7 @@ namespace MSSQLTool.RegressionTests
         Run("Refactor: qualify skips CTEs, temp tables and qualified names", TestQualifySkipsCtesTempTablesAndQualifiedNames);
         Run("Refactor: qualify handles multiple tables and updates", TestQualifyHandlesMultipleTablesAndUpdates);
         Run("Highlight: every variable occurrence is related", TestHighlightIncludesEveryVariableOccurrence);
+        Run("Completion: SELECT * inside OUTER APPLY expands only the subquery source", TestAsteriskInsideApplyExpandsOnlySubquerySource);
         Run("Results: analytics computes column statistics", TestGridAnalyticsComputesColumnStatistics);
         Run("Results: analytics respects the row cap", TestGridAnalyticsRespectsTheRowCap);
         Run("Results: analytics handles an empty table", TestGridAnalyticsHandlesAnEmptyTable);

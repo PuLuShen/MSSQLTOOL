@@ -197,6 +197,18 @@ namespace MSSQLTool.Model
             return Sources.Where(s => s.Depth <= depth).ToList();
         }
 
+        /// <summary>
+        /// Sources declared by the query block that actually owns this offset.  VisibleAt also
+        /// returns outer scopes because a correlated subquery may reference them, but a SELECT *
+        /// only expands what its own FROM contributes.
+        /// </summary>
+        public IReadOnlyList<SqlSource> OwnSourcesAt(int offset)
+        {
+            int depth = DepthAtOffset(offset);
+            if (depth < 0) return Sources;
+            return Sources.Where(s => s.Depth == depth).ToList();
+        }
+
         public SqlSource Resolve(string name, int offset)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;

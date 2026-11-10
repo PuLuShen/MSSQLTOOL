@@ -6,6 +6,24 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.509
+
+### 中文
+
+- **修复 APPLY 子查询内 `SELECT *` 把外层表字段一起展开的问题**
+  - 对 `OUTER APPLY (SELECT * FROM dbo.DJKCZH B WHERE A.sptm = B.sptm)` 这类相关子查询，补全弹窗里的 `(all SELECT columns)` 原来会把外层 `A` 与内层 `B` 的列全部插入。
+  - 根因是列来源取的是“光标处所有可见别名”，而相关子查询确实能看到外层别名。现在 `SELECT *` 只使用光标所在查询块自身 `FROM` 的列（`SqlScopeTree.OwnSourcesAt`），外层别名仍保留用于 `A.列` 这类相关引用补全。
+  - 顶层 `SELECT * ... APPLY (...)` 仍会包含 APPLY 派生表的列，与 SQL Server 的 `SELECT *` 语义一致。
+- **测试**：新增 APPLY 子查询的回归用例；全量 371 项回归测试通过，1 个 SQL Server 元数据集成测试因未设置 `MSSQLTOOL_TEST_CONNECTION` 跳过。
+
+### English
+
+- **Fixed `SELECT *` inside an APPLY subquery expanding the outer table's columns**
+  - For a correlated subquery such as `OUTER APPLY (SELECT * FROM dbo.DJKCZH B WHERE A.sptm = B.sptm)`, the `(all SELECT columns)` completion item inserted both the outer `A` and inner `B` columns.
+  - The list was built from every alias visible at the caret, and a correlated subquery can see the outer alias. `SELECT *` now uses only the sources declared by the caret query block (`SqlScopeTree.OwnSourcesAt`); outer aliases remain available for `A.column` member completion.
+  - A top-level `SELECT * ... APPLY (...)` still includes the APPLY derived table's columns, matching SQL Server semantics.
+- **Tests**: new regression case for APPLY subqueries; all 371 regression tests pass, and one SQL Server metadata integration test is skipped because `MSSQLTOOL_TEST_CONNECTION` is not set.
+
 ## 5.508
 
 ### 中文
