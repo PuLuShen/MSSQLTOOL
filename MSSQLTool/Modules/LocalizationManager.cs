@@ -360,6 +360,7 @@ namespace MSSQLTool
             ["Result panel"] = "结果集面板",
             ["Show the result statistics panel when I click the result grid"] = "点击结果集时自动显示统计面板",
             ["When this is off, you can still open the panel with the [Result panel] toolbar button."] = "关闭后仍可通过工具栏按钮【结果集面板】打开面板。",
+            ["Off by default. When this is off, you can still open the panel with the [Result panel] toolbar button."] = "默认关闭。关闭后仍可通过工具栏按钮【结果集面板】打开面板。",
             ["The result panel setting could not be saved."] = "结果集面板设置保存失败。",
             ["The change has been saved"] = "修改已保存",
             ["Setting saved"] = "设置已保存",

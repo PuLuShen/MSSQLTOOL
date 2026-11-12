@@ -6,6 +6,120 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
+## 5.547（稳定版）
+
+### 中文
+
+- **移除临时诊断代码**
+  - 删除 `PerfCounters`（每 30 秒的 `PERF` 日志行）；日志恢复为只记录真实事件。
+  - 删除环境变量开关 `MSSQLTOOL_NO_HIGHLIGHT`。
+  - 代码分析、关联高亮、补全的单次执行/去重/取消逻辑（5.542）完整保留，只是不再上报计数。
+- 本版包含 5.544 的 CPU 修复与 5.545/5.546 的设置调整，已确认长时间使用 CPU 不再上升。
+
+### English
+
+- **Temporary diagnostics removed**
+  - `PerfCounters` (the 30-second `PERF` line) is gone; the log only records real events again.
+  - The `MSSQLTOOL_NO_HIGHLIGHT` environment switch is gone.
+  - The single-flight/dedupe/cancel behaviour added in 5.542 stays; only the counters were dropped.
+- Includes the 5.544 CPU fix and the 5.545/5.546 settings changes; long sessions no longer climb in CPU.
+
+## 5.546
+
+### 中文
+
+- **设置精简：去掉重复的“回车也采用建议”复选框**
+  - “回车是否接受建议”统一由“插入方式”下拉框决定：Tab / Enter / Tab 或 Enter。
+  - 默认值改为 **Tab 或 Enter**（与 5.545 里“复选框默认打开”的效果一致）。
+  - 旧配置自动迁移一次：原来是 Tab 且未手动关过复选框的，升级后变成“Tab 或 Enter”；曾手动取消的保持 Tab。迁移只做一次，之后可以自由选回 Tab。
+- 保留 5.545 的两项：结果集面板自动显示默认关闭；5.544 的 CPU 修复。
+
+### English
+
+- **Settings cleanup: dropped the duplicate “Enter also accepts the suggestion” checkbox**
+  - “Insert with” (Tab / Enter / Tab or Enter) is now the only control for whether Enter accepts a suggestion.
+  - The default is **Tab or Enter**, matching what the 5.545 checkbox-on default did.
+  - Legacy profiles migrate once: Tab with the switch untouched becomes “Tab or Enter”, an explicitly unchecked switch stays Tab. The migration runs once, so Tab can be chosen again afterwards.
+- Keeps the 5.545 changes (result panel auto-show off by default) and the 5.544 CPU fix.
+
+## 5.545
+
+### 中文
+
+- **新增开关：回车采用建议（默认打开）**
+  - 位置：设置 → SQL Completion → “Insert with”右边的 **Enter also accepts the suggestion**。
+  - 打开时，补全弹窗打开时按回车接受高亮项；关闭后回车恢复为换行。Tab 仍然按“Insert with”的设置生效。
+- **结果集面板开关默认关闭**
+  - “点击结果集时自动显示统计面板”现在是默认关闭，仍可在设置 → Result panel 里打开，或用工具栏按钮手动打开。
+- 同时保留 5.544 的 CPU 修复与诊断计数器。
+
+### English
+
+- **New switch: Enter accepts the suggestion (on by default)**
+  - Settings → SQL Completion, next to “Insert with”: **Enter also accepts the suggestion**.
+  - When on, Enter accepts the highlighted row while the popup is open; when off, Enter inserts a newline again.  Tab keeps following the “Insert with” setting.
+- **Result panel auto-show now defaults to off**
+  - “Show the result statistics panel when I click the result grid” starts unchecked; it can still be turned on under Result panel or opened with the toolbar button.
+- Keeps the 5.544 CPU fix and the diagnostic counters.
+
+## 5.544
+
+### 中文
+
+- **修复：长时间使用后 CPU 占用升到数核（补全参数匹配是平方复杂度）**
+  - 原因：生成 EXEC 参数候选时，`AddValues` 把 `RoutineTarget(...)` 写在了 `Where` 谓词里，而 `RoutineTarget` 自己又要全表扫描一次参数表。参数表有几万个参数时，每次按键的代价是“参数数 × 参数数”，一次补全要跑几十秒到几分钟；多个编辑器视图并发时就顶满好几个核心，直到重启 SSMS 才恢复。
+  - 现在每个请求只解析一次目标过程，并按“名字最后一段”为参数建立快照级索引，只对命中的小桶做完整比对；匹配结果与原来的全表扫描完全一致（已加等价性测试）。
+  - 实测路径：4 万参数的快照上，一次候选生成从分钟级降到毫秒级，并有回归测试守住（`Completion: a huge parameter table stays responsive`）。
+  - 诊断计数器保留：`PERF` 行新增 `cand=` / `candms=`，用来观察候选生成耗时；确认稳定后可移除。
+
+### English
+
+- **Fix: CPU climbing to several cores after a while (quadratic parameter matching in completion)**
+  - Cause: while building EXEC argument candidates, `AddValues` called `RoutineTarget(...)` inside the `Where` predicate, and `RoutineTarget` itself scanned the whole parameter table. With tens of thousands of parameters every keystroke cost parameters × parameters, so one completion ran for tens of seconds to minutes; several editor views in parallel pinned several cores until SSMS restarted.
+  - Each request now resolves the target routine once and uses a snapshot-level index keyed by the last name part, running the full comparison only on the matching bucket. Results are identical to the previous full scan (equivalence test added).
+  - Measured: on a 40k-parameter snapshot one candidate build drops from minutes to milliseconds, guarded by `Completion: a huge parameter table stays responsive`.
+  - The diagnostic counters stay: the `PERF` line gains `cand=` / `candms=`; they can be removed once this is confirmed.
+
+## 5.543
+
+### 中文
+
+- **诊断版：用计数器定位“用一会儿 CPU 升高”**
+  - 每 30 秒输出一行 `PERF` 日志：代码分析/关联高亮/补全的启动数、完成数、丢弃数、跳过数、累计耗时，加上设置轮询/视图探测/去抖的触发次数、存活的 tagger 与 classifier 数量、线程池可用线程、GC 占用和线程数。
+  - 新增临时开关：环境变量 `MSSQLTOOL_NO_HIGHLIGHT=1` 可完全不创建关联高亮分类器，用于 A/B 定位（此前没有任何开关）。
+  - 本版不改变正常使用行为，仅供定位；结论出来后会把计数器移降。
+
+### English
+
+- **Diagnostic build: counters for the "CPU creeps up" investigation**
+  - One `PERF` line every 30 seconds: analysis/highlight/completion starts, completions, discards and skips with cumulative time, plus settings/attach/debounce ticks, live tagger and classifier counts, thread pool availability, GC size and thread count.
+  - Temporary switch: the environment variable `MSSQLTOOL_NO_HIGHLIGHT=1` skips the related-highlight classifier entirely, so it can be A/B tested (there was no user-facing switch before).
+  - No behaviour change for normal use; the counters will be removed once the cause is known.
+
+## 5.542
+
+### 中文
+
+- **修复长时间使用后 CPU 持续升高**
+  - 代码分析改为“单飞 + 最新优先”：每个文档同一时刻只跑一次分析，整个 shell 最多同时分析两个文档。过期请求只标记一次重跑，不再是每次编辑都新起一个线程池任务。
+  - 分析支持取消：被新编辑取代的分析在语句/规则边界退出，不再占着线程跑完 300ms 预算再丢弃结果。
+  - 同一文本与设置组合只分析一次；被丢弃的过期结果改为 Debug 日志，便于后续排查“CPU 高但日志安静”的情况。
+- **定时器不再随标签页累积**
+  - 每个缓冲区一个 1 秒设置轮询，改为全 shell 共享一个监视器；监听者用弱引用，最后一个注销后定时器停止。
+  - 关联高亮的视图探测由无限轮询改为 10 秒上限 + 5 秒退避；标签页关闭即停止去抖与轮询，编辑或重新渲染时按需恢复。
+- **测试**：新增“分析可取消”回归用例，全部 376 项通过。
+
+### English
+
+- **Fixed the CPU creep after a long session**
+  - Code analysis is now single-flight with latest-wins: one pass per document and at most two documents at a time in the shell. A superseded request only marks the buffer dirty instead of starting another pool task on every edit.
+  - Analysis honours cancellation and exits at statement/rule boundaries instead of burning the full 300 ms document budget and throwing the result away.
+  - Unchanged text plus settings is not analysed twice; discarded stale results are logged at Debug level so "high CPU with a quiet log" can be diagnosed later.
+- **Timers no longer accumulate with tabs**
+  - The per-buffer 1 second settings poll is now one shell-wide watcher with weak listeners, and it stops once the last listener unregisters.
+  - Related-highlight view discovery is bounded (10 s of polling, then a 5 s backoff) and stops when the view closes; edits and classification requests resume it on demand.
+- **Tests**: a new "analysis honours cancellation" case; all 376 tests pass.
+
 ## 5.541
 
 ### 中文

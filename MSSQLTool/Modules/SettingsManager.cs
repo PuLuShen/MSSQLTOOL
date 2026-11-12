@@ -448,10 +448,23 @@ ORDER BY sd.[name];
             /// <summary>Last size of the result statistics panel ("width,height").</summary>
             public string resultsPanelSize = string.Empty;
             /// <summary>Show the statistics panel automatically when the result grid is clicked.</summary>
-            public bool resultsPanelAutoShow = true;
+            public bool resultsPanelAutoShow = false;
             public int delayMilliseconds = 0;
             public int maximumItems = 200;
-            public CompletionCommitKey completionCommitKey = CompletionCommitKey.Tab;
+            public CompletionCommitKey completionCommitKey = CompletionCommitKey.TabOrEnter;
+
+            /// <summary>Settings layout version; 0 means written before the commit key absorbed the Enter switch.</summary>
+            public int settingsVersion;
+            public const int CurrentSettingsVersion = 2;
+
+            /// <summary>
+            /// Legacy 5.545 switch, read to migrate old profiles and never written again.
+            /// Null means the profile already went through the migration.
+            /// </summary>
+            [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+            public bool? enterCommitsCompletion;
+
+            public bool ShouldSerializeenterCommitsCompletion() => false;
         }
 
         public static string GetUiLanguage()
@@ -1091,6 +1104,7 @@ ORDER BY sd.[name];
                 {
                     value.delayMilliseconds = Math.Max(0, Math.Min(1000, value.delayMilliseconds));
                     value.maximumItems = Math.Max(20, Math.Min(1000, value.maximumItems));
+                    MigrateCompletionSettings(value);
                     lock (completionCacheLock) { completionCache = value; completionCacheUtc = DateTime.UtcNow; }
                     return value;
                 }
@@ -1104,9 +1118,28 @@ ORDER BY sd.[name];
 
         public static bool SaveSqlCompletionSettings(SqlCompletionSettings settings)
         {
-            bool saved = SaveRegisterValue("SqlCompletionSettings", JsonConvert.SerializeObject(settings ?? new SqlCompletionSettings()));
+            settings = settings ?? new SqlCompletionSettings();
+            MigrateCompletionSettings(settings);
+            bool saved = SaveRegisterValue("SqlCompletionSettings", JsonConvert.SerializeObject(settings));
             lock (completionCacheLock) { completionCache = null; completionCacheUtc = DateTime.MinValue; }
             return saved;
+        }
+
+        /// <summary>
+        /// 5.545 had a separate "Enter also accepts the suggestion" switch that was on by default.
+        /// It duplicated the "Insert with" choice, so it now lives only in the commit key: a profile
+        /// that had Enter enabled (or never touched the switch) becomes "Tab or Enter", while an
+        /// explicitly unchecked switch stays Tab-only.  Runs once per profile.
+        /// </summary>
+        internal static void MigrateCompletionSettings(SqlCompletionSettings settings)
+        {
+            if (settings == null || settings.settingsVersion >= SqlCompletionSettings.CurrentSettingsVersion) return;
+
+            if (settings.completionCommitKey == CompletionCommitKey.Tab && settings.enterCommitsCompletion != false)
+                settings.completionCommitKey = CompletionCommitKey.TabOrEnter;
+
+            settings.enterCommitsCompletion = null;
+            settings.settingsVersion = SqlCompletionSettings.CurrentSettingsVersion;
         }
 
         /// <summary>

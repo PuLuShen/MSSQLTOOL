@@ -262,6 +262,39 @@ namespace MSSQLTool.RegressionTests
             Run("Segment-boundary match outranks a buried substring", TestSegmentBoundaryRanksBeforeSubstring);
             Run("Outer scope does not leak a subquery alias", TestOuterScopeDoesNotLeakSubqueryAlias);
             Run("Completion commit key respects the setting", TestCompletionCommitKeySetting);
+            Run("Completion: commit key defaults to Tab or Enter", () =>
+            {
+                var defaults = new SettingsManager.SqlCompletionSettings();
+                Equal(SettingsManager.CompletionCommitKey.TabOrEnter, defaults.completionCommitKey);
+                True(KeypressCommandFilter.ShouldCommitCompletion(defaults.completionCommitKey, false, true));
+                True(KeypressCommandFilter.ShouldCommitCompletion(defaults.completionCommitKey, true, false));
+                True(!defaults.resultsPanelAutoShow);
+            });
+            Run("Completion: the old Enter switch folds into the commit key", () =>
+            {
+                // 5.545 kept Enter on by default, so a legacy Tab profile becomes "Tab or Enter".
+                var legacy = new SettingsManager.SqlCompletionSettings { completionCommitKey = SettingsManager.CompletionCommitKey.Tab };
+                SettingsManager.MigrateCompletionSettings(legacy);
+                Equal(SettingsManager.CompletionCommitKey.TabOrEnter, legacy.completionCommitKey);
+
+                // An explicitly unchecked switch stays Tab-only.
+                var tabOnly = new SettingsManager.SqlCompletionSettings
+                {
+                    completionCommitKey = SettingsManager.CompletionCommitKey.Tab,
+                    enterCommitsCompletion = false
+                };
+                SettingsManager.MigrateCompletionSettings(tabOnly);
+                Equal(SettingsManager.CompletionCommitKey.Tab, tabOnly.completionCommitKey);
+
+                // A migrated profile is never re-migrated, so Tab can be chosen again later.
+                var current = new SettingsManager.SqlCompletionSettings
+                {
+                    settingsVersion = SettingsManager.SqlCompletionSettings.CurrentSettingsVersion,
+                    completionCommitKey = SettingsManager.CompletionCommitKey.Tab
+                };
+                SettingsManager.MigrateCompletionSettings(current);
+                Equal(SettingsManager.CompletionCommitKey.Tab, current.completionCommitKey);
+            });
             Run("CTE local object", () => True(SqlCompletionAnalyzer.Analyze("WITH cte(Id,Name) AS (SELECT 1,'x') SELECT cte.", 50).LocalObjects.Exists(x => x.Name == "cte")));
             Run("Temp table local object", () => True(SqlCompletionAnalyzer.Analyze("CREATE TABLE #t(Id int, Name nvarchar(20)); SELECT #t.", 55).LocalObjects.Exists(x => x.Name == "#t")));
             Run("Temp table survives GO analysis", () => True(SqlCompletionAnalyzer.Analyze("CREATE TABLE #t(Id int);\nGO\nSELECT #t.", 39).LocalObjects.Exists(x => x.Name == "#t")));
@@ -395,6 +428,7 @@ namespace MSSQLTool.RegressionTests
             Run("Analysis: severity override", TestRuleSeverityOverrideIsApplied);
         Run("Analysis: squiggle switches change the signature", TestAnalysisSquiggleSwitchesChangeSignature);
             Run("Analysis: engine is deterministic", TestAnalysisEngineIsDeterministicAndCached);
+            Run("Analysis: cancellation is honoured", TestAnalysisHonoursCancellation);
             Run("Analysis: broken SQL does not throw", TestAnalysisRulesDoNotThrowOnBrokenSql);
             Run("Analysis: editor boundary", TestEditorBoundaryIsRespected);
             Run("Analysis: fix at caret picks the caret diagnostic", TestFixAtCaretFindsTheCaretDiagnostic);
