@@ -6,7 +6,9 @@
 > The manual release script uses the `## <version>` section below as the GitHub release body.
 > Re-running it for the same version patches the existing release, including this text.
 
-## 5.547（稳定版）
+## 5.547
+
+**稳定版 / Stable release**
 
 ### 中文
 
