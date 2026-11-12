@@ -9,6 +9,7 @@ using Microsoft.VisualStudio.Text.Adornments;
 using Microsoft.VisualStudio.Text.Tagging;
 using Microsoft.VisualStudio.Utilities;
 using MSSQLTool.Analysis;
+using MSSQLTool.Model;
 
 namespace MSSQLTool.Editor.Vs2022
 {
@@ -47,36 +48,40 @@ namespace MSSQLTool.Editor.Vs2022
         public AnalysisSettings Settings;
     }
 
-    internal sealed class SqlDiagnosticsTagger : ITagger<IErrorTag>, IDisposable
+    internal sealed class SqlDiagnosticsTagger : ITagger<IErrorTag>, IDisposable, IAnalysisSettingsListener
     {
         internal const string SnapshotKey = "MSSQLTool.DiagnosticSnapshot";
 
         private const int DebounceMilliseconds = 650;
 
+        /// <summary>
+        /// At most one analysis per buffer and at most two documents at a time in the whole shell.
+        /// Every edit used to start another pool task, and a task that had already started could
+        /// not be cancelled, so fast typing kept several cores busy with results that were then
+        /// thrown away by the version check.
+        /// </summary>
+        private static readonly SemaphoreSlim ConcurrencyGate = new SemaphoreSlim(MaxConcurrentAnalyses, MaxConcurrentAnalyses);
+
+        private static int MaxConcurrentAnalyses => Math.Max(1, Math.Min(2, Environment.ProcessorCount / 4));
+
         private readonly ITextBuffer buffer;
         private readonly AnalysisEngine engine = new AnalysisEngine();
         private readonly Dispatcher dispatcher;
-        private readonly DispatcherTimer settingsTimer;
         private List<TagSpan<IErrorTag>> tags = new List<TagSpan<IErrorTag>>();
         private CancellationTokenSource pending;
         private int analysisVersion;
-        private int settingsVersion;
+        private int analysisRunning;
+        private int analysisQueued;
+        private string lastAppliedSignature;
         private bool disposed;
 
         public SqlDiagnosticsTagger(ITextBuffer buffer)
         {
             this.buffer = buffer;
             dispatcher = Dispatcher.CurrentDispatcher;
-            settingsVersion = SettingsManager.AnalysisSettingsVersion;
-
-            settingsTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
-            {
-                Interval = TimeSpan.FromSeconds(1)
-            };
-            settingsTimer.Tick += OnSettingsTick;
-            settingsTimer.Start();
 
             buffer.Changed += OnBufferChanged;
+            AnalysisSettingsWatcher.Register(this);
             MSSQLToolPackage._logger?.Info("MSSQLTool: diagnostics tagger created (native IErrorTag)");
             Schedule();
         }
@@ -111,13 +116,8 @@ namespace MSSQLTool.Editor.Vs2022
 
         private void OnBufferChanged(object sender, TextContentChangedEventArgs e) => Schedule();
 
-        private void OnSettingsTick(object sender, EventArgs e)
-        {
-            if (disposed) return;
-            if (settingsVersion == SettingsManager.AnalysisSettingsVersion) return;
-            settingsVersion = SettingsManager.AnalysisSettingsVersion;
-            Schedule();
-        }
+        /// <summary>A setting changed somewhere in the shell; this buffer has to be analysed again.</summary>
+        public void OnAnalysisSettingsChanged() => Schedule();
 
         private void Schedule()
         {
@@ -135,43 +135,81 @@ namespace MSSQLTool.Editor.Vs2022
             Task.Delay(DebounceMilliseconds, token).ContinueWith(task =>
             {
                 if (task.IsCanceled || token.IsCancellationRequested) return;
-                Analyze(version);
+                Pump(version, token);
             }, TaskScheduler.Default);
         }
 
-        private void Analyze(int version)
+        /// <summary>
+        /// Starts the analysis for <paramref name="version"/> unless this buffer already has one in
+        /// flight.  A newer request only marks the buffer dirty; the running pass schedules itself
+        /// again when it finishes, so the pool never holds more than one pass per buffer.
+        /// </summary>
+        private void Pump(int version, CancellationToken token)
         {
-            if (disposed) return;
+            if (disposed || token.IsCancellationRequested) return;
+            if (version != Volatile.Read(ref analysisVersion)) return;
 
-            ITextSnapshot snapshot = buffer.CurrentSnapshot;
-            string text = snapshot.GetText();
-            AnalysisSettings settings;
-            List<AnalysisDiagnostic> results;
+            if (Interlocked.CompareExchange(ref analysisRunning, 1, 0) != 0)
+            {
+                Interlocked.Exchange(ref analysisQueued, 1);
+                return;
+            }
+
+            _ = Task.Run(() => AnalyzeAsync(version, token));
+        }
+
+        private async Task AnalyzeAsync(int version, CancellationToken token)
+        {
             try
             {
-                settings = SettingsManager.GetAnalysisSettings();
-                results = engine.Analyze(text, settings, -1);
+                await ConcurrencyGate.WaitAsync(token).ConfigureAwait(false);
+                try
+                {
+                    if (disposed || version != Volatile.Read(ref analysisVersion)) return;
+
+                    ITextSnapshot snapshot = buffer.CurrentSnapshot;
+                    string text = snapshot.GetText();
+                    AnalysisSettings settings = SettingsManager.GetAnalysisSettings();
+
+                    // The engine caches by text hash too, but stopping here saves the copy and the
+                    // hash for the common case where only the caret or the settings stamp moved.
+                    string signature = text.Length + "|" + SqlDocumentModel.Hash(text) + "|" + settings.Signature();
+                    if (string.Equals(signature, lastAppliedSignature, StringComparison.Ordinal)) return;
+
+                    List<AnalysisDiagnostic> results = engine.Analyze(text, settings, -1, token);
+                    token.ThrowIfCancellationRequested();
+
+                    _ = dispatcher.BeginInvoke(new Action(() => Apply(version, snapshot, settings, results, text, signature)));
+                }
+                finally
+                {
+                    ConcurrencyGate.Release();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Superseded by a newer edit; the newest pass publishes the result.
             }
             catch (Exception ex)
             {
                 FeatureDiagnostics.Report("SQL Diagnostics", "Analysis failed", ex);
-                return;
             }
-
-            try
+            finally
             {
-                dispatcher.BeginInvoke(new Action(() => Apply(version, snapshot, settings, results, text)));
-            }
-            catch (Exception)
-            {
-                // The buffer was torn down while the analysis was running.
+                Volatile.Write(ref analysisRunning, 0);
+                if (Interlocked.Exchange(ref analysisQueued, 0) != 0 && !disposed) Schedule();
             }
         }
 
-        private void Apply(int version, ITextSnapshot snapshot, AnalysisSettings settings, List<AnalysisDiagnostic> results, string text)
+        private void Apply(int version, ITextSnapshot snapshot, AnalysisSettings settings, List<AnalysisDiagnostic> results, string text, string signature)
         {
-            if (disposed || version != Volatile.Read(ref analysisVersion)) return;
-            if (snapshot != buffer.CurrentSnapshot) return;
+            if (disposed) return;
+
+            if (version != Volatile.Read(ref analysisVersion) || snapshot != buffer.CurrentSnapshot)
+            {
+                MSSQLToolPackage._logger?.Debug("MSSQLTool: stale diagnostics result discarded");
+                return;
+            }
 
             var next = new List<TagSpan<IErrorTag>>();
             foreach (AnalysisDiagnostic diagnostic in results)
@@ -197,6 +235,7 @@ namespace MSSQLTool.Editor.Vs2022
             };
 
             tags = next;
+            lastAppliedSignature = signature;
             AnalysisResultsBroker.Publish("active", text, results, settings);
             MSSQLToolPackage._logger?.Info(
                 "MSSQLTool: diagnostics analyzed findings=" + results.Count + " squiggles=" + next.Count);
@@ -217,7 +256,7 @@ namespace MSSQLTool.Editor.Vs2022
             if (disposed) return;
             disposed = true;
             Interlocked.Increment(ref analysisVersion);
-            try { settingsTimer.Stop(); settingsTimer.Tick -= OnSettingsTick; } catch (Exception) { }
+            AnalysisSettingsWatcher.Unregister(this);
             buffer.Changed -= OnBufferChanged;
             CancellationTokenSource current = Interlocked.Exchange(ref pending, null);
             if (current != null)

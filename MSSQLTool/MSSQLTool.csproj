@@ -262,6 +262,7 @@
     <Compile Include="Editor\ActiveEditorLocator.cs" />
     <Compile Include="Editor\Vs2022\SqlSuggestedActionsSource.cs" />
     <Compile Include="Editor\Vs2022\RelatedHighlightActivation.cs" />
+    <Compile Include="Editor\Vs2022\AnalysisSettingsWatcher.cs" />
     <Compile Include="Editor\Vs2022\SqlRelatedHighlightTagger.cs" />
     <Compile Include="Editor\Vs2022\SqlDiagnosticsTagger.cs" />
     <Compile Include="Editor\Vs2022\SqlDiagnosticQuickInfo.cs" />

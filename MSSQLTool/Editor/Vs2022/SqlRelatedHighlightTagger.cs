@@ -193,6 +193,14 @@ namespace MSSQLTool.Editor.Vs2022
     {
         private const int DebounceMilliseconds = 120;
 
+        /// <summary>How long the view search keeps polling before it backs off.</summary>
+        private const int AttachIntervalMilliseconds = 250;
+
+        /// <summary>40 ticks = 10 seconds; a buffer without a view is usually a closed document.</summary>
+        private const int AttachAttemptsBeforeBackoff = 40;
+
+        private static readonly TimeSpan AttachBackoff = TimeSpan.FromSeconds(5);
+
         private readonly ITextBuffer buffer;
         private readonly IClassificationType classification;
         private readonly IClassificationFormatMapService formatMapService;
@@ -205,6 +213,13 @@ namespace MSSQLTool.Editor.Vs2022
         private List<ClassificationSpan> spans = new List<ClassificationSpan>();
         private ITextSnapshot spanSnapshot;
         private int analysisVersion;
+        private int analysisRunning;
+        private int analysisQueued;
+        private int lastAnalyzedVersion = -1;
+        private int lastAnalyzedCaret = -1;
+        private int attachAttempts;
+        private DateTime attachRetryAfterUtc = DateTime.MinValue;
+        private CancellationTokenSource analysisCancellation;
         private bool disposed;
 
         public RelatedHighlightClassifier(ITextBuffer buffer, IClassificationType classification, IClassificationFormatMapService formatMapService = null)
@@ -225,10 +240,11 @@ namespace MSSQLTool.Editor.Vs2022
             debounce.Tick += OnDebounceTick;
 
             // The view is what knows the caret, and it may not exist yet when the classifier is
-            // first requested, so keep looking until it shows up.
+            // first requested.  The search is bounded: polling was previously unbounded, so every
+            // classifier of a closed tab kept waking the UI thread four times a second forever.
             attach = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
             {
-                Interval = TimeSpan.FromMilliseconds(250)
+                Interval = TimeSpan.FromMilliseconds(AttachIntervalMilliseconds)
             };
             attach.Tick += OnAttachTick;
             attach.Start();
@@ -242,6 +258,9 @@ namespace MSSQLTool.Editor.Vs2022
         public IList<ClassificationSpan> GetClassificationSpans(SnapshotSpan span)
         {
             if (disposed) return new List<ClassificationSpan>();
+
+            // The editor asking for spans means a view exists again after a close and reopen.
+            EnsureViewAttach();
 
             List<ClassificationSpan> current = spans;
             ITextSnapshot snapshot = spanSnapshot;
@@ -264,10 +283,20 @@ namespace MSSQLTool.Editor.Vs2022
                 return;
             }
 
+            if (++attachAttempts > AttachAttemptsBeforeBackoff)
+            {
+                // This buffer has no view (usually a closed tab).  Stop waking the UI thread and
+                // wait for an edit, a classification request or a caret move to try again.
+                attach.Stop();
+                attachRetryAfterUtc = DateTime.UtcNow + AttachBackoff;
+                return;
+            }
+
             ITextView found;
             if (!SqlEditorServices.TryGetView(buffer, out found) || found == null) return;
 
             view = found;
+            attachAttempts = 0;
             attach.Stop();
             view.Caret.PositionChanged += OnCaretPositionChanged;
             view.Closed += OnViewClosed;
@@ -279,6 +308,16 @@ namespace MSSQLTool.Editor.Vs2022
             Schedule();
         }
 
+        /// <summary>Restarts the (bounded) view search when the buffer is used again.</summary>
+        private void EnsureViewAttach()
+        {
+            if (disposed || view != null || attach.IsEnabled) return;
+            if (DateTime.UtcNow < attachRetryAfterUtc) return;
+
+            attachAttempts = 0;
+            attach.Start();
+        }
+
         private void OnDebounceTick(object sender, EventArgs e)
         {
             debounce.Stop();
@@ -288,6 +327,7 @@ namespace MSSQLTool.Editor.Vs2022
         private void Schedule()
         {
             if (disposed) return;
+            EnsureViewAttach();
             debounce.Stop();
             debounce.Start();
         }
@@ -298,7 +338,11 @@ namespace MSSQLTool.Editor.Vs2022
 
             ITextSnapshot snapshot = buffer.CurrentSnapshot;
             ITextView currentView = view;
-            if (snapshot == null || currentView == null) return;
+            if (snapshot == null || currentView == null)
+            {
+                EnsureViewAttach();
+                return;
+            }
 
             int caret;
             try
@@ -310,32 +354,65 @@ namespace MSSQLTool.Editor.Vs2022
                 return;
             }
 
+            // Moving inside the same identifier, scrolling or a selection change produces the same
+            // spans.  Re-analysing the whole buffer for those used to be the normal case.
+            if (snapshot.Version.VersionNumber == lastAnalyzedVersion && caret == lastAnalyzedCaret) return;
+
+            lastAnalyzedVersion = snapshot.Version.VersionNumber;
+            lastAnalyzedCaret = caret;
+
             int version = Interlocked.Increment(ref analysisVersion);
-
-            Task.Run(() =>
+            if (Interlocked.CompareExchange(ref analysisRunning, 1, 0) != 0)
             {
-                List<HighlightSpan> found;
-                try
-                {
-                    // Copying the buffer is the most expensive part of a related-highlight pass;
-                    // keep it off the UI thread so a 900 KB script cannot stall a keystroke.
-                    string text = snapshot.GetText();
-                    found = SqlPromptHighlightAnalyzer.Analyze(text, caret);
-                }
-                catch (Exception)
-                {
-                    found = new List<HighlightSpan>();
-                }
+                // One pass per classifier at a time; a newer request only marks it dirty so the
+                // running pass re-schedules itself when it finishes.
+                Interlocked.Exchange(ref analysisQueued, 1);
+                return;
+            }
 
-                try
-                {
-                    dispatcher.BeginInvoke(new Action(() => Apply(version, snapshot, found)));
-                }
-                catch (Exception)
-                {
-                    // The document was closed while the analysis was running.
-                }
-            });
+            var cancellation = new CancellationTokenSource();
+            CancellationTokenSource previous = Interlocked.Exchange(ref analysisCancellation, cancellation);
+            if (previous != null)
+            {
+                try { previous.Cancel(); previous.Dispose(); } catch (Exception) { }
+            }
+
+            CancellationToken token = cancellation.Token;
+            Task.Run(() => AnalyzeCore(version, snapshot, caret, token));
+        }
+
+        private void AnalyzeCore(int version, ITextSnapshot snapshot, int caret, CancellationToken token)
+        {
+            List<HighlightSpan> found = null;
+            try
+            {
+                if (disposed || token.IsCancellationRequested) return;
+
+                // Copying the buffer is the most expensive part of a related-highlight pass;
+                // keep it off the UI thread so a 900 KB script cannot stall a keystroke.
+                string text = snapshot.GetText();
+                found = SqlPromptHighlightAnalyzer.Analyze(text, caret);
+            }
+            catch (Exception)
+            {
+                found = new List<HighlightSpan>();
+            }
+            finally
+            {
+                Volatile.Write(ref analysisRunning, 0);
+                if (Interlocked.Exchange(ref analysisQueued, 0) != 0 && !disposed) Schedule();
+            }
+
+            if (found == null || token.IsCancellationRequested) return;
+
+            try
+            {
+                dispatcher.BeginInvoke(new Action(() => Apply(version, snapshot, found)));
+            }
+            catch (Exception)
+            {
+                // The document was closed while the analysis was running.
+            }
         }
 
         private void Apply(int version, ITextSnapshot snapshot, List<HighlightSpan> found)
@@ -470,7 +547,24 @@ namespace MSSQLTool.Editor.Vs2022
             view.Caret.PositionChanged -= OnCaretPositionChanged;
             view.Closed -= OnViewClosed;
             view = null;
-            attach.Start();
+
+            // Nothing to paint while the tab is closed: stop both timers instead of going back to
+            // polling for a view every 250 ms.  An edit, a caret move or a classification request
+            // restarts the (bounded) search after a pause.
+            debounce.Stop();
+            attach.Stop();
+            attachRetryAfterUtc = DateTime.UtcNow + AttachBackoff;
+            lastAnalyzedVersion = -1;
+            lastAnalyzedCaret = -1;
+            CancelPendingAnalysis();
+        }
+
+        private void CancelPendingAnalysis()
+        {
+            CancellationTokenSource cancellation = Interlocked.Exchange(ref analysisCancellation, null);
+            if (cancellation == null) return;
+
+            try { cancellation.Cancel(); cancellation.Dispose(); } catch (Exception) { }
         }
 
         public void Dispose()
@@ -490,7 +584,13 @@ namespace MSSQLTool.Editor.Vs2022
             attach.Stop();
             attach.Tick -= OnAttachTick;
             buffer.Changed -= OnBufferChanged;
-            OnViewClosed(this, EventArgs.Empty);
+            if (view != null)
+            {
+                view.Caret.PositionChanged -= OnCaretPositionChanged;
+                view.Closed -= OnViewClosed;
+                view = null;
+            }
+            CancelPendingAnalysis();
             spans = new List<ClassificationSpan>();
         }
     }

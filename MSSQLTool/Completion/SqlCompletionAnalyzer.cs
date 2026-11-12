@@ -1451,21 +1451,24 @@ namespace MSSQLTool.Completion
         {
             string target = context.TargetObject;
             if (!string.IsNullOrWhiteSpace(target)
-                && metadata.Parameters.Any(p => ObjectMatches(p.ObjectName, target))) return target;
+                && metadata.ParametersFor(CleanQualified(target)).Any(p => ObjectMatches(p.ObjectName, target))) return target;
             return ModelTarget(context, SqlTargetKind.Exec) ?? target;
         }
 
         private static void AddParameters(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
         {
             string routine = RoutineTarget(context, metadata);
-            var parameters = metadata.Parameters.Where(p => ObjectMatches(p.ObjectName, routine) && !context.UsedParameters.Contains(p.Name) && !string.IsNullOrEmpty(p.Name)).ToList();
+            var parameters = metadata.ParametersFor(CleanQualified(routine)).Where(p => ObjectMatches(p.ObjectName, routine) && !context.UsedParameters.Contains(p.Name) && !string.IsNullOrEmpty(p.Name)).ToList();
             result.AddRange(parameters.Select(p => new CompletionItem { DisplayText = p.Name, InsertText = p.Name + " = ", Kind = CompletionItemKind.Parameter, Description = p.TypeDisplay + (p.HasDefaultValue ? " optional" : string.Empty) + (p.IsOutput ? " OUTPUT" : string.Empty), Score = 100 }));
             if (parameters.Count > 1 && context.UsedParameters.Count == 0) result.Add(new CompletionItem { DisplayText = "(all parameters)", InsertText = string.Join(", ", parameters.Select((p, i) => p.Name + " = ${" + (i + 1) + ":" + (p.HasDefaultValue ? "DEFAULT" : "NULL") + "}" + (p.IsOutput ? " OUTPUT" : string.Empty))), Kind = CompletionItemKind.Snippet, Description = parameters.Count + " parameters", Score = 130 });
         }
 
         private static void AddValues(List<CompletionItem> result, CompletionContext context, MetadataSnapshot metadata)
         {
-            var matching = metadata.Parameters.Where(x => ObjectMatches(x.ObjectName, RoutineTarget(context, metadata))).OrderBy(x => x.Ordinal).ToList();
+            // RoutineTarget resolves the same routine for every parameter; calling it inside the
+            // predicate made each completion rescan the whole parameter table per parameter.
+            string routine = RoutineTarget(context, metadata);
+            var matching = metadata.ParametersFor(CleanQualified(routine)).Where(x => ObjectMatches(x.ObjectName, routine)).OrderBy(x => x.Ordinal).ToList();
             var p = !string.IsNullOrWhiteSpace(context.ActiveParameter)
                 ? matching.FirstOrDefault(x => string.Equals(x.Name, context.ActiveParameter, StringComparison.OrdinalIgnoreCase))
                 : matching.ElementAtOrDefault(context.ArgumentIndex);
@@ -2681,7 +2684,7 @@ namespace MSSQLTool.Completion
         private static List<string> SplitTopLevel(string value) { var result = new List<string>(); int depth = 0, start = 0; for (int i = 0; i < value.Length; i++) { if (value[i] == '(') depth++; else if (value[i] == ')') depth = Math.Max(0, depth - 1); else if (value[i] == ',' && depth == 0) { result.Add(value.Substring(start, i - start)); start = i + 1; } } result.Add(value.Substring(start)); return result; }
         private static void AddLocal(CompletionContext c, string name, IEnumerable<ColumnMetadata> columns) { var o = new DatabaseObjectMetadata { Schema = string.Empty, Name = Clean(name), Kind = CompletionItemKind.Table }; o.Columns.AddRange(columns); c.LocalObjects.RemoveAll(x => string.Equals(x.Name, o.Name, StringComparison.OrdinalIgnoreCase)); c.LocalObjects.Add(o); c.Aliases[o.Name] = o.Name; }
         private static string ResolveAlias(string value, CompletionContext c) => c.Aliases.TryGetValue(value ?? string.Empty, out string resolved) ? resolved : value;
-        private static bool ObjectMatches(string a, string b)
+        internal static bool ObjectMatches(string a, string b)
         {
             string left = CleanQualified(a), right = CleanQualified(b);
             if (string.Equals(left, right, StringComparison.OrdinalIgnoreCase)) return true;

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using MSSQLTool.Model;
 
 namespace MSSQLTool.Analysis
@@ -23,7 +24,19 @@ namespace MSSQLTool.Analysis
 
         public List<AnalysisDiagnostic> Analyze(string text, AnalysisSettings settings, int caretOffset = -1)
         {
+            return Analyze(text, settings, caretOffset, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Same analysis with a cancellation token.  The editor schedules one pass per edit and
+        /// only the newest result is used, so a pass whose text was already superseded has to
+        /// stop instead of holding a pool thread until the document budget runs out.
+        /// </summary>
+        public List<AnalysisDiagnostic> Analyze(string text, AnalysisSettings settings, int caretOffset, CancellationToken cancellationToken)
+        {
             if (settings == null || !settings.enabled) return new List<AnalysisDiagnostic>();
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             string value = text ?? string.Empty;
             if (value.Length > MaximumDocumentLength)
@@ -67,6 +80,8 @@ namespace MSSQLTool.Analysis
                     break;
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var context = new RuleContext
                 {
                     Text = value,
@@ -78,6 +93,8 @@ namespace MSSQLTool.Analysis
 
                 foreach (RuleDefinition rule in enabledRules)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     var ruleWatch = Stopwatch.StartNew();
                     try
                     {

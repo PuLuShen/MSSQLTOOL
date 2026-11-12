@@ -955,7 +955,7 @@ namespace MSSQLTool.Completion
         {
             if (metadata == null || context == null || string.IsNullOrWhiteSpace(context.TargetObject)) return null;
             string target = DatabaseIdentifier.NormalizeSqlServer(context.TargetObject);
-            var allParameters = metadata.Parameters
+            var allParameters = metadata.ParametersFor(target)
                 .Where(p => NameMatches(p.ObjectName, target))
                 .OrderBy(p => p.Ordinal)
                 .ToList();

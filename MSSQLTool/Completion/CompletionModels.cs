@@ -454,6 +454,49 @@ namespace MSSQLTool.Completion
         public Dictionary<string, List<string>> LinkedServerDatabases { get; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         public List<DatabaseObjectMetadata> Objects { get; } = new List<DatabaseObjectMetadata>();
         public List<RoutineParameterMetadata> Parameters { get; } = new List<RoutineParameterMetadata>();
+
+        // Completion used to rescan every routine parameter once per parameter it visited, which
+        // is quadratic on a snapshot holding tens of thousands of parameters.  The bucket key is
+        // the last name part; callers still run the full name comparison on the (small) bucket,
+        // so matches are identical to a linear scan.
+        private Dictionary<string, List<RoutineParameterMetadata>> parameterIndex;
+        private int parameterIndexCount = -1;
+        private readonly object parameterIndexLock = new object();
+        private static readonly List<RoutineParameterMetadata> NoParameters = new List<RoutineParameterMetadata>();
+
+        internal List<RoutineParameterMetadata> ParametersFor(string normalizedRoutine)
+        {
+            string key = LastNamePart(normalizedRoutine ?? string.Empty);
+            Dictionary<string, List<RoutineParameterMetadata>> index = ParameterIndex();
+            return index.TryGetValue(key, out List<RoutineParameterMetadata> bucket) ? bucket : NoParameters;
+        }
+
+        private Dictionary<string, List<RoutineParameterMetadata>> ParameterIndex()
+        {
+            lock (parameterIndexLock)
+            {
+                if (parameterIndex != null && parameterIndexCount == Parameters.Count) return parameterIndex;
+
+                var built = new Dictionary<string, List<RoutineParameterMetadata>>(StringComparer.OrdinalIgnoreCase);
+                foreach (RoutineParameterMetadata parameter in Parameters)
+                {
+                    string key = LastNamePart(DatabaseIdentifier.NormalizeSqlServer(parameter.ObjectName));
+                    if (!built.TryGetValue(key, out List<RoutineParameterMetadata> bucket))
+                        built[key] = bucket = new List<RoutineParameterMetadata>();
+                    bucket.Add(parameter);
+                }
+
+                parameterIndex = built;
+                parameterIndexCount = Parameters.Count;
+                return built;
+            }
+        }
+
+        private static string LastNamePart(string value)
+        {
+            int dot = value.LastIndexOf('.');
+            return dot >= 0 ? value.Substring(dot + 1) : value;
+        }
         // Foreign keys are loaded by the background enrichment pass; the whole
         // list is swapped in atomically so concurrent readers never enumerate
         // a list that is still being built.

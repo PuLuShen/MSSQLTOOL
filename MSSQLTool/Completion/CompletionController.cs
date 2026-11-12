@@ -1,4 +1,4 @@
-﻿using Microsoft.VisualStudio;
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.TextManager.Interop;
 using System;
 using System.Collections.Concurrent;
@@ -377,6 +377,7 @@ namespace MSSQLTool.Completion
                     // Latest wins: if a newer keystroke already replaced this request, skip the
                     // expensive analysis instead of queueing it behind the previous one.
                     if (!ReferenceEquals(currentContext, requestMarker)) return;
+
                     context = await Task.Run(() => AnalyzeWithStatementCache(requestMarker, beforeCaret, analysisColumn,
                         afterCaret, documentText, statementStart, compatibilityLevel), token).ConfigureAwait(false);
                 }
